@@ -3188,30 +3188,38 @@ function LoginTabContent({ onLogin }) {
           <span style={{marginLeft:"auto",color:"#c8d5e8",fontSize:18}}>→</span>
         </button>
       </div>
-      {/* Fallback email */}
-      <div style={{textAlign:"center"}}>
-        <button onClick={()=>setShowFallback(!showFallback)} style={{background:"none",border:"none",color:"#bbb",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Connexion avec email (démo)</button>
+            {/* Séparateur */}
+      <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}>
+        <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
+        <span style={{fontSize:11,color:"#bbb",fontWeight:600}}>OU</span>
+        <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
       </div>
-      {showFallback && (
-        <div style={{marginTop:12,padding:14,background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0"}}>
-          <Input label="Email" value={email} onChange={setEmail} type="email" placeholder="contact@mapharmacie.fr" icon="✉️"/>
-          <Input label="Mot de passe" value={password} onChange={setPassword} type="password" placeholder="••••••••" icon="🔒"/>
-          {emailError && <div style={{color:"#dc2626",fontSize:12,marginBottom:8}}>⚠️ {emailError}</div>}
-          <Btn onClick={()=>{
-            setEmailLoading(true); setEmailError("");
-            authSignInEmail(email, password).then(result => {
-              if (result.error || !result.pharmacie) { setEmailError("Identifiants incorrects"); setEmailLoading(false); return; }
-              onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
-            });
-          }} disabled={emailLoading||!email||!password} style={{width:"100%",justifyContent:"center"}}>
-            {emailLoading?"Connexion…":"→ Se connecter"}
-          </Btn>
-          <div style={{marginTop:10,fontSize:11,color:"#aaa",lineHeight:1.8}}>
-            <code>contact@pharmaciecentrale.fr</code> / <code>demo123</code>
+      {/* Connexion email — visible en démo ET en production */}
+      <div style={{marginBottom:4}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Titulaire — Connexion email</div>
+        <Input label="Email" value={email} onChange={setEmail} type="email" placeholder="contact@mapharmacie.fr" icon="✉️"/>
+        <Input label="Mot de passe" value={password} onChange={setPassword} type="password" placeholder="••••••••" icon="🔒"/>
+        {emailError && (
+          <div style={{color:"#dc2626",fontSize:12,marginBottom:8,padding:"6px 10px",background:"#fee2e2",borderRadius:7}}>⚠️ {emailError}</div>
+        )}
+        <Btn onClick={()=>{
+          setEmailLoading(true); setEmailError("");
+          authSignInEmail(email, password).then(result => {
+            if (result.error || !result.pharmacie) {
+              setEmailError("Email ou mot de passe incorrect");
+              setEmailLoading(false); return;
+            }
+            onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
+          });
+        }} disabled={emailLoading||!email||!password} style={{width:"100%",justifyContent:"center"}}>
+          {emailLoading?"Connexion en cours…":"→ Se connecter"}
+        </Btn>
+        {isDemoMode && (
+          <div style={{marginTop:8,fontSize:11,color:"#aaa",lineHeight:1.8,textAlign:"center"}}>
+            Démo : <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>contact@pharmaciecentrale.fr</code> / <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>demo123</code>
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </div>    </>
   );
 }
 
