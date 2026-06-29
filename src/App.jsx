@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+
+const APP_VERSION = "v6.0 · 29/06/2026 00:15";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -405,6 +407,7 @@ function Footer({ onNav }) {
         </div>
         <div style={{ borderTop:"1px solid #1e293b", paddingTop:20, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
           <span style={{ fontSize:12, color:"#334155" }}>© 2025 OrdoMail — Tous droits réservés</span>
+          <span style={{fontSize:10,color:"#94a3b8",fontFamily:"monospace"}}>{APP_VERSION}</span>
           <button onClick={() => onNav("backoffice")} style={{
             background:"none", border:"1px solid #1e293b", borderRadius:6,
             color:"#334155", fontSize:11, fontWeight:600, cursor:"pointer",
@@ -2947,6 +2950,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
           <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.35)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⏏ Quitter</button>
+          <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"monospace",marginLeft:6}}>{APP_VERSION}</span>
         </div>
       </header>
       <BottomNav tab={tab} showLogs={showLogs} canAdmin={canAdmin} setTab={setTab} setShowLogs={setShowLogs} />
@@ -3164,12 +3168,25 @@ function LoginTabContent({ onLogin }) {
       {/* Titulaire */}
       <div style={{marginBottom:16}}>
         <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Titulaire / Pharmacien responsable</div>
-        <BoutonProSanteConnect onClick={handlePSCLogin} loading={pscLoading}/>
-        <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8}}>
-          <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✅ Certifié HDS</span>
-          <span style={{fontSize:11,color:"#aaa"}}>·</span>
-          <span style={{fontSize:11,color:"#0369a1",fontWeight:600}}>🔒 PGSSI-S</span>
-        </div>
+        {isDemoMode ? (
+          <>
+            <BoutonProSanteConnect onClick={handlePSCLogin} loading={pscLoading}/>
+            <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8}}>
+              <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✅ Certifié HDS</span>
+              <span style={{fontSize:11,color:"#aaa"}}>·</span>
+              <span style={{fontSize:11,color:"#0369a1",fontWeight:600}}>🔒 PGSSI-S</span>
+            </div>
+          </>
+        ) : (
+          <div style={{padding:"12px 16px",borderRadius:12,background:"#f8fafc",border:"1.5px solid #e2e8f0",display:"flex",alignItems:"center",gap:12,opacity:0.7}}>
+            <div style={{width:40,height:40,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏥</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:"#475569"}}>Pro Santé Connect</div>
+              <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Convention ANS en cours — prochainement</div>
+            </div>
+            <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"#fef9c3",color:"#92400e",padding:"3px 8px",borderRadius:20,flexShrink:0,whiteSpace:"nowrap"}}>BIENTÔT</span>
+          </div>
+        )}
       </div>
       {/* Séparateur */}
       <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}>
