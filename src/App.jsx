@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 16:06";
+const APP_VERSION = "v6.0 · 30/06/2026 16:57";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -882,21 +882,17 @@ async function extractFromFile(base64, mimeType, { fallbackName = null } = {}) {
       return { nom: fallbackName, carteVitale: null, medecin: null, date: null, medicaments: [], _ocrSuccess: false, _confidence: Math.round(confidence || 0) };
     }
 
+    // OCR simplifié : extraire uniquement nom + prénom du patient
+    const nomExtrait = OCR_PARSERS.nom(text) || fallbackName || null;
     const result = {
-      nom:         OCR_PARSERS.nom(text)         || fallbackName || null,
-      carteVitale: OCR_PARSERS.carteVitale(text) || null,
-      medecin:     OCR_PARSERS.medecin(text)     || null,
-      date:        OCR_PARSERS.date(text)        || null,
-      medicaments: OCR_PARSERS.medicaments(text) || [],
-      _confidence: Math.round(confidence),
-      _ocrSuccess: true,
+      nom:          nomExtrait,
+      carteVitale:  null,  // non extrait (conformité RGPD)
+      medecin:      null,
+      date:         null,
+      medicaments:  [],
+      _confidence:  Math.round(confidence),
+      _ocrSuccess:  !!(nomExtrait && confidence >= 15),
     };
-
-    // Si aucun champ structuré → OCR a probablement échoué
-    if (!result.carteVitale && !result.medecin && !result.medicaments.length) {
-      result._ocrSuccess = false;
-      result.nom = fallbackName || result.nom;
-    }
 
     return result;
   } catch(e) {
@@ -2090,10 +2086,8 @@ function ViewerModal({ att, onClose }) {
 }
 
 function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
-  const nom = ordo.extracted?.nom || ordo.fromName;
-  const cv = ordo.extracted?.carteVitale;
-  const medecin = ordo.extracted?.medecin;
-  const date = ordo.extracted?.date;
+  const nom    = ordo.extracted?.nom || ordo.fromName;
+  const email  = ordo.fromEmail || "";
   const medicaments = ordo.extracted?.medicaments || [];
   const [step, setStep] = useState("ready");
 
@@ -2120,7 +2114,7 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
         <div style="width:1px;height:24px;background:rgba(255,255,255,0.3)"></div>
         <div>
           <div style="font-size:16px;font-weight:700">${nom || "—"}</div>
-          ${cv ? `<div style="font-family:monospace;font-size:12px;letter-spacing:1.5px;opacity:0.85">&#128179; ${cv}</div>` : ""}
+          ${email ? `<div style="font-size:12px;opacity:0.8">${email}</div>` : ""}
         </div>
       </div>
       <div style="text-align:right;font-size:11px;opacity:0.75">
@@ -2233,7 +2227,7 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
                 </div>
                 <div>
                   <div style={{ fontWeight: 900, fontSize: 20, color: "#1a1a1a" }}>{nom}</div>
-                  {cv && <div style={{ fontSize: 12, color: "#15623a", fontFamily: "monospace", fontWeight: 700, marginTop: 2 }}>💳 {cv}</div>}
+                  {email && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>✉️ {email}</div>}
                 </div>
               </div>
             </div>
@@ -2281,8 +2275,8 @@ function getOrdoAccent(id) {
 
 function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId }) {
   const isNew = ordo.status === "nouveau";
-  const nom = ordo.extracted?.nom || ordo.fromName;
-  const cv = ordo.extracted?.carteVitale;
+  const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
+  const email  = ordo.fromEmail || "";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
   const uploadRef = useRef();
   const isLoading = loadingId === ordo.id;
@@ -2336,7 +2330,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
           <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Carte Vitale</div>
           {isLoading
             ? <div style={{ fontSize: 12, color: "#1a3a6e", animation: "pulse 1s ease infinite" }}>🔍 Analyse en cours…</div>
-            : <CVBadge numero={cv} color={isNew ? couleur : "#607d8b"} />
+            : null
           }
         </div>
 
@@ -2405,7 +2399,6 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
 function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
   const isNew = ordo.status === "nouveau";
   const nom = ordo.extracted?.nom || ordo.fromName;
-  const cv = ordo.extracted?.carteVitale;
   const accent = getOrdoAccent(ordo.id);
   return (
     <div style={{
@@ -3043,12 +3036,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         if (extracted?._ocrSuccess) {
           if (sb && !isDemoMode) {
             await sb.from("ordonnances").update({
-              patient_nom:        extracted.nom            || null,
-              patient_cv:         extracted.carteVitale    || null,
-              medecin:            extracted.medecin         || null,
-              date_prescription:  extracted.date            || null,
-              medicaments:        extracted.medicaments     || [],
-              ocr_confidence:     extracted._confidence     || 0,
+              patient_nom:    extracted.nom        || null,
+              ocr_confidence: extracted._confidence || 0,
             }).eq("id", ordo.id);
           }
           setOrdonnances(prev => prev.map(o =>

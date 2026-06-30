@@ -381,14 +381,13 @@ function normOrdo(row) {
     fromName: row.from_name, fromEmail: row.from_email,
     receivedAt: row.received_at, printedAt: row.printed_at,
     extracted: {
-      nom:          row.patient_nom   || null,
-      carteVitale:  row.patient_cv    || null,
-      medecin:      row.medecin       || null,
-      date:         row.date_prescription || null,
-      medicaments:  row.medicaments   || [],
-      _confidence:  row.ocr_confidence || 0,
-      // _ocrSuccess = true si au moins un champ médical extrait
-      _ocrSuccess:  !!(row.patient_cv || row.medecin || (row.medicaments||[]).length > 0 || row.date_prescription),
+      nom:         row.patient_nom   || null,
+      carteVitale: null,
+      medecin:     null,
+      date:        null,
+      medicaments: [],
+      _confidence: row.ocr_confidence || 0,
+      _ocrSuccess: !!row.patient_nom,
     },
     // path = chemin Storage, dataUrl = null (chargé à la demande via signed URL)
     attachments: row.fichier_url ? [{
