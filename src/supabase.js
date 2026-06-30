@@ -47,6 +47,27 @@ export function registerDB(db) {
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Helper interne : récupérer la pharmacie liée à un user ──────────────────
+async function _fetchPharmacieForUser(sb, userId) {
+  // 1. Trouver le lien pharmacie_users
+  const { data: link, error: linkErr } = await sb
+    .from('pharmacie_users')
+    .select('pharmacie_id, role')
+    .eq('id', userId)
+    .single();
+  if (linkErr || !link) return null;
+
+  // 2. Récupérer la pharmacie + postes
+  const { data: ph, error: phErr } = await sb
+    .from('pharmacies')
+    .select('*, postes(*)')
+    .eq('id', link.pharmacie_id)
+    .single();
+  if (phErr || !ph) return null;
+
+  return { ...ph, userRole: link.role };
+}
+
 export async function authSignInEmail(email, password) {
   if (IS_DEMO) {
     const db = getDB();
@@ -335,3 +356,7 @@ function normOrdo(row) {
 
 // Export du mode pour debug
 export const isDemoMode = IS_DEMO;
+
+// Export du client Supabase pour composants App.jsx
+export function getSupabaseClient() { return getSupabase(); }
+export { getSupabase as supabase };

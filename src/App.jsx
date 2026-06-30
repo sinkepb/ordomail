@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 06:35";
+const APP_VERSION = "v6.0 · 30/06/2026 07:11";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -8,7 +8,7 @@ import {
   subscribeToPharmacy, notifyPharmacy,
   addAuditLog, getAuditLogs, exportLogsCSV,
   fetchAbonnement, fetchFactures, changePlan,
-  isDemoMode, registerDB,
+  isDemoMode, registerDB, getSupabaseClient,
 } from "./supabase.js";
 
 // ─── Palette & tokens ─────────────────────────────────────────────────────────
@@ -3237,11 +3237,8 @@ function LoginTabContent({ onLogin }) {
                   if (!email) return;
                   setResetLoading(true);
                   try {
-                    const { createClient } = await import("@supabase/supabase-js");
-                    const sb = createClient(
-                      import.meta.env.VITE_SUPABASE_URL,
-                      import.meta.env.VITE_SUPABASE_ANON_KEY
-                    );
+                    const sb = getSupabaseClient();
+                    if (!sb) { setEmailError("Supabase non disponible"); return; }
                     await sb.auth.resetPasswordForEmail(email, {
                       redirectTo: "https://ordomail.vercel.app",
                     });
@@ -3510,12 +3507,8 @@ function ResetPasswordPage({ onDone }) {
     setStatus("loading"); setMsg("");
     try {
       // Supabase detectSessionInUrl:true établit la session depuis le hash automatiquement
-      const { createClient } = await import("@supabase/supabase-js");
-      const sb = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY,
-        { auth: { detectSessionInUrl: true, persistSession: true } }
-      );
+      const sb = getSupabaseClient();
+      if (!sb) throw new Error("Supabase non disponible");
       // Attendre que la session soit établie depuis le hash URL
       let session = null;
       for (let i = 0; i < 8; i++) {
