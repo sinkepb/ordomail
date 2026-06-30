@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 07:56";
+const APP_VERSION = "v6.0 · 30/06/2026 08:11";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -8,7 +8,8 @@ import {
   subscribeToPharmacy, notifyPharmacy,
   addAuditLog, getAuditLogs, exportLogsCSV,
   fetchAbonnement, fetchFactures, changePlan,
-  isDemoMode, registerDB, getSupabaseClient,
+  isDemoMode, registerDB, getSupabaseClient, getSignedUrl,
+  getCurrentSession, onAuthStateChange,
 } from "./supabase.js";
 
 // ─── Palette & tokens ─────────────────────────────────────────────────────────
@@ -2030,12 +2031,16 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   const medicaments = ordo.extracted?.medicaments || [];
   const [step, setStep] = useState("ready");
 
-  function doPrint() {
+  async function doPrint() {
     setStep("ready");
     const printArea = document.getElementById("ordomail-print-area");
     if (!printArea) { window.print(); setTimeout(() => setStep("confirm"), 500); return; }
 
     const att = ordo.attachments?.[0];
+    // En prod : charger la signed URL si dataUrl absent mais path disponible
+    if (att && !att.dataUrl && att.path) {
+      att.dataUrl = await getSignedUrl(att.path, 300); // 5 minutes
+    }
     const hasFile = att?.dataUrl;
     const receivedDate = new Date(ordo.receivedAt).toLocaleDateString("fr-FR");
     const receivedTime = new Date(ordo.receivedAt).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
@@ -3013,7 +3018,15 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                   const accent=getOrdoAccent(o.id);
                   return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
-                    onView={()=>{handleViewOrdo(o.id);setViewerAtt(o.attachments?.[0]?.dataUrl?o.attachments[0]:null);}}
+                    onView={()=>{handleViewOrdo(o.id);(async () => {
+              const a = o.attachments?.[0];
+              if (!a) return;
+              if (a.dataUrl) { setViewerAtt(a); return; }
+              if (a.path) {
+                const url = await getSignedUrl(a.path, 300);
+                if (url) setViewerAtt({ ...a, dataUrl: url });
+              }
+            })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}
                     loadingId={loadingId}/>;
@@ -3025,7 +3038,15 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                   const accent=getOrdoAccent(o.id);
                   return <OrdoRow key={o.id} ordo={o} couleur={couleur} accent={accent}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
-                    onView={()=>setViewerAtt(o.attachments?.[0]?.dataUrl?o.attachments[0]:null)}
+                    onView={()=>(async () => {
+              const a = o.attachments?.[0];
+              if (!a) return;
+              if (a.dataUrl) { setViewerAtt(a); return; }
+              if (a.path) {
+                const url = await getSignedUrl(a.path, 300);
+                if (url) setViewerAtt({ ...a, dataUrl: url });
+              }
+            })()}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}/>;
                 })}
               </div>
@@ -3340,7 +3361,9 @@ function LoginPage({ onLogin, onBack }) {
 
 // ─── AppLogin ─────────────────────────────────────────────────────────────────
 function AppLogin({ onBack, onGoToPricing }) {
-  const [session, setSession] = useState(null);
+  // Récupérer la session restaurée depuis le refresh
+  const restoredSession = window.__ordomailSession || null;
+  const [session, setSession] = useState(restoredSession);
   const [patientPharmacie, setPatientPharmacie] = useState(null);
 
   if (patientPharmacie) return <PatientPage pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
@@ -3636,6 +3659,35 @@ export default function App() {
   const initialRoute = isRecovery ? "reset-password" : (patientParam ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
+  const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam);
+
+  // ── Restaurer la session Supabase après refresh ───────────────────────────────
+  useEffect(() => {
+    if (isDemoMode || isRecovery || patientParam) { setSessionLoading(false); return; }
+    getCurrentSession().then(async session => {
+      if (session) {
+        try {
+          const sb = getSupabaseClient();
+          const { data: link } = await sb
+            .from("pharmacie_users")
+            .select("pharmacie_id, role")
+            .eq("id", session.user.id)
+            .maybeSingle();
+          if (link) {
+            window.__ordomailSession = {
+              pharmacieId: link.pharmacie_id,
+              userRole: link.role,
+              userId: session.user.id,
+            };
+            setRoute("dashboard");
+          }
+        } catch(e) {
+          console.warn("[Session restore]", e.message);
+        }
+      }
+      setSessionLoading(false);
+    }).catch(() => setSessionLoading(false));
+  }, []);
 
   // Charger la pharmacie depuis Supabase si mode prod et patientParam présent
   useEffect(() => {
@@ -3665,7 +3717,15 @@ export default function App() {
       {route==="patient"&&patientPharmacieQR&&(
         <PatientPage pharmacie={patientPharmacieQR} onBack={()=>{ window.history.replaceState({},"",window.location.pathname); setRoute("landing"); setPatientPharmacieQR(null); }}/>
       )}
-      {route==="landing"&&(
+      {sessionLoading && (
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:42,marginBottom:12,animation:"spin 1s linear infinite"}}>💊</div>
+            <div style={{fontWeight:700,color:"#1a3a6e",fontSize:14}}>Chargement OrdoMail…</div>
+          </div>
+        </div>
+      )}
+      {!sessionLoading && route==="landing"&&(
         <LandingPage onGoToPricing={()=>setRoute("pricing")} onGoToApp={()=>setRoute("dashboard")} onGoToCheckout={goToCheckout} onGoToAdmin={()=>setRoute("backoffice")}/>
       )}
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}

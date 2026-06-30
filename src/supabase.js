@@ -370,7 +370,13 @@ function normOrdo(row) {
     fromName: row.from_name, fromEmail: row.from_email,
     receivedAt: row.received_at, printedAt: row.printed_at,
     extracted: { nom: row.patient_nom, carteVitale: row.patient_cv, medecin: row.medecin, medicaments: row.medicaments || [] },
-    attachments: row.fichier_url ? [{ name: row.fichier_nom, type: row.fichier_type, path: row.fichier_url, dataUrl: null }] : [],
+    // path = chemin Storage, dataUrl = null (chargé à la demande via signed URL)
+    attachments: row.fichier_url ? [{
+      name: row.fichier_nom || 'ordonnance',
+      type: row.fichier_type || (row.fichier_url?.endsWith('.pdf') ? 'pdf' : 'image'),
+      path: row.fichier_url,
+      dataUrl: null,
+    }] : [],
   };
 }
 
@@ -380,3 +386,31 @@ export const isDemoMode = IS_DEMO;
 // Export du client Supabase pour composants App.jsx
 export function getSupabaseClient() { return getSupabase(); }
 export { getSupabase as supabase };
+
+// ─── Générer une URL signée pour un fichier Storage ────────────────────────
+export async function getSignedUrl(path, expiresIn = 3600) {
+  if (!path) return null;
+  if (IS_DEMO) return null;
+  const sb = getSupabase();
+  const { data, error } = await sb.storage
+    .from('ordonnances-files')
+    .createSignedUrl(path, expiresIn);
+  if (error) { console.error('[Storage]', error.message); return null; }
+  return data?.signedUrl || null;
+}
+
+// ─── Récupérer la session courante (pour persistance après refresh) ───────────
+export async function getCurrentSession() {
+  if (IS_DEMO) return null;
+  const sb = getSupabase();
+  const { data: { session } } = await sb.auth.getSession();
+  return session;
+}
+
+// ─── Écouter les changements de session ──────────────────────────────────────
+export function onAuthStateChange(callback) {
+  if (IS_DEMO) return () => {};
+  const sb = getSupabase();
+  const { data: { subscription } } = sb.auth.onAuthStateChange(callback);
+  return () => subscription.unsubscribe();
+}
