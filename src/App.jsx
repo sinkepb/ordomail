@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 29/06/2026 00:15";
+const APP_VERSION = "v6.0 · 30/06/2026 04:10";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1860,73 +1860,55 @@ function BillingAdmin() {
 
 // ─── QR Code généré en pur SVG — aucune dépendance externe ──────────────────
 // Algorithme QR simplifié (matrice de modules) — lisible par tous les téléphones
-function QRCode({ url, size = 200, color = "#1a3a6e" }) {
-  // Utilise un canvas pour générer un QR code via l'API Anthropic (Claude) intégrée
-  // Fallback : génération d'une matrice pseudo-aléatoire déterministe basée sur l'URL
-  const canvasRef = useRef(null);
-  const [svgData, setSvgData] = useState(null);
+function QRCode({ url, size = 220, color = "#1a3a6e" }) {
+  const [svg, setSvg]     = useState(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    generateQR(url);
-  }, [url]);
+    if (!url) return;
+    setSvg(null); setError(false);
 
-  async function generateQR(data) {
-    try {
-      // Appel Claude pour générer la matrice QR
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2000,
-          messages: [{
-            role: "user",
-            content: `Generate a QR code matrix for this URL: ${data}
-Return ONLY a JSON object with this exact format, no markdown:
-{"modules": [[0,1,0,...], ...], "size": 25}
-Where modules is a 25x25 array of 0 (white) and 1 (black).
-The QR code must be scannable. Include finder patterns (3 corners), timing patterns, and encode the URL data correctly.
-Return only the JSON, nothing else.`
-          }]
-        })
-      });
-      const json = await res.json();
-      const text = json.content?.[0]?.text || "{}";
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      if (parsed.modules) {
-        setSvgData(parsed);
-        return;
-      }
-    } catch(e) {}
-    // Fallback déterministe si API indisponible
-    setSvgData(buildFallbackQR(data));
-  }
-
-  function buildFallbackQR(data) {
-    const N = 25;
-    const modules = Array.from({length: N}, () => Array(N).fill(0));
-    // Finder patterns (coins)
-    [[0,0],[0,N-7],[N-7,0]].forEach(([r,c]) => {
-      for(let i=0;i<7;i++) for(let j=0;j<7;j++) {
-        modules[r+i][c+j] = (i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4)) ? 1 : 0;
-      }
-    });
-    // Timing patterns
-    for(let i=8;i<N-8;i++) { modules[6][i] = i%2===0?1:0; modules[i][6] = i%2===0?1:0; }
-    // Données encodées depuis l'URL
-    let hash = 0;
-    for(let i=0;i<data.length;i++) hash = ((hash<<5)-hash+data.charCodeAt(i))|0;
-    let rng = Math.abs(hash);
-    for(let r=0;r<N;r++) for(let c=0;c<N;c++) {
-      if(modules[r][c]===0 && !(r<8&&c<8) && !(r<8&&c>N-9) && !(r>N-9&&c<8) && r!==6 && c!==6) {
-        rng = (rng*1664525+1013904223)&0xffffffff;
-        modules[r][c] = (rng&1);
-      }
+    // Import dynamique CDN — qrcode est une librairie UMD accessible via CDN
+    // On passe par l'API de génération SVG de qrcode.js
+    const script = document.getElementById("qrcode-cdn");
+    function generate() {
+      try {
+        // qrcode UMD expose window.QRCode
+        const QR = window.QRCode;
+        if (!QR) { setError(true); return; }
+        const canvas = document.createElement("canvas");
+        QR.toCanvas(canvas, url, {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          width: size,
+          color: { dark: color, light: "#ffffff" },
+        }, (err) => {
+          if (err) { setError(true); return; }
+          // Convertir canvas en data URL et afficher dans un img
+          setSvg(canvas.toDataURL("image/png"));
+        });
+      } catch { setError(true); }
     }
-    return {modules, size: N};
-  }
 
-  if (!svgData) return (
+    if (window.QRCode) {
+      generate();
+    } else {
+      const s = document.createElement("script");
+      s.id = "qrcode-cdn";
+      s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js";
+      s.onload = generate;
+      s.onerror = () => setError(true);
+      document.head.appendChild(s);
+    }
+  }, [url, color, size]);
+
+  if (error) return (
+    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
+      ⚠️ Erreur génération QR
+    </div>
+  );
+
+  if (!svg) return (
     <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc",borderRadius:8}}>
       <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
         <div style={{animation:"spin 1s linear infinite",fontSize:22,marginBottom:4}}>⏳</div>
@@ -1935,25 +1917,15 @@ Return only the JSON, nothing else.`
     </div>
   );
 
-  const N = svgData.size || 25;
-  const cell = size / (N + 2);
+  // Afficher comme image (PNG canvas converti en dataURL)
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} xmlns="http://www.w3.org/2000/svg" style={{borderRadius:8,display:"block"}}>
-      <rect width={size} height={size} fill="white"/>
-      {svgData.modules.map((row, r) =>
-        row.map((mod, c) =>
-          mod === 1 ? (
-            <rect key={`${r}-${c}`}
-              x={(c+1)*cell} y={(r+1)*cell}
-              width={cell} height={cell}
-              fill={color}
-            />
-          ) : null
-        )
-      )}
-    </svg>
+    <img src={svg} width={size} height={size}
+      style={{display:"block",borderRadius:4,imageRendering:"pixelated"}}
+      alt="QR Code ordonnances"
+    />
   );
 }
+
 
 // ─── Ordo Card — vue grille ───────────────────────────────────────────────────
 
@@ -3473,11 +3445,113 @@ function BackofficeAdmin({ onBack }) {
 }
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAGE RÉINITIALISATION MOT DE PASSE
+// Supabase redirige ici avec #access_token=...&type=recovery dans l'URL
+// ═══════════════════════════════════════════════════════════════════════════════
+function ResetPasswordPage({ onDone }) {
+  const [pwd,    setPwd]    = useState("");
+  const [pwd2,   setPwd2]   = useState("");
+  const [status, setStatus] = useState("idle");
+  const [msg,    setMsg]    = useState("");
+
+  async function handleReset() {
+    if (pwd.length < 8) { setMsg("8 caractères minimum"); return; }
+    if (pwd !== pwd2)   { setMsg("Les mots de passe ne correspondent pas"); return; }
+    setStatus("loading"); setMsg("");
+    try {
+      // Supabase detectSessionInUrl:true établit la session depuis le hash automatiquement
+      const { createClient } = await import("@supabase/supabase-js");
+      const sb = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+        { auth: { detectSessionInUrl: true, persistSession: true } }
+      );
+      // Attendre que la session soit établie depuis le hash URL
+      let session = null;
+      for (let i = 0; i < 8; i++) {
+        const { data } = await sb.auth.getSession();
+        if (data.session) { session = data.session; break; }
+        await new Promise(r => setTimeout(r, 400));
+      }
+      if (!session) throw new Error("Session expirée — veuillez redemander un lien");
+      const { error } = await sb.auth.updateUser({ password: pwd });
+      if (error) throw error;
+      setStatus("success");
+      window.history.replaceState({}, "", window.location.pathname);
+      setTimeout(onDone, 2500);
+    } catch(e) {
+      setStatus("error");
+      setMsg(e.message || "Erreur");
+    }
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:48,marginBottom:10}}>🔑</div>
+          <div style={{fontWeight:900,fontSize:24,color:"#fff",marginBottom:4}}>Nouveau mot de passe</div>
+          <div style={{fontSize:14,color:"rgba(255,255,255,0.6)"}}>OrdoMail — Réinitialisation</div>
+        </div>
+        <div style={{background:"#fff",borderRadius:20,padding:28,boxShadow:"0 24px 60px rgba(0,0,0,0.35)"}}>
+          {status === "success" ? (
+            <div style={{textAlign:"center",padding:"20px 0"}}>
+              <div style={{fontSize:52,marginBottom:14}}>✅</div>
+              <div style={{fontWeight:800,fontSize:18,color:"#15803d",marginBottom:8}}>Mot de passe mis à jour !</div>
+              <div style={{fontSize:14,color:"#64748b"}}>Redirection vers la connexion…</div>
+            </div>
+          ) : (
+            <>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Nouveau mot de passe</label>
+                <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)}
+                  placeholder="8 caractères minimum"
+                  style={{width:"100%",padding:"11px 12px",border:`1.5px solid ${pwd.length>0&&pwd.length<8?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                {pwd.length > 0 && (
+                  <div style={{marginTop:5,display:"flex",gap:4,alignItems:"center"}}>
+                    {[8,12,16].map(n=>(
+                      <div key={n} style={{flex:1,height:3,borderRadius:2,background:pwd.length>=n?"#15803d":"#e2e8f0",transition:"background 0.2s"}}/>
+                    ))}
+                    <span style={{fontSize:10,color:"#94a3b8",marginLeft:4,whiteSpace:"nowrap"}}>{pwd.length<8?"Trop court":pwd.length<12?"Moyen":"Fort"}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{marginBottom:18}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Confirmer</label>
+                <input type="password" value={pwd2} onChange={e=>setPwd2(e.target.value)}
+                  placeholder="Répéter le mot de passe"
+                  style={{width:"100%",padding:"11px 12px",border:`1.5px solid ${pwd2.length>0&&pwd2!==pwd?"#ef4444":pwd2.length>0&&pwd2===pwd?"#15803d":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                {pwd2.length>0&&pwd===pwd2&&<div style={{fontSize:12,color:"#15803d",marginTop:4,fontWeight:600}}>✓ Les mots de passe correspondent</div>}
+              </div>
+              {msg && <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#dc2626",marginBottom:14}}>{msg}</div>}
+              <button onClick={handleReset}
+                disabled={status==="loading"||!pwd||!pwd2}
+                style={{width:"100%",padding:"13px",border:"none",borderRadius:11,background:status==="loading"||!pwd||!pwd2?"#e2e8f0":"#1a3a6e",color:status==="loading"||!pwd||!pwd2?"#94a3b8":"#fff",fontWeight:800,fontSize:15,cursor:status==="loading"||!pwd||!pwd2?"not-allowed":"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
+                {status==="loading"?"Mise à jour en cours…":"Définir le mot de passe →"}
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{textAlign:"center",marginTop:14}}>
+          <button onClick={onDone} style={{background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← Retour à la connexion</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function App() {
-  const urlParams = new URLSearchParams(window.location.search);
+  const hashParams  = new URLSearchParams(window.location.hash.replace("#",""));
+  const urlParams   = new URLSearchParams(window.location.search);
+  const hashType    = hashParams.get("type");
+  const hashToken   = hashParams.get("access_token");
+  const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
   const initialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const [route, setRoute] = useState(initialPharmacie ? "patient" : "landing");
+  const initialRoute = isRecovery ? "reset-password" : initialPharmacie ? "patient" : "landing";
+  const [route, setRoute] = useState(initialRoute);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(initialPharmacie||null);
   const [checkoutPlan, setCheckoutPlan] = useState("standard");
   const [checkoutBilling, setCheckoutBilling] = useState("monthly");
@@ -3486,6 +3560,9 @@ export default function App() {
 
   return (
     <>
+      {route==="reset-password"&&(
+        <ResetPasswordPage onDone={()=>{window.history.replaceState({},"",window.location.pathname);setRoute("landing");}}/>
+      )}
       {route==="patient"&&patientPharmacieQR&&(
         <PatientPage pharmacie={patientPharmacieQR} onBack={()=>{ window.history.replaceState({},"",window.location.pathname); setRoute("landing"); setPatientPharmacieQR(null); }}/>
       )}
