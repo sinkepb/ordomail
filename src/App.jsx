@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 08:17";
+const APP_VERSION = "v6.0 · 30/06/2026 08:33";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1861,7 +1861,7 @@ function BillingAdmin() {
 
 // ─── QR Code généré en pur SVG — aucune dépendance externe ──────────────────
 // QRCode — génération via qrcode npm (ESM) importé dynamiquement depuis esm.sh
-function QRCode({ url, size = 220, color = "#1a3a6e" }) {
+function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
   const [dataUrl, setDataUrl] = useState(null);
   const [error, setError]     = useState(false);
 
@@ -1906,6 +1906,7 @@ function QRCode({ url, size = 220, color = "#1a3a6e" }) {
 
   return (
     <img
+      id={printId || undefined}
       src={dataUrl}
       width={size}
       height={size}
@@ -2646,39 +2647,170 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
     } catch(e) { setNfcStatus("error"); }
   }
 
-  function handlePrint() {
-    const qrEl = document.querySelector(".qr-svg-container svg");
-    const svgContent = qrEl ? qrEl.outerHTML : "";
-    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-<title>QR Code — ${pharmacie?.nom || "OrdoMail"}</title>
+  async function handlePrint() {
+    // Récupérer le QR code depuis l'img rendue
+    const qrImg = document.querySelector("#qr-print-img");
+    let qrSrc = qrImg?.src || "";
+
+    // Si pas encore chargé, générer via esm.sh
+    if (!qrSrc) {
+      try {
+        const mod = await import("https://esm.sh/qrcode@1.5.4");
+        const QR = mod.default || mod;
+        qrSrc = await QR.toDataURL(qrUrl, {
+          errorCorrectionLevel: "H", // H = haute correction → mieux à l'impression
+          margin: 2, width: 400,
+          color: { dark: "#1a3a6e", light: "#ffffff" },
+        });
+      } catch(e) { qrSrc = ""; }
+    }
+
+    const nom = pharmacie?.nom || "Votre Pharmacie";
+    const couleurPrint = couleur || "#1a3a6e";
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>QR Code + NFC — ${nom}</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;padding:20px}
-.card{text-align:center;border:2px solid #e2e8f0;border-radius:16px;padding:32px 40px;max-width:420px;width:100%}
-.logo{font-size:24px;font-weight:900;color:#1a3a6e;margin-bottom:4px}
-.sub{font-size:11px;color:#94a3b8;letter-spacing:2px;margin-bottom:24px}
-.qr-wrap{display:inline-block;padding:14px;background:#fff;border:2px solid #1a3a6e;border-radius:12px;margin-bottom:18px}
-.qr-wrap svg{width:240px;height:240px;display:block}
-.pharma{font-size:18px;font-weight:800;color:#1a1a1a;margin-bottom:6px}
-.instr{font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px}
-.url{font-size:10px;font-family:monospace;color:#94a3b8;word-break:break-all;padding:6px 10px;background:#f8fafc;border-radius:6px}
-.btn{position:fixed;bottom:20px;right:20px;background:#1a3a6e;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer}
-@media print{.btn{display:none!important}@page{margin:10mm}}
-</style></head><body>
-<div class="card">
-  <div class="logo">💊 OrdoMail</div>
-  <div class="sub">RÉCEPTION D'ORDONNANCES</div>
-  <div class="qr-wrap">${svgContent}</div>
-  <div class="pharma">${pharmacie?.nom || "Votre Pharmacie"}</div>
-  <div class="instr">📱 Scannez ce code avec l'appareil photo de votre téléphone<br>pour envoyer votre ordonnance — sans application</div>
-  <div class="url">${qrUrl}</div>
+@page { size: A4; margin: 15mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #1a1a1a; }
+
+/* ── Page A4 divisée en 2 sections ── */
+.page { width: 100%; min-height: 257mm; display: flex; flex-direction: column; gap: 0; }
+
+/* ── Section QR (haut de page) ── */
+.qr-section {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 20mm 15mm 10mm;
+  border-bottom: 2px dashed #cbd5e1;
+}
+.logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.logo-icon { font-size: 28px; }
+.logo-text { font-size: 28px; font-weight: 900; color: ${couleurPrint}; letter-spacing: -0.5px; }
+.tagline { font-size: 10px; color: #94a3b8; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 20px; }
+.qr-frame {
+  border: 3px solid ${couleurPrint};
+  border-radius: 16px; padding: 14px; background: #fff;
+  box-shadow: 0 4px 20px rgba(26,58,110,0.15);
+  margin-bottom: 18px;
+}
+.qr-frame img { width: 200px; height: 200px; display: block; }
+.pharma-name { font-size: 22px; font-weight: 900; color: #1a1a1a; margin-bottom: 8px; text-align: center; }
+.instruction {
+  font-size: 13px; color: #475569; line-height: 1.7; text-align: center;
+  max-width: 320px; margin-bottom: 14px;
+}
+.step { display: inline-flex; align-items: center; gap: 6px; margin: 0 4px; }
+.step-num { width: 20px; height: 20px; border-radius: 50%; background: ${couleurPrint}; color: #fff; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.url-box {
+  font-size: 9px; font-family: monospace; color: #94a3b8; word-break: break-all;
+  padding: 5px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;
+  max-width: 340px; text-align: center;
+}
+.badges { display: flex; gap: 10px; margin-top: 12px; align-items: center; justify-content: center; }
+.badge { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+.badge-hds { background: #dcfce7; color: #166534; }
+.badge-sans-app { background: #dbeafe; color: #1e40af; }
+
+/* ── Section NFC (bas de page) ── */
+.nfc-section {
+  padding: 10mm 15mm 15mm;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.nfc-label { font-size: 9px; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
+.nfc-card {
+  border: 2px solid #e2e8f0; border-radius: 16px; padding: 16px 24px;
+  display: flex; align-items: center; gap: 20px; max-width: 420px; width: 100%;
+  background: #f8fafc;
+}
+.nfc-logo {
+  width: 56px; height: 56px; flex-shrink: 0;
+}
+/* Logo NFC en SVG inline */
+.nfc-text-block { flex: 1; }
+.nfc-title { font-size: 16px; font-weight: 900; color: #1a1a1a; margin-bottom: 4px; }
+.nfc-sub { font-size: 12px; color: #64748b; line-height: 1.6; }
+.nfc-wave { font-size: 32px; margin-bottom: 6px; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+</style></head>
+<body>
+<div class="page">
+
+  <!-- ═══ SECTION QR CODE ═══ -->
+  <div class="qr-section">
+    <div class="logo-row">
+      <span class="logo-icon">💊</span>
+      <span class="logo-text">OrdoMail</span>
+    </div>
+    <div class="tagline">Réception d'ordonnances</div>
+
+    <div class="qr-frame">
+      ${qrSrc ? `<img src="${qrSrc}" alt="QR Code" />` : `<div style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#dc2626;font-size:12px;text-align:center">QR non disponible<br>vérifiez la connexion</div>`}
+    </div>
+
+    <div class="pharma-name">${nom}</div>
+
+    <div class="instruction">
+      <span class="step"><span class="step-num">1</span> Ouvrez l'appareil photo</span>
+      <span class="step"><span class="step-num">2</span> Visez ce code</span>
+      <span class="step"><span class="step-num">3</span> Envoyez votre ordonnance</span>
+    </div>
+
+    <div class="url-box">${qrUrl}</div>
+
+    <div class="badges">
+      <span class="badge badge-hds">✅ Sécurisé HDS</span>
+      <span class="badge badge-sans-app">📱 Sans application</span>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION NFC ═══ -->
+  <div class="nfc-section">
+    <div class="nfc-label">ou approchez votre téléphone</div>
+    <div class="nfc-card">
+      <!-- Logo NFC SVG -->
+      <svg class="nfc-logo" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="28" cy="28" r="27" fill="#1a3a6e" stroke="#1a3a6e" stroke-width="0"/>
+        <!-- Ondes NFC -->
+        <path d="M18 28 C18 22 22 17 28 17" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <path d="M15 28 C15 19.5 21 13 28 13" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.7"/>
+        <path d="M12 28 C12 17 19 9 28 9" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.4"/>
+        <!-- Point central -->
+        <circle cx="28" cy="28" r="3" fill="#fff"/>
+        <!-- Lettre N -->
+        <text x="26" y="44" font-family="Arial" font-weight="900" font-size="9" fill="#fff" letter-spacing="1">NFC</text>
+      </svg>
+
+      <div class="nfc-text-block">
+        <div class="nfc-title">Paiement NFC</div>
+        <div class="nfc-sub">
+          Approchez votre téléphone<br>
+          pour ouvrir la page automatiquement.<br>
+          <strong>Aucune application requise.</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
-<button class="btn" onclick="window.print()">🖨️ Imprimer ce QR code</button>
+<button class="no-print" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#1a3a6e;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2)">
+  🖨️ Imprimer / Sauvegarder PDF
+</button>
 </body></html>`;
+
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (win) { win.focus(); setTimeout(() => URL.revokeObjectURL(url), 15000); }
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, "_blank");
+    if (win) {
+      win.focus();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    }
   }
 
   return (
@@ -2705,10 +2837,10 @@ body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-conten
             {isLocal ? "🧪 Mode test local — localhost:5173" : "🌐 Production"}
           </div>
 
-          {/* QR Code SVG */}
+          {/* QR Code */}
           <div style={{ textAlign: "center", marginBottom: 16 }}>
-            <div className="qr-svg-container" style={{ display: "inline-block", background: "#fff", padding: 16, borderRadius: 14, boxShadow: `0 4px 20px ${couleur}22`, border: `2px solid ${couleur}18` }}>
-              <QRCode url={qrUrl} size={220} color={couleur} />
+            <div id="qr-container" style={{ display: "inline-block", background: "#fff", padding: 16, borderRadius: 14, boxShadow: `0 4px 20px ${couleur}22`, border: `2px solid ${couleur}18` }}>
+              <QRCode url={qrUrl} size={220} color={couleur} printId="qr-print-img" />
             </div>
           </div>
 
