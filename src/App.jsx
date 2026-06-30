@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 07:11";
+const APP_VERSION = "v6.0 · 30/06/2026 07:56";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1861,42 +1861,47 @@ function BillingAdmin() {
 // ─── QR Code généré en pur SVG — aucune dépendance externe ──────────────────
 // Algorithme QR simplifié (matrice de modules) — lisible par tous les téléphones
 function QRCode({ url, size = 220, color = "#1a3a6e" }) {
-  const [svg, setSvg]     = useState(null);
-  const [error, setError] = useState(false);
+  const [dataUrl, setDataUrl] = useState(null);
+  const [error, setError]     = useState(false);
+  const canvasRef             = useRef(null);
 
   useEffect(() => {
     if (!url) return;
-    setSvg(null); setError(false);
+    setDataUrl(null); setError(false);
 
-    // Import dynamique CDN — qrcode est une librairie UMD accessible via CDN
-    // On passe par l'API de génération SVG de qrcode.js
-    const script = document.getElementById("qrcode-cdn");
-    function generate() {
-      try {
-        // qrcode UMD expose window.QRCode
-        const QR = window.QRCode;
-        if (!QR) { setError(true); return; }
-        const canvas = document.createElement("canvas");
-        QR.toCanvas(canvas, url, {
-          errorCorrectionLevel: "M",
-          margin: 2,
-          width: size,
-          color: { dark: color, light: "#ffffff" },
-        }, (err) => {
-          if (err) { setError(true); return; }
-          // Convertir canvas en data URL et afficher dans un img
-          setSvg(canvas.toDataURL("image/png"));
-        });
-      } catch { setError(true); }
+    function generate(QR) {
+      const canvas = document.createElement("canvas");
+      // QRCode.toCanvas signature : (canvas, text, options, callback)
+      QR.toCanvas(canvas, url, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: size,
+        color: { dark: color, light: "#ffffff" },
+      }, function(err) {
+        if (err) { setError(true); return; }
+        setDataUrl(canvas.toDataURL("image/png"));
+      });
     }
 
-    if (window.QRCode) {
-      generate();
+    // La librairie qrcode UMD expose le global "QRCode" (pas window.QRCode)
+    if (typeof QRCode !== "undefined") {
+      generate(QRCode);
+    } else if (window.QRCode) {
+      generate(window.QRCode);
     } else {
+      // Charger depuis CDN
+      const existing = document.getElementById("qrcode-cdn-script");
+      if (existing) {
+        // Script déjà en cours de chargement — attendre
+        existing.addEventListener("load", () => {
+          generate(window.QRCode || QRCode);
+        });
+        return;
+      }
       const s = document.createElement("script");
-      s.id = "qrcode-cdn";
+      s.id = "qrcode-cdn-script";
       s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js";
-      s.onload = generate;
+      s.onload = () => generate(window.QRCode);
       s.onerror = () => setError(true);
       document.head.appendChild(s);
     }
@@ -1904,11 +1909,11 @@ function QRCode({ url, size = 220, color = "#1a3a6e" }) {
 
   if (error) return (
     <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
-      ⚠️ Erreur génération QR
+      ⚠️ Erreur QR — vérifiez la connexion
     </div>
   );
 
-  if (!svg) return (
+  if (!dataUrl) return (
     <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc",borderRadius:8}}>
       <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
         <div style={{animation:"spin 1s linear infinite",fontSize:22,marginBottom:4}}>⏳</div>
@@ -1917,10 +1922,9 @@ function QRCode({ url, size = 220, color = "#1a3a6e" }) {
     </div>
   );
 
-  // Afficher comme image (PNG canvas converti en dataURL)
   return (
-    <img src={svg} width={size} height={size}
-      style={{display:"block",borderRadius:4,imageRendering:"pixelated"}}
+    <img src={dataUrl} width={size} height={size}
+      style={{display:"block",borderRadius:4}}
       alt="QR Code ordonnances"
     />
   );
@@ -2387,7 +2391,7 @@ function PatientPage({ pharmacie, onBack }) {
   const [copied, setCopied] = useState(false);
   const inputRef = useRef();
   const couleur = pharmacie?.couleur || "#1a3a6e";
-  const emailReception = pharmacie?.emailReception || `${pharmacie?.id || "ph"}@in.ordomail.fr`;
+  const emailReception = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.immodiaspora.fr`;
 
   function handleFile(f) {
     setFile(f);
@@ -2425,17 +2429,44 @@ function PatientPage({ pharmacie, onBack }) {
   async function handleSubmit() {
     if (!nom.trim() || !file) return;
     setStep("uploading");
-    const base64 = preview.dataUrl.split(",")[1];
-    const extracted = await extractFromFile(base64, file.type, { fallbackName: nom || null });
-    const ext = file.name.split(".").pop().toLowerCase();
-    addOrdonnance(pharmacie.id, {
-      id: `qr-${Date.now()}`, fromName: nom.toUpperCase(),
-      subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
-      status: "nouveau", source: "qrcode",
-      attachments: [{ name: file.name, type: ext === "pdf" ? "pdf" : "image", size: `${(file.size / 1024).toFixed(0)} Ko`, dataUrl: preview.dataUrl }],
-      extracted: extracted || { nom: nom.toUpperCase(), carteVitale: null, medecin: null, date: null, medicaments: [] },
-    });
-    setStep("success");
+    try {
+      const base64 = preview.dataUrl.split(",")[1];
+      const extracted = await extractFromFile(base64, file.type, { fallbackName: nom || null });
+      const ext = file.name.split(".").pop().toLowerCase();
+
+      if (isDemoMode) {
+        // Mode démo : mock en mémoire
+        addOrdonnance(pharmacie.id, {
+          id: `qr-${Date.now()}`, fromName: nom.toUpperCase(),
+          subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
+          status: "nouveau", source: "qrcode",
+          attachments: [{ name: file.name, type: ext === "pdf" ? "pdf" : "image", size: `${(file.size / 1024).toFixed(0)} Ko`, dataUrl: preview.dataUrl }],
+          extracted: extracted || { nom: nom.toUpperCase(), carteVitale: null, medecin: null, date: null, medicaments: [] },
+        });
+      } else {
+        // Mode prod : sauvegarder dans Supabase
+        const sb = getSupabaseClient();
+        // 1. Créer l'ordonnance
+        const { data: ordo, error: ordoErr } = await sb.from("ordonnances").insert({
+          pharmacie_id: pharmacie.id,
+          source: "qrcode",
+          from_name: nom.toUpperCase(),
+          status: "nouveau",
+          patient_nom: extracted?.nom || nom.toUpperCase(),
+          patient_cv: extracted?.carteVitale || null,
+          medecin: extracted?.medecin || null,
+          medicaments: extracted?.medicaments || [],
+        }).select().single();
+        if (ordoErr) throw ordoErr;
+
+        // 2. Uploader le fichier dans Storage
+        await uploadOrdoFile(pharmacie.id, ordo.id, file, preview.dataUrl);
+      }
+      setStep("success");
+    } catch(e) {
+      console.error("[PatientPage]", e.message);
+      setStep("error");
+    }
   }
 
   if (step === "success") return (
@@ -2451,6 +2482,15 @@ function PatientPage({ pharmacie, onBack }) {
     <div style={{ minHeight: "100vh", background: "#f0f4ff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
       <div style={{ fontSize: 48, animation: "spin 1s linear infinite" }}>🔍</div>
       <div style={{ fontWeight: 700, fontSize: 16, color: couleur }}>Envoi en cours…</div>
+    </div>
+  );
+
+  if (step === "error") return (
+    <div style={{ minHeight: "100vh", background: "#fff5f5", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}>
+      <div style={{ fontSize: 48 }}>⚠️</div>
+      <div style={{ fontWeight: 700, fontSize: 16, color: "#dc2626", textAlign: "center" }}>Erreur lors de l'envoi</div>
+      <div style={{ fontSize: 13, color: "#64748b", textAlign: "center" }}>Veuillez réessayer ou envoyer l'ordonnance par email.</div>
+      <button onClick={() => setStep("form")} style={{ padding: "10px 24px", borderRadius: 20, border: "none", background: couleur, color: "#fff", fontWeight: 600, cursor: "pointer" }}>Réessayer</button>
     </div>
   );
 
@@ -3591,10 +3631,27 @@ export default function App() {
   const hashToken   = hashParams.get("access_token");
   const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
-  const initialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const initialRoute = isRecovery ? "reset-password" : initialPharmacie ? "patient" : "landing";
+  // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
+  const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
+  const initialRoute = isRecovery ? "reset-password" : (patientParam ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
-  const [patientPharmacieQR, setPatientPharmacieQR] = useState(initialPharmacie||null);
+  const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
+
+  // Charger la pharmacie depuis Supabase si mode prod et patientParam présent
+  useEffect(() => {
+    if (!patientParam) return;
+    if (isDemoMode) {
+      const ph = DB.pharmacies.find(p => p.id === patientParam);
+      if (!ph) setRoute("landing");
+      else setPatientPharmacieQR(ph);
+      return;
+    }
+    // Mode prod : charger depuis Supabase
+    fetchPharmacie(patientParam).then(ph => {
+      if (!ph) { setRoute("landing"); return; }
+      setPatientPharmacieQR(ph);
+    }).catch(() => setRoute("landing"));
+  }, []);
   const [checkoutPlan, setCheckoutPlan] = useState("standard");
   const [checkoutBilling, setCheckoutBilling] = useState("monthly");
 
