@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 15:44";
+const APP_VERSION = "v6.0 · 30/06/2026 16:06";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -740,9 +740,33 @@ let _tesseractLoading = false;
 let _tesseractReady = false;
 
 async function getTesseractWorker() {
-  // OCR désactivé en mode production (instabilité CDN)
-  // Le nom saisi par le patient est utilisé comme fallback
-  return null;
+  if (_tesseractReady && _tesseractWorker) return _tesseractWorker;
+  if (_tesseractLoading) {
+    await new Promise(resolve => {
+      const iv = setInterval(() => { if (_tesseractReady || !_tesseractLoading) { clearInterval(iv); resolve(); } }, 200);
+    });
+    return _tesseractWorker;
+  }
+  _tesseractLoading = true;
+  try {
+    // Tesseract.js v5 — import ESM depuis esm.sh (même CDN que qrcode, déjà autorisé)
+    const { createWorker } = await import('https://esm.sh/tesseract.js@5');
+    _tesseractWorker = await createWorker('fra', 1, {
+      logger: () => {}, // silencieux
+    });
+    await _tesseractWorker.setParameters({
+      preserve_interword_spaces: '1',
+      tessedit_pageseg_mode: '6', // assume un bloc de texte uniforme
+    });
+    _tesseractReady = true;
+    return _tesseractWorker;
+  } catch(e) {
+    console.warn('[Tesseract] Échec chargement:', e.message);
+    _tesseractLoading = false;
+    return null;
+  } finally {
+    _tesseractLoading = false;
+  }
 }
 
 
@@ -2990,6 +3014,53 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const canAdmin = userRole !== "vendeur";
 
   // Chargement initial + Realtime
+  // ─── OCR automatique dès réception ──────────────────────────────────────────
+  async function triggerOcrOnNew(ordos) {
+    const sb = getSupabaseClient();
+    for (const ordo of ordos) {
+      if (ordo.extracted?._ocrSuccess) continue;
+      const att = ordo.attachments?.[0];
+      if (!att?.path && !att?.dataUrl) continue;
+      try {
+        let dataUrl = att.dataUrl;
+        if (!dataUrl && att.path) {
+          const signedUrl = await getSignedUrl(att.path, 300);
+          if (!signedUrl) continue;
+          const resp = await fetch(signedUrl);
+          const blob = await resp.blob();
+          dataUrl = await new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+        }
+        if (!dataUrl) continue;
+        const base64 = dataUrl.split(",")[1];
+        const mimeType = att.type === "pdf" ? "application/pdf" : "image/jpeg";
+        const extracted = await extractFromFile(base64, mimeType, {
+          fallbackName: ordo.fromName || null,
+        });
+        if (extracted?._ocrSuccess) {
+          if (sb && !isDemoMode) {
+            await sb.from("ordonnances").update({
+              patient_nom:        extracted.nom            || null,
+              patient_cv:         extracted.carteVitale    || null,
+              medecin:            extracted.medecin         || null,
+              date_prescription:  extracted.date            || null,
+              medicaments:        extracted.medicaments     || [],
+              ocr_confidence:     extracted._confidence     || 0,
+            }).eq("id", ordo.id);
+          }
+          setOrdonnances(prev => prev.map(o =>
+            o.id === ordo.id ? { ...o, extracted } : o
+          ));
+        }
+      } catch(e) {
+        console.warn("[OCR auto]", ordo.id, e.message);
+      }
+    }
+  }
+
   // Préchauffer Tesseract dès le login (évite le délai au 1er scan)
   useEffect(() => { prewarmTesseract(); }, []);
 
@@ -3002,14 +3073,22 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         fetchOrdonnances(pharmacieId, 7),
       ]);
       if (ph) setPharmacie(ph);
-      if (ordos) setOrdonnances(ordos);
+      if (ordos) {
+        setOrdonnances(ordos);
+        // OCR sur les ordonnances déjà en base sans extraction
+        setTimeout(() => triggerOcrOnNew(ordos), 2000);
+      }
       setDashLoading(false);
       // Réaltime / pub-sub
       unsub = subscribeToPharmacy(pharmacieId, async () => {
         const updated = await fetchPharmacie(pharmacieId);
         if (updated) setPharmacie(updated);
         const updatedOrdos = await fetchOrdonnances(pharmacieId, 7);
-        if (updatedOrdos) setOrdonnances(updatedOrdos);
+        if (updatedOrdos) {
+          setOrdonnances(updatedOrdos);
+          // Déclencher OCR automatique sur les nouvelles ordonnances sans extraction
+          triggerOcrOnNew(updatedOrdos, pharmacieId);
+        }
       });
     }
     load();
