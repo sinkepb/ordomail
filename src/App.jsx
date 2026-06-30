@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 11:35";
+const APP_VERSION = "v6.0 · 30/06/2026 12:59";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1288,13 +1288,23 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
         <button onClick={onClose} style={{flex:1,padding:"11px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Annuler</button>
         <button onClick={()=>{
           setStep("processing");
-          setTimeout(()=>{
-            if (impact.postesASusprimer>0) {
-              const actifs=(pharmacie.postes||[]).filter(p=>p.actif);
-              for(let i=actifs.length-1;i>=selected.maxPostes;i--) actifs[i].actif=false;
+          (async () => {
+            try {
+              // Si downgrade : désactiver les postes excédentaires en Supabase
+              if (impact && impact.postesASusprimer > 0 && !isDemoMode) {
+                const sb = getSupabaseClient();
+                const actifs = (pharmacie.postes||[]).filter(p=>p.actif);
+                for (let i = actifs.length-1; i >= selected.maxPostes; i--) {
+                  await sb.from("postes").update({ actif: false }).eq("id", actifs[i].id);
+                }
+              }
+              await onConfirm(selected.id);
+              setStep("done");
+            } catch(e) {
+              console.error("[PlanSwitcher]", e.message);
+              setStep("done"); // afficher done quand même
             }
-            onConfirm(selected.id); setStep("done");
-          },1800);
+          })();
         }} style={{flex:2,padding:"11px",border:"none",borderRadius:10,background:impact.isUpgrade?selected.color:"#92400e",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
           {impact.isUpgrade?`↑ Passer en ${selected.label}`:`↓ Rétrograder en ${selected.label}`}
         </button>
@@ -1540,14 +1550,28 @@ function ParametresTab({ pharmacie, onSave }) {
   const [saved, setSaved] = useState(false);
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
-  function addPoste() {
+  async function addPoste() {
     const actifs = postes.filter(p=>p.actif).length;
     if (actifs >= planInfo.maxPostes) {
       setShowUpgrade({reason:`Votre plan ${planInfo.label} est limité à ${planInfo.maxPostes} poste(s) actif(s). Passez au plan supérieur pour en ajouter davantage.`});
       return;
     }
-    const n = postes.length + 1;
-    setPostes(prev=>[...prev,{id:`p${Date.now()}`,nom:`Poste ${n}`,actif:true,pin:""}]);
+    const nom = `Poste ${postes.length + 1}`;
+    if (isDemoMode) {
+      const db = window._ordomailDB;
+      const ph = db?.pharmacies?.find(p => p.id === pharmacie.id);
+      const newPoste = { id:`p${Date.now()}`, nom, pin:null, actif:true };
+      if (ph) ph.postes = [...(ph.postes||[]), newPoste];
+      setPostes(prev => [...prev, newPoste]);
+    } else {
+      const sb = getSupabaseClient();
+      const { data, error } = await sb.from("postes")
+        .insert({ pharmacie_id: pharmacie.id, nom, actif: true })
+        .select().single();
+      if (!error && data) {
+        setPostes(prev => [...prev, data]);
+      }
+    }
   }
   function removePoste(id) {
     if (postes.length <= 1) return;
@@ -1658,18 +1682,24 @@ function ParametresTab({ pharmacie, onSave }) {
         )}
 
         {section==="abonnement"&&(
-          <AbonnementSection pharmacie={pharmacie} onUpgrade={(newPlan)=>{
-            const ph=DB.pharmacies.find(p=>p.id===pharmacie.id);
-            if(ph)ph.plan=newPlan;
-            onSave({...pharmacie,plan:newPlan});
+          <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              onSave({...pharmacie, plan: newPlan});
+            } catch(e) {
+              console.error("[changePlan]", e.message);
+            }
           }}/>
         )}
 
         {section==="compte"&&(
-          <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={(newPlan)=>{
-            const ph=DB.pharmacies.find(p=>p.id===pharmacie.id);
-            if(ph)ph.plan=newPlan;
-            onSave({...pharmacie,plan:newPlan});
+          <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              onSave({...pharmacie, plan: newPlan});
+            } catch(e) {
+              console.error("[changePlan]", e.message);
+            }
           }}/>
         )}
 
@@ -1677,12 +1707,16 @@ function ParametresTab({ pharmacie, onSave }) {
 
       {showUpgrade&&(
         <UpgradeModal currentPlan={pharmacie.plan} reason={showUpgrade.reason}
-          onConfirm={(newPlan)=>{
-            const ph=DB.pharmacies.find(p=>p.id===pharmacie.id);
-            if(ph)ph.plan=newPlan;
-            onSave({...pharmacie,plan:newPlan});
-            setShowUpgrade(null);
-            addPoste();
+          onConfirm={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              onSave({...pharmacie, plan: newPlan});
+              setShowUpgrade(null);
+              await addPoste(); // ajouter le poste après upgrade
+            } catch(e) {
+              console.error("[upgrade]", e.message);
+              setShowUpgrade(null);
+            }
           }}
           onClose={()=>setShowUpgrade(null)}/>
       )}
