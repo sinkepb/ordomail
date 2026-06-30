@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 09:38";
+const APP_VERSION = "v6.0 · 30/06/2026 10:21";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -749,15 +749,21 @@ async function getTesseractWorker() {
   }
   _tesseractLoading = true;
   try {
-    const { createWorker } = await import('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js');
+    // Tesseract.js v4 — API stable, compatible navigateur
+    const { createWorker } = await import('https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.esm.min.js');
     _tesseractWorker = await createWorker('fra', 1, {
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-      langPath:   'https://tessdata.projectnaptha.com/4.0.0',
-      corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd-lstm.wasm.js',
+      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+      langPath:   'https://tessdata.projectnaptha.com/4.0.0_best',
+      corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core-simd.wasm.js',
       logger: () => {},
     });
-    await _tesseractWorker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '1' });
+    await _tesseractWorker.setParameters({ preserve_interword_spaces: '1' });
     _tesseractReady = true;
+  } catch(e) {
+    console.warn('[Tesseract] Chargement échoué:', e.message);
+    _tesseractLoading = false;
+    _tesseractReady = false;
+    return null;
   } finally {
     _tesseractLoading = false;
   }
@@ -866,6 +872,10 @@ async function extractFromFile(base64, mimeType, { fallbackName = null } = {}) {
 
     // OCR Tesseract
     const worker = await getTesseractWorker();
+    if (!worker) {
+      // OCR non disponible — utiliser le fallback nom
+      return { nom: fallbackName, carteVitale: null, medecin: null, date: null, medicaments: [], _ocrSuccess: false, _confidence: 0 };
+    }
     const { data: { text, confidence } } = await worker.recognize(`data:image/png;base64,${processed}`);
 
     // Confiance insuffisante → fallback nom
@@ -2705,7 +2715,8 @@ body {
   align-items: center; justify-content: center;
   padding: 4mm 0;
 }
-.nfc-label { font-size: 8px; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+.nfc-label { font-size: 18px; font-weight: 900; color: #1a1a1a; margin-bottom: 10px; text-align: center; white-space: nowrap; }
+.nfc-sublabel { font-size: 18px; font-weight: 900; color: #1a1a1a; margin-bottom: 10px; text-align: center; }
 .nfc-card {
   border: 1.5px solid #e2e8f0; border-radius: 12px;
   padding: 12px 20px; display: flex; align-items: center;
@@ -2740,23 +2751,19 @@ body {
 </div>
 
 <div class="nfc-section">
-  <div class="nfc-label">ou approchez votre téléphone</div>
-  <div class="nfc-card">
-    <svg width="50" height="50" viewBox="0 0 50 50" fill="none">
-      <circle cx="25" cy="25" r="24" fill="${cp}"/>
-      <circle cx="25" cy="25" r="3" fill="#fff"/>
-      <path d="M25 22 C25 18 28 15 32 15" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-      <path d="M25 19 C25 13 30 9 36 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".7"/>
-      <path d="M25 16 C25 8 32 3 40 3" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".4"/>
-      <text x="10" y="44" font-family="Arial" font-weight="900" font-size="9" fill="#fff">NFC</text>
+  <div class="nfc-ou">ou</div>
+  <div class="nfc-titre">approchez votre téléphone</div>
+  <div class="nfc-row">
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="31" fill="${cp}"/>
+      <circle cx="32" cy="32" r="4" fill="#fff"/>
+      <path d="M32 28 C32 22 36 18 42 18" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <path d="M32 24 C32 16 38 10 46 10" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".7"/>
+      <path d="M32 20 C32 10 40 4 50 4" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".4"/>
     </svg>
-    <div>
-      <div class="nfc-title">Tag NFC intégré</div>
-      <div class="nfc-sub">
-        Approchez votre téléphone pour ouvrir<br>
-        la page automatiquement.<br>
-        <strong>Aucune application requise.</strong>
-      </div>
+    <div class="nfc-texte">
+      <div class="nfc-ligne1">Ouvre la page automatiquement</div>
+      <div class="nfc-ligne2">Aucune application requise</div>
     </div>
   </div>
 </div>
@@ -2807,13 +2814,7 @@ body {
           {/* Nom pharmacie */}
           <div style={{ textAlign: "center", fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{pharmacie?.nom}</div>
 
-          {/* Lien discret sans URL complète */}
-          <div style={{ margin: "8px 0 12px", textAlign: "center" }}>
-            <a href={qrUrl} target="_blank" rel="noreferrer"
-              style={{ fontSize: 11, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
-              🔗 Tester le lien patient
-            </a>
-          </div>
+
 
           {/* Avertissement local */}
           {isLocal && (
@@ -2823,7 +2824,7 @@ body {
               <div style={{ fontWeight: 700, marginBottom: 4 }}>Pour tester sur téléphone :</div>
               <div>1. Repérer l'adresse <strong>Network</strong> dans le terminal après <code style={{background:"#fff",padding:"1px 4px",borderRadius:3}}>npm run dev</code></div>
               <div>2. Elle ressemble à : <code style={{background:"#fff",padding:"2px 5px",borderRadius:3}}>http://192.168.1.X:5173</code></div>
-              <div>3. Ouvrir cette URL sur votre téléphone + ajouter <code style={{background:"#fff",padding:"1px 4px",borderRadius:3}}>?patient={pharmacie?.id}</code></div>
+              <div>3. Scanner le QR code depuis votre téléphone sur le même réseau Wi-Fi</div>
             </div>
           )}
 
@@ -3453,10 +3454,10 @@ function AppLogin({ onBack, onGoToPricing }) {
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>💳 Abonnements</button>
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={()=>setSession(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
           </div>
         </div>
-        <AdminDashboard onLogout={()=>setSession(null)}/>
+        <AdminDashboard onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }}/>
       </div>
     );
     return (
@@ -3469,10 +3470,10 @@ function AppLogin({ onBack, onGoToPricing }) {
             {session.userRole==="vendeur"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.7)",padding:"2px 8px",borderRadius:12}}>🖥️ {session.posteNom||"Vendeur"}</span>}
             {session.userRole==="admin"&&<button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",padding:"4px 11px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>💳</button>}
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={()=>setSession(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
+            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
           </div>
         </div>
-        <PharmacieDashboard pharmacieId={session.pharmacieId} onLogout={()=>setSession(null)} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <PharmacieDashboard pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }
