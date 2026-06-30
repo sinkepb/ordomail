@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 04:10";
+const APP_VERSION = "v6.0 · 30/06/2026 06:35";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -3068,6 +3068,9 @@ function LoginTabContent({ onLogin }) {
   const [password, setPassword] = useState("");
   const [emailError, setEmailError] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function handlePSCLogin() {
     setPscLoading(true);
@@ -3206,6 +3209,52 @@ function LoginTabContent({ onLogin }) {
         {isDemoMode && (
           <div style={{marginTop:8,fontSize:11,color:"#aaa",lineHeight:1.8,textAlign:"center"}}>
             Démo : <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>contact@pharmaciecentrale.fr</code> / <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>demo123</code>
+          </div>
+        )}
+        {/* Lien mot de passe oublié — visible en prod */}
+        <div style={{marginTop:10,textAlign:"center"}}>
+          <button onClick={()=>{setShowReset(!showReset);setResetSent(false);}}
+            style={{background:"none",border:"none",color:"#6b7280",fontSize:12,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+            Mot de passe oublié ?
+          </button>
+        </div>
+        {/* Formulaire de réinitialisation */}
+        {showReset && !isDemoMode && (
+          <div style={{marginTop:12,padding:"14px 16px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10}}>
+            {resetSent ? (
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:28,marginBottom:8}}>📧</div>
+                <div style={{fontWeight:700,fontSize:14,color:"#15803d",marginBottom:4}}>Email envoyé !</div>
+                <div style={{fontSize:12,color:"#64748b",lineHeight:1.6}}>
+                  Vérifiez votre boîte mail et cliquez le lien pour réinitialiser votre mot de passe.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{fontSize:12,color:"#374151",fontWeight:600,marginBottom:8}}>Réinitialiser le mot de passe</div>
+                <Input label="Votre email" value={email} onChange={setEmail} type="email" placeholder="contact@mapharmacie.fr" icon="✉️"/>
+                <Btn onClick={async ()=>{
+                  if (!email) return;
+                  setResetLoading(true);
+                  try {
+                    const { createClient } = await import("@supabase/supabase-js");
+                    const sb = createClient(
+                      import.meta.env.VITE_SUPABASE_URL,
+                      import.meta.env.VITE_SUPABASE_ANON_KEY
+                    );
+                    await sb.auth.resetPasswordForEmail(email, {
+                      redirectTo: "https://ordomail.vercel.app",
+                    });
+                    setResetSent(true);
+                  } catch(e) {
+                    setEmailError("Erreur lors de l'envoi — vérifiez votre email");
+                  }
+                  setResetLoading(false);
+                }} disabled={resetLoading||!email} style={{width:"100%",justifyContent:"center",marginTop:4}}>
+                  {resetLoading?"Envoi en cours…":"Envoyer le lien →"}
+                </Btn>
+              </>
+            )}
           </div>
         )}
       </div>    </>
