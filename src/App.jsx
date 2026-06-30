@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 10:21";
+const APP_VERSION = "v6.0 · 30/06/2026 10:47";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -740,37 +740,12 @@ let _tesseractLoading = false;
 let _tesseractReady = false;
 
 async function getTesseractWorker() {
-  if (_tesseractReady && _tesseractWorker) return _tesseractWorker;
-  if (_tesseractLoading) {
-    await new Promise(resolve => {
-      const iv = setInterval(() => { if (_tesseractReady) { clearInterval(iv); resolve(); } }, 150);
-    });
-    return _tesseractWorker;
-  }
-  _tesseractLoading = true;
-  try {
-    // Tesseract.js v4 — API stable, compatible navigateur
-    const { createWorker } = await import('https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.esm.min.js');
-    _tesseractWorker = await createWorker('fra', 1, {
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
-      langPath:   'https://tessdata.projectnaptha.com/4.0.0_best',
-      corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core-simd.wasm.js',
-      logger: () => {},
-    });
-    await _tesseractWorker.setParameters({ preserve_interword_spaces: '1' });
-    _tesseractReady = true;
-  } catch(e) {
-    console.warn('[Tesseract] Chargement échoué:', e.message);
-    _tesseractLoading = false;
-    _tesseractReady = false;
-    return null;
-  } finally {
-    _tesseractLoading = false;
-  }
-  return _tesseractWorker;
+  // OCR désactivé en mode production (instabilité CDN)
+  // Le nom saisi par le patient est utilisé comme fallback
+  return null;
 }
 
-// Pré-traitement image : upscale + contraste pour meilleure reconnaissance
+
 async function preprocessImage(base64, mimeType) {
   return new Promise(resolve => {
     const img = new Image();
@@ -2444,23 +2419,26 @@ function PatientPage({ pharmacie, onBack }) {
           extracted: extracted || { nom: nom.toUpperCase(), carteVitale: null, medecin: null, date: null, medicaments: [] },
         });
       } else {
-        // Mode prod : sauvegarder dans Supabase
-        const sb = getSupabaseClient();
-        // 1. Créer l'ordonnance
-        const { data: ordo, error: ordoErr } = await sb.from("ordonnances").insert({
-          pharmacie_id: pharmacie.id,
-          source: "qrcode",
-          from_name: nom.toUpperCase(),
-          status: "nouveau",
-          patient_nom: extracted?.nom || nom.toUpperCase(),
-          patient_cv: extracted?.carteVitale || null,
-          medecin: extracted?.medecin || null,
-          medicaments: extracted?.medicaments || [],
-        }).select().single();
-        if (ordoErr) throw ordoErr;
+        // Mode prod : Edge Function submit-ordonnance (bypass RLS via service_role)
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const formData = new FormData();
+        formData.append("pharmacie_id", pharmacie.id);
+        formData.append("from_name", nom.toUpperCase());
+        formData.append("patient_nom", extracted?.nom || nom.toUpperCase());
+        formData.append("patient_cv", extracted?.carteVitale || "");
+        formData.append("medecin", extracted?.medecin || "");
+        formData.append("medicaments", JSON.stringify(extracted?.medicaments || []));
+        formData.append("file", file, file.name);
 
-        // 2. Uploader le fichier dans Storage
-        await uploadOrdoFile(pharmacie.id, ordo.id, file, preview.dataUrl);
+        const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Erreur ${res.status}`);
+        }
       }
       setStep("success");
     } catch(e) {
