@@ -50,22 +50,37 @@ export function registerDB(db) {
 // ─── Helper interne : récupérer la pharmacie liée à un user ──────────────────
 async function _fetchPharmacieForUser(sb, userId) {
   // 1. Trouver le lien pharmacie_users
+  // .maybeSingle() retourne null (pas 406) si aucune ligne trouvée
   const { data: link, error: linkErr } = await sb
     .from('pharmacie_users')
     .select('pharmacie_id, role')
     .eq('id', userId)
-    .single();
-  if (linkErr || !link) return null;
+    .maybeSingle();
+
+  if (linkErr) {
+    console.error('[OrdoMail] pharmacie_users query error:', linkErr.message);
+    return null;
+  }
+  if (!link) {
+    // Aucune pharmacie liée à cet utilisateur
+    // Peut arriver si l'inscription n'est pas finalisée
+    console.warn('[OrdoMail] Aucune pharmacie liée pour userId:', userId);
+    return null;
+  }
 
   // 2. Récupérer la pharmacie + postes
   const { data: ph, error: phErr } = await sb
     .from('pharmacies')
     .select('*, postes(*)')
     .eq('id', link.pharmacie_id)
-    .single();
-  if (phErr || !ph) return null;
+    .maybeSingle();
 
-  return { ...ph, userRole: link.role };
+  if (phErr) {
+    console.error('[OrdoMail] pharmacies query error:', phErr.message);
+    return null;
+  }
+
+  return ph ? { ...ph, userRole: link.role } : null;
 }
 
 export async function authSignInEmail(email, password) {
@@ -79,6 +94,11 @@ export async function authSignInEmail(email, password) {
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { error };
   const pharmacie = await _fetchPharmacieForUser(sb, data.user.id);
+  if (!pharmacie) {
+    // Utilisateur authentifié mais pas encore lié à une pharmacie
+    // Créer manuellement la ligne pharmacie_users dans Supabase Dashboard
+    return { error: new Error('Compte non configuré — aucune pharmacie liée à cet email. Contactez le support OrdoMail.') };
+  }
   return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id };
 }
 
