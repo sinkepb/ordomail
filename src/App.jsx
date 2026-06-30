@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 08:33";
+const APP_VERSION = "v6.0 · 30/06/2026 09:38";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2648,169 +2648,129 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
   }
 
   async function handlePrint() {
-    // Récupérer le QR code depuis l'img rendue
     const qrImg = document.querySelector("#qr-print-img");
     let qrSrc = qrImg?.src || "";
-
-    // Si pas encore chargé, générer via esm.sh
-    if (!qrSrc) {
+    if (!qrSrc || qrSrc.startsWith("data:image/png;base64,iVBOR") === false) {
       try {
         const mod = await import("https://esm.sh/qrcode@1.5.4");
         const QR = mod.default || mod;
         qrSrc = await QR.toDataURL(qrUrl, {
-          errorCorrectionLevel: "H", // H = haute correction → mieux à l'impression
-          margin: 2, width: 400,
+          errorCorrectionLevel: "H", margin: 2, width: 400,
           color: { dark: "#1a3a6e", light: "#ffffff" },
         });
       } catch(e) { qrSrc = ""; }
     }
 
     const nom = pharmacie?.nom || "Votre Pharmacie";
-    const couleurPrint = couleur || "#1a3a6e";
+    const cp = couleur || "#1a3a6e";
 
     const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8">
-<title>QR Code + NFC — ${nom}</title>
+<title>QR + NFC — ${nom}</title>
 <style>
-@page { size: A4; margin: 15mm; }
+@page { size: A4 portrait; margin: 12mm; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #1a1a1a; }
-
-/* ── Page A4 divisée en 2 sections ── */
-.page { width: 100%; min-height: 257mm; display: flex; flex-direction: column; gap: 0; }
-
-/* ── Section QR (haut de page) ── */
+body {
+  font-family: Arial, sans-serif; background: #fff;
+  width: 186mm; /* 210 - 2×12mm */
+  height: 273mm; /* 297 - 2×12mm */
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+/* ── QR (60% de la page) ── */
 .qr-section {
-  flex: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 20mm 15mm 10mm;
+  flex: 0 0 60%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
   border-bottom: 2px dashed #cbd5e1;
+  padding: 6mm 0 4mm;
 }
-.logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.logo-icon { font-size: 28px; }
-.logo-text { font-size: 28px; font-weight: 900; color: ${couleurPrint}; letter-spacing: -0.5px; }
-.tagline { font-size: 10px; color: #94a3b8; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 20px; }
+.logo { font-size: 20px; font-weight: 900; color: ${cp}; margin-bottom: 2px; }
+.tagline { font-size: 8px; color: #94a3b8; letter-spacing: 2.5px; text-transform: uppercase; margin-bottom: 8px; }
 .qr-frame {
-  border: 3px solid ${couleurPrint};
-  border-radius: 16px; padding: 14px; background: #fff;
-  box-shadow: 0 4px 20px rgba(26,58,110,0.15);
-  margin-bottom: 18px;
+  border: 2.5px solid ${cp}; border-radius: 12px;
+  padding: 10px; background: #fff; margin-bottom: 10px;
 }
-.qr-frame img { width: 200px; height: 200px; display: block; }
-.pharma-name { font-size: 22px; font-weight: 900; color: #1a1a1a; margin-bottom: 8px; text-align: center; }
-.instruction {
-  font-size: 13px; color: #475569; line-height: 1.7; text-align: center;
-  max-width: 320px; margin-bottom: 14px;
-}
-.step { display: inline-flex; align-items: center; gap: 6px; margin: 0 4px; }
-.step-num { width: 20px; height: 20px; border-radius: 50%; background: ${couleurPrint}; color: #fff; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.url-box {
-  font-size: 9px; font-family: monospace; color: #94a3b8; word-break: break-all;
-  padding: 5px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;
-  max-width: 340px; text-align: center;
-}
-.badges { display: flex; gap: 10px; margin-top: 12px; align-items: center; justify-content: center; }
-.badge { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
-.badge-hds { background: #dcfce7; color: #166534; }
-.badge-sans-app { background: #dbeafe; color: #1e40af; }
-
-/* ── Section NFC (bas de page) ── */
+.qr-frame img { width: 160px; height: 160px; display: block; }
+.pharma { font-size: 18px; font-weight: 900; margin-bottom: 6px; text-align: center; }
+.instr { font-size: 11px; color: #475569; line-height: 1.7; text-align: center; margin-bottom: 8px; }
+.badges { display: flex; gap: 8px; }
+.badge { font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+.b1 { background: #dcfce7; color: #166534; }
+.b2 { background: #dbeafe; color: #1e40af; }
+/* ── NFC (40% de la page) ── */
 .nfc-section {
-  padding: 10mm 15mm 15mm;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 0 0 40%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 4mm 0;
 }
-.nfc-label { font-size: 9px; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
+.nfc-label { font-size: 8px; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
 .nfc-card {
-  border: 2px solid #e2e8f0; border-radius: 16px; padding: 16px 24px;
-  display: flex; align-items: center; gap: 20px; max-width: 420px; width: 100%;
-  background: #f8fafc;
+  border: 1.5px solid #e2e8f0; border-radius: 12px;
+  padding: 12px 20px; display: flex; align-items: center;
+  gap: 16px; width: 160mm; background: #f8fafc;
 }
-.nfc-logo {
-  width: 56px; height: 56px; flex-shrink: 0;
-}
-/* Logo NFC en SVG inline */
-.nfc-text-block { flex: 1; }
-.nfc-title { font-size: 16px; font-weight: 900; color: #1a1a1a; margin-bottom: 4px; }
-.nfc-sub { font-size: 12px; color: #64748b; line-height: 1.6; }
-.nfc-wave { font-size: 32px; margin-bottom: 6px; }
-
+.nfc-title { font-size: 14px; font-weight: 900; margin-bottom: 3px; }
+.nfc-sub { font-size: 11px; color: #64748b; line-height: 1.6; }
 @media print {
   .no-print { display: none !important; }
   body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
-</style></head>
-<body>
-<div class="page">
+</style></head><body>
 
-  <!-- ═══ SECTION QR CODE ═══ -->
-  <div class="qr-section">
-    <div class="logo-row">
-      <span class="logo-icon">💊</span>
-      <span class="logo-text">OrdoMail</span>
-    </div>
-    <div class="tagline">Réception d'ordonnances</div>
-
-    <div class="qr-frame">
-      ${qrSrc ? `<img src="${qrSrc}" alt="QR Code" />` : `<div style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#dc2626;font-size:12px;text-align:center">QR non disponible<br>vérifiez la connexion</div>`}
-    </div>
-
-    <div class="pharma-name">${nom}</div>
-
-    <div class="instruction">
-      <span class="step"><span class="step-num">1</span> Ouvrez l'appareil photo</span>
-      <span class="step"><span class="step-num">2</span> Visez ce code</span>
-      <span class="step"><span class="step-num">3</span> Envoyez votre ordonnance</span>
-    </div>
-
-    <div class="url-box">${qrUrl}</div>
-
-    <div class="badges">
-      <span class="badge badge-hds">✅ Sécurisé HDS</span>
-      <span class="badge badge-sans-app">📱 Sans application</span>
-    </div>
+<div class="qr-section">
+  <div class="logo">💊 OrdoMail</div>
+  <div class="tagline">Réception d'ordonnances</div>
+  <div class="qr-frame">
+    ${qrSrc
+      ? `<img src="${qrSrc}" alt="QR Code"/>`
+      : `<div style="width:160px;height:160px;display:flex;align-items:center;justify-content:center;color:#dc2626;font-size:11px;text-align:center">QR non disponible</div>`
+    }
   </div>
+  <div class="pharma">${nom}</div>
+  <div class="instr">
+    Scannez ce code avec l'appareil photo de votre téléphone<br>
+    pour envoyer votre ordonnance — <strong>sans application</strong>
+  </div>
+  <div class="badges">
+    <span class="badge b1">✅ Sécurisé HDS</span>
+    <span class="badge b2">📱 Sans application</span>
+  </div>
+</div>
 
-  <!-- ═══ SECTION NFC ═══ -->
-  <div class="nfc-section">
-    <div class="nfc-label">ou approchez votre téléphone</div>
-    <div class="nfc-card">
-      <!-- Logo NFC SVG -->
-      <svg class="nfc-logo" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="28" cy="28" r="27" fill="#1a3a6e" stroke="#1a3a6e" stroke-width="0"/>
-        <!-- Ondes NFC -->
-        <path d="M18 28 C18 22 22 17 28 17" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-        <path d="M15 28 C15 19.5 21 13 28 13" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.7"/>
-        <path d="M12 28 C12 17 19 9 28 9" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.4"/>
-        <!-- Point central -->
-        <circle cx="28" cy="28" r="3" fill="#fff"/>
-        <!-- Lettre N -->
-        <text x="26" y="44" font-family="Arial" font-weight="900" font-size="9" fill="#fff" letter-spacing="1">NFC</text>
-      </svg>
-
-      <div class="nfc-text-block">
-        <div class="nfc-title">Paiement NFC</div>
-        <div class="nfc-sub">
-          Approchez votre téléphone<br>
-          pour ouvrir la page automatiquement.<br>
-          <strong>Aucune application requise.</strong>
-        </div>
+<div class="nfc-section">
+  <div class="nfc-label">ou approchez votre téléphone</div>
+  <div class="nfc-card">
+    <svg width="50" height="50" viewBox="0 0 50 50" fill="none">
+      <circle cx="25" cy="25" r="24" fill="${cp}"/>
+      <circle cx="25" cy="25" r="3" fill="#fff"/>
+      <path d="M25 22 C25 18 28 15 32 15" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <path d="M25 19 C25 13 30 9 36 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".7"/>
+      <path d="M25 16 C25 8 32 3 40 3" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".4"/>
+      <text x="10" y="44" font-family="Arial" font-weight="900" font-size="9" fill="#fff">NFC</text>
+    </svg>
+    <div>
+      <div class="nfc-title">Tag NFC intégré</div>
+      <div class="nfc-sub">
+        Approchez votre téléphone pour ouvrir<br>
+        la page automatiquement.<br>
+        <strong>Aucune application requise.</strong>
       </div>
     </div>
   </div>
-
 </div>
-<button class="no-print" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#1a3a6e;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2)">
-  🖨️ Imprimer / Sauvegarder PDF
+
+<button class="no-print" onclick="window.print()"
+  style="position:fixed;bottom:16px;right:16px;background:#1a3a6e;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer">
+  🖨️ Imprimer / PDF
 </button>
 </body></html>`;
 
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const blobUrl = URL.createObjectURL(blob);
     const win = window.open(blobUrl, "_blank");
-    if (win) {
-      win.focus();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-    }
+    if (win) { win.focus(); setTimeout(() => URL.revokeObjectURL(blobUrl), 30000); }
   }
 
   return (
@@ -2847,11 +2807,12 @@ body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #1a1a
           {/* Nom pharmacie */}
           <div style={{ textAlign: "center", fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{pharmacie?.nom}</div>
 
-          {/* URL + lien */}
-          <div style={{ margin: "10px 0 14px", padding: "8px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: "#475569", flex: 1, wordBreak: "break-all" }}>{qrUrl}</span>
+          {/* Lien discret sans URL complète */}
+          <div style={{ margin: "8px 0 12px", textAlign: "center" }}>
             <a href={qrUrl} target="_blank" rel="noreferrer"
-              style={{ fontSize: 11, color: "#3b82f6", fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>🔗</a>
+              style={{ fontSize: 11, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
+              🔗 Tester le lien patient
+            </a>
           </div>
 
           {/* Avertissement local */}
