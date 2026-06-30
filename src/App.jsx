@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 08:11";
+const APP_VERSION = "v6.0 · 30/06/2026 08:17";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1860,57 +1860,38 @@ function BillingAdmin() {
 
 
 // ─── QR Code généré en pur SVG — aucune dépendance externe ──────────────────
-// Algorithme QR simplifié (matrice de modules) — lisible par tous les téléphones
+// QRCode — génération via qrcode npm (ESM) importé dynamiquement depuis esm.sh
 function QRCode({ url, size = 220, color = "#1a3a6e" }) {
   const [dataUrl, setDataUrl] = useState(null);
   const [error, setError]     = useState(false);
-  const canvasRef             = useRef(null);
 
   useEffect(() => {
     if (!url) return;
     setDataUrl(null); setError(false);
 
-    function generate(QR) {
-      const canvas = document.createElement("canvas");
-      // QRCode.toCanvas signature : (canvas, text, options, callback)
-      QR.toCanvas(canvas, url, {
-        errorCorrectionLevel: "M",
-        margin: 2,
-        width: size,
-        color: { dark: color, light: "#ffffff" },
-      }, function(err) {
-        if (err) { setError(true); return; }
-        setDataUrl(canvas.toDataURL("image/png"));
-      });
-    }
-
-    // La librairie qrcode UMD expose le global "QRCode" (pas window.QRCode)
-    if (typeof QRCode !== "undefined") {
-      generate(QRCode);
-    } else if (window.QRCode) {
-      generate(window.QRCode);
-    } else {
-      // Charger depuis CDN
-      const existing = document.getElementById("qrcode-cdn-script");
-      if (existing) {
-        // Script déjà en cours de chargement — attendre
-        existing.addEventListener("load", () => {
-          generate(window.QRCode || QRCode);
+    // qrcode via esm.sh — transforme le package npm en ESM navigateur natif
+    // toDataURL retourne une Promise avec le PNG en base64
+    import("https://esm.sh/qrcode@1.5.4")
+      .then(mod => {
+        const QR = mod.default || mod;
+        return QR.toDataURL(url, {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          width: size,
+          color: { dark: color, light: "#ffffff" },
+          type: "image/png",
         });
-        return;
-      }
-      const s = document.createElement("script");
-      s.id = "qrcode-cdn-script";
-      s.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js";
-      s.onload = () => generate(window.QRCode);
-      s.onerror = () => setError(true);
-      document.head.appendChild(s);
-    }
+      })
+      .then(dataURL => setDataUrl(dataURL))
+      .catch(err => {
+        console.error("[QRCode]", err);
+        setError(true);
+      });
   }, [url, color, size]);
 
   if (error) return (
     <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
-      ⚠️ Erreur QR — vérifiez la connexion
+      ⚠️ Erreur génération QR
     </div>
   );
 
@@ -1924,9 +1905,12 @@ function QRCode({ url, size = 220, color = "#1a3a6e" }) {
   );
 
   return (
-    <img src={dataUrl} width={size} height={size}
+    <img
+      src={dataUrl}
+      width={size}
+      height={size}
       style={{display:"block",borderRadius:4}}
-      alt="QR Code ordonnances"
+      alt="QR Code"
     />
   );
 }
