@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 12:59";
+const APP_VERSION = "v6.0 · 30/06/2026 13:46";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1551,9 +1551,11 @@ function ParametresTab({ pharmacie, onSave }) {
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   async function addPoste() {
+    // Utiliser le planInfo à jour (basé sur pharmacie.plan actuel)
+    const currentPlanInfo = PLAN_LIMITS[pharmacie.plan] || planInfo;
     const actifs = postes.filter(p=>p.actif).length;
-    if (actifs >= planInfo.maxPostes) {
-      setShowUpgrade({reason:`Votre plan ${planInfo.label} est limité à ${planInfo.maxPostes} poste(s) actif(s). Passez au plan supérieur pour en ajouter davantage.`});
+    if (actifs >= currentPlanInfo.maxPostes) {
+      setShowUpgrade({reason:`Votre plan ${currentPlanInfo.label} est limité à ${currentPlanInfo.maxPostes} poste(s) actif(s). Passez au plan supérieur pour en ajouter davantage.`});
       return;
     }
     const nom = `Poste ${postes.length + 1}`;
@@ -1685,7 +1687,17 @@ function ParametresTab({ pharmacie, onSave }) {
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              onSave({...pharmacie, plan: newPlan});
+              // Recharger la pharmacie depuis Supabase pour avoir le bon plan
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) {
+                  setPharmacie(ph);
+                  setPostes(ph.postes || []);
+                }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
             } catch(e) {
               console.error("[changePlan]", e.message);
             }
@@ -1696,10 +1708,14 @@ function ParametresTab({ pharmacie, onSave }) {
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              onSave({...pharmacie, plan: newPlan});
-            } catch(e) {
-              console.error("[changePlan]", e.message);
-            }
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
+            } catch(e) { console.error("[changePlan]", e.message); }
           }}/>
         )}
 
@@ -1710,9 +1726,16 @@ function ParametresTab({ pharmacie, onSave }) {
           onConfirm={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              onSave({...pharmacie, plan: newPlan});
               setShowUpgrade(null);
-              await addPoste(); // ajouter le poste après upgrade
+              // Recharger depuis Supabase
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
+              await addPoste();
             } catch(e) {
               console.error("[upgrade]", e.message);
               setShowUpgrade(null);
