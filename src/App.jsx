@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 15:28";
+const APP_VERSION = "v6.0 · 30/06/2026 15:44";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1964,8 +1964,8 @@ function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
 
 // ─── Thumbnail fichier avec chargement signed URL ────────────────────────────
 function AttachmentThumb({ att, style }) {
-  const [src, setSrc] = React.useState(att?.dataUrl || null);
-  React.useEffect(() => {
+  const [src, setSrc] = useState(att?.dataUrl || null);
+  useEffect(() => {
     if (src || !att?.path) return;
     getSignedUrl(att.path, 3600).then(url => { if (url) setSrc(url); });
   }, [att?.path]);
