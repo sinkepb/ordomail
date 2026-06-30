@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 13:46";
+const APP_VERSION = "v6.0 · 30/06/2026 15:28";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1962,6 +1962,18 @@ function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
 }
 
 
+// ─── Thumbnail fichier avec chargement signed URL ────────────────────────────
+function AttachmentThumb({ att, style }) {
+  const [src, setSrc] = React.useState(att?.dataUrl || null);
+  React.useEffect(() => {
+    if (src || !att?.path) return;
+    getSignedUrl(att.path, 3600).then(url => { if (url) setSrc(url); });
+  }, [att?.path]);
+  if (!src) return <div style={{...style, background:"#f0f0f0", display:"flex", alignItems:"center", justifyContent:"center", color:"#aaa", fontSize:12}}>⏳</div>;
+  return <img src={src} alt="" style={style}/>;
+}
+
+
 // ─── Ordo Card — vue grille ───────────────────────────────────────────────────
 
 // ─── Print Confirm Modal ──────────────────────────────────────────────────────
@@ -2095,10 +2107,17 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
     </div>`;
 
     if (hasFile && att.type === "image") {
-      // ── Cas 1 : image JPEG/PNG ───────────────────────────────────────────────
+      // ── Cas 1 : image JPEG/PNG — attendre le chargement avant print ──────────
       printArea.innerHTML = banner + `<div style="text-align:center;padding:8px">
-        <img src="${att.dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
+        <img id="ordo-print-img" src="${att.dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
       </div>`;
+      // Attendre que l'image soit chargée avant d'imprimer
+      const imgEl = document.getElementById("ordo-print-img");
+      await new Promise(resolve => {
+        if (imgEl.complete) resolve();
+        else { imgEl.onload = resolve; imgEl.onerror = resolve; }
+        setTimeout(resolve, 3000); // timeout de sécurité
+      });
       window.print();
       setTimeout(() => { printArea.innerHTML = ""; setStep("confirm"); }, 500);
 
@@ -2262,9 +2281,10 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
             {isNew ? "🔔 À TRAITER" : "✓ IMPRIMÉE"}
           </span>
-          {ordo.source === "qrcode" && (
-            <span style={{ fontSize: 9, fontWeight: 700, background: isNew ? "rgba(255,255,255,0.2)" : accent.border, color: isNew ? "#fff" : accent.avatar, borderRadius: 10, padding: "1px 7px" }}>📱 QR</span>
-          )}
+          {/* Icône source : ✉️ email / 📱 QR / ⬇️ upload */}
+          <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
+            {ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️"}
+          </span>
         </div>
         <span style={{ fontSize: 11, color: isNew ? "rgba(255,255,255,0.8)" : accent.avatar + "99" }}>{timeAgo(ordo.receivedAt)}</span>
       </div>
@@ -2297,12 +2317,12 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
         </div>
 
         {/* Miniature ordonnance si dispo */}
-        {ordo.attachments[0]?.dataUrl && ordo.attachments[0].type === "image" && (
+        {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
           <div style={{ marginBottom: 14, cursor: "pointer" }} onClick={onView}>
-            <img src={ordo.attachments[0].dataUrl} alt="" style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }} />
+            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }} />
           </div>
         )}
-        {ordo.attachments[0]?.dataUrl && ordo.attachments[0].type === "pdf" && (
+        {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
           <div onClick={onView} style={{ marginBottom: 14, background: "#f5f5f5", borderRadius: 8, padding: "10px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
             <div style={{ fontSize: 24 }}>📄</div>
             <div style={{ fontSize: 11, color: "#888" }}>{ordo.attachments[0].name}</div>
@@ -2320,14 +2340,8 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
             }}>👁 Voir</button>
           ) : (
             <div style={{ flex: 1, display: "flex", gap: 5 }}>
-              <button onClick={() => uploadRef.current.click()} style={{
-                flex: 1, padding: "9px", border: "1.5px dashed #c8d5e8", borderRadius: 9,
-                background: "#fafbff", color: "#888", fontWeight: 600, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-              }}>
-                📎 Importer
-                <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
-                  onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }} />
-              </button>
+              <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
                 <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank"); }}
                   title="Voir la fiche ordonnance PDF"
