@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 01/07/2026 10:58";
+const APP_VERSION = "v6.0 · 01/07/2026 11:04";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2088,6 +2088,8 @@ function ViewerModal({ att, onClose }) {
 function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   const nom    = ordo.extracted?.nom || ordo.fromName;
   const email  = ordo.fromEmail || "";
+  const medecin = ordo.extracted?.medecin || "";
+  const date    = ordo.extracted?.date    || "";
   const medicaments = ordo.extracted?.medicaments || [];
   const [step, setStep] = useState("ready");
 
@@ -2370,11 +2372,11 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
             </div>
           )}
           <button onClick={onPrint} style={{
-            flex: 2, padding: "9px", border: "none", borderRadius: 9,
-            background: isNew ? accent.bandeau : "#78909c", color: "#fff",
-            fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-            boxShadow: isNew ? `0 3px 10px ${accent.avatar}44` : "none",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            flex: 1, padding: "13px 8px", border: "none", borderRadius: 9,
+            background: isNew ? accent.bandeau : "#475569", color: "#fff",
+            fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
+            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
           }}>
             🖨️ Imprimer
           </button>
