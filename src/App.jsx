@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 30/06/2026 16:57";
+const APP_VERSION = "v6.0 · 01/07/2026 10:54";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2450,261 +2450,250 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 // PAGE PATIENT
 // ═══════════════════════════════════════════════════════════════════════════════
 function PatientPage({ pharmacie, onBack }) {
-  const [step, setStep] = useState("form");
-  const [nom, setNom] = useState("");
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const inputRef = useRef();
-  const couleur = pharmacie?.couleur || "#1a3a6e";
-  const emailReception = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.immodiaspora.fr`;
+  const [step, setStep]       = useState("form");
+  const [nom, setNom]         = useState("");
+  const [files, setFiles]     = useState([]); // plusieurs ordonnances
+  const [copied, setCopied]   = useState(false);
+  const [sending, setSending] = useState(false);
+  const inputRef              = useRef();
+  const couleur               = pharmacie?.couleur || "#1a3a6e";
+  const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.immodiaspora.fr`;
 
-  function handleFile(f) {
-    setFile(f);
-    const r = new FileReader();
-    r.onload = e => setPreview({ dataUrl: e.target.result, name: f.name, type: f.type });
-    r.readAsDataURL(f);
+  // Ajouter un ou plusieurs fichiers
+  function handleFiles(selectedFiles) {
+    const arr = Array.from(selectedFiles);
+    const newFiles = arr.map(f => ({
+      file: f,
+      name: f.name,
+      type: f.type,
+      dataUrl: null,
+      preview: null,
+    }));
+    // Lire les previews
+    newFiles.forEach((item, idx) => {
+      const r = new FileReader();
+      r.onload = e => {
+        setFiles(prev => prev.map((x, i) =>
+          i === prev.length - newFiles.length + idx
+            ? { ...x, dataUrl: e.target.result }
+            : x
+        ));
+      };
+      r.readAsDataURL(item.file);
+    });
+    setFiles(prev => [...prev, ...newFiles]);
+  }
+
+  function removeFile(idx) {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
   }
 
   function handleCopyEmail() {
-    const doCopy = () => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    };
+    const doCopy = () => { setCopied(true); setTimeout(() => setCopied(false), 2500); };
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(emailReception).then(doCopy).catch(() => {
         const el = document.createElement("textarea");
-        el.value = emailReception;
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-        doCopy();
+        el.value = emailReception; document.body.appendChild(el);
+        el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
       });
     } else {
       const el = document.createElement("textarea");
-      el.value = emailReception;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-      doCopy();
+      el.value = emailReception; document.body.appendChild(el);
+      el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
     }
   }
 
   async function handleSubmit() {
-    if (!nom.trim() || !file) return;
+    if (!nom.trim() || files.length === 0) return;
+    setSending(true);
     setStep("uploading");
-    try {
-      const base64 = preview.dataUrl.split(",")[1];
-      const extracted = await extractFromFile(base64, file.type, { fallbackName: nom || null });
-      const ext = file.name.split(".").pop().toLowerCase();
+
+    // Préparer tous les envois en parallèle
+    async function sendOne(item) {
+      const base64    = item.dataUrl?.split(",")[1] || "";
+      const extracted = await extractFromFile(base64, item.type, { fallbackName: nom || null });
+      const ext       = item.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
-        // Mode démo : mock en mémoire
         addOrdonnance(pharmacie.id, {
-          id: `qr-${Date.now()}`, fromName: nom.toUpperCase(),
+          id: `qr-${Date.now()}-${Math.random()}`, fromName: nom.toUpperCase(),
           subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
           status: "nouveau", source: "qrcode",
-          attachments: [{ name: file.name, type: ext === "pdf" ? "pdf" : "image", size: `${(file.size / 1024).toFixed(0)} Ko`, dataUrl: preview.dataUrl }],
-          extracted: extracted || { nom: nom.toUpperCase(), carteVitale: null, medecin: null, date: null, medicaments: [] },
+          attachments: [{ name: item.name, type: ext === "pdf" ? "pdf" : "image",
+            size: `${(item.file.size/1024).toFixed(0)} Ko`, dataUrl: item.dataUrl }],
+          extracted: extracted || { nom: nom.toUpperCase() },
         });
-      } else {
-        // Mode prod : Edge Function submit-ordonnance (bypass RLS via service_role)
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const formData = new FormData();
-        formData.append("pharmacie_id", pharmacie.id);
-        formData.append("from_name", nom.toUpperCase());
-        formData.append("patient_nom", extracted?.nom || nom.toUpperCase());
-        formData.append("patient_cv", extracted?.carteVitale || "");
-        formData.append("medecin", extracted?.medecin || "");
-        formData.append("medicaments", JSON.stringify(extracted?.medicaments || []));
-        formData.append("file", file, file.name);
-
-        const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Erreur ${res.status}`);
-        }
+        return { ok: true };
       }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const formData = new FormData();
+      formData.append("pharmacie_id", pharmacie.id);
+      formData.append("from_name",    nom.toUpperCase());
+      formData.append("patient_nom",  extracted?.nom || nom.toUpperCase());
+      formData.append("patient_cv",   "");
+      formData.append("medecin",      "");
+      formData.append("medicaments",  JSON.stringify([]));
+      formData.append("file",         item.file, item.name);
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {
+        method: "POST", body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erreur ${res.status}`);
+      }
+      return res.json();
+    }
+
+    try {
+      // Envoi de tous les fichiers en parallèle — chaque fichier est traité
+      // simultanément : OCR + upload + INSERT en base se font en même temps
+      const results = await Promise.allSettled(files.map(sendOne));
+
+      // Vérifier si au moins un a échoué
+      const failed = results.filter(r => r.status === "rejected");
+      if (failed.length === files.length) {
+        // Tous ont échoué
+        throw new Error(failed[0].reason?.message || "Erreur envoi");
+      }
+      // Succès total ou partiel
       setStep("success");
     } catch(e) {
       console.error("[PatientPage]", e.message);
       setStep("error");
     }
+    setSending(false);
   }
 
   if (step === "success") return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${couleur} 0%, #1a6e3a 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center" }}>
-      <div style={{ fontSize: 72, marginBottom: 16 }}>✅</div>
-      <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Ordonnance envoyée !</div>
-      <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, lineHeight: 1.7, maxWidth: 280 }}>{pharmacie?.nom} a bien reçu votre ordonnance.<br />Vous pouvez vous présenter à la pharmacie.</div>
-      <button onClick={() => setStep("form")} style={{ marginTop: 28, padding: "11px 24px", borderRadius: 30, border: "none", background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Envoyer une autre ordonnance</button>
+    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,${couleur} 0%,#1a6e3a 100%)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:32, textAlign:"center" }}>
+      <div style={{ fontSize:72, marginBottom:16 }}>✅</div>
+      <div style={{ color:"#fff", fontSize:22, fontWeight:800, marginBottom:8 }}>
+        {files.length > 1 ? `${files.length} ordonnances envoyées !` : "Ordonnance envoyée !"}
+      </div>
+      <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.7, maxWidth:280 }}>
+        {pharmacie?.nom} a bien reçu {files.length > 1 ? "vos ordonnances" : "votre ordonnance"}.<br/>Vous pouvez vous présenter à la pharmacie.
+      </div>
+      <button onClick={()=>{ setStep("form"); setFiles([]); setNom(""); }}
+        style={{ marginTop:28, padding:"11px 24px", borderRadius:30, border:"none", background:"rgba(255,255,255,0.2)", color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer" }}>
+        Envoyer d'autres ordonnances
+      </button>
     </div>
   );
 
   if (step === "uploading") return (
-    <div style={{ minHeight: "100vh", background: "#f0f4ff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
-      <div style={{ fontSize: 48, animation: "spin 1s linear infinite" }}>🔍</div>
-      <div style={{ fontWeight: 700, fontSize: 16, color: couleur }}>Envoi en cours…</div>
+    <div style={{ minHeight:"100vh", background:"#f0f4ff", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+      <div style={{ fontSize:48, animation:"spin 1s linear infinite" }}>📤</div>
+      <div style={{ fontWeight:700, fontSize:16, color:couleur }}>
+        Envoi en cours ({files.length} ordonnance{files.length>1?"s":""})…
+      </div>
     </div>
   );
 
   if (step === "error") return (
-    <div style={{ minHeight: "100vh", background: "#fff5f5", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}>
-      <div style={{ fontSize: 48 }}>⚠️</div>
-      <div style={{ fontWeight: 700, fontSize: 16, color: "#dc2626", textAlign: "center" }}>Erreur lors de l'envoi</div>
-      <div style={{ fontSize: 13, color: "#64748b", textAlign: "center" }}>Veuillez réessayer ou envoyer l'ordonnance par email.</div>
-      <button onClick={() => setStep("form")} style={{ padding: "10px 24px", borderRadius: 20, border: "none", background: couleur, color: "#fff", fontWeight: 600, cursor: "pointer" }}>Réessayer</button>
+    <div style={{ minHeight:"100vh", background:"#fff5f5", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:24 }}>
+      <div style={{ fontSize:48 }}>⚠️</div>
+      <div style={{ fontWeight:700, fontSize:16, color:"#dc2626", textAlign:"center" }}>Erreur lors de l'envoi</div>
+      <div style={{ fontSize:13, color:"#64748b", textAlign:"center" }}>Veuillez réessayer ou envoyer l'ordonnance par e-mail.</div>
+      <button onClick={()=>setStep("form")} style={{ padding:"10px 24px", borderRadius:20, border:"none", background:couleur, color:"#fff", fontWeight:600, cursor:"pointer" }}>Réessayer</button>
     </div>
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f5f7ff", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight:"100vh", background:"#f5f7ff", display:"flex", flexDirection:"column" }}>
 
       {/* Header */}
-      <div style={{ background: couleur, color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", gap: 12 }}>
-        {onBack && <button onClick={onBack} style={{ background: "none", border: "none", color: "#fff", fontSize: 20, cursor: "pointer", padding: 0 }}>←</button>}
-        {pharmacie?.logo ? <img src={pharmacie.logo} alt="logo" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} /> : <span style={{ fontSize: 24 }}>💊</span>}
+      <div style={{ background:couleur, color:"#fff", padding:"16px 20px", display:"flex", alignItems:"center", gap:12 }}>
+        {onBack && <button onClick={onBack} style={{ background:"none", border:"none", color:"#fff", fontSize:20, cursor:"pointer", padding:0 }}>←</button>}
+        <span style={{ fontSize:24 }}>💊</span>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>{pharmacie?.nom || "Pharmacie"}</div>
-          <div style={{ fontSize: 11, opacity: 0.7 }}>{pharmacie?.adresse}</div>
+          <div style={{ fontWeight:800, fontSize:16 }}>{pharmacie?.nom || "Pharmacie"}</div>
+          <div style={{ fontSize:11, opacity:0.7 }}>{pharmacie?.adresse}</div>
         </div>
       </div>
 
-      <div style={{ padding: "20px 20px 32px", maxWidth: 480, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ padding:"20px 20px 32px", maxWidth:480, width:"100%", margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* Nom */}
         <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
 
-        {/* ── Bloc 1 : Photo / Fichier ── */}
-        <div style={{
-          background: "#fff", borderRadius: 14, overflow: "hidden",
-          border: `1.5px solid ${file ? couleur : "#e0e7ff"}`,
-          boxShadow: file ? `0 4px 16px ${couleur}18` : "0 1px 4px rgba(0,0,0,0.06)",
-          transition: "border 0.2s, box-shadow 0.2s",
-        }}>
-          {/* En-tête bloc */}
-          <div style={{ padding: "14px 16px", background: file ? `${couleur}08` : "#f8f9ff", borderBottom: `1px solid ${file ? couleur + "22" : "#f0f0f0"}`, display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: couleur, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📷</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#1a1a1a" }}>Photo ou fichier</div>
-              <div style={{ fontSize: 11, color: "#888" }}>Prenez une photo de votre ordonnance</div>
-            </div>
-          </div>
-          {/* Corps */}
-          <div style={{ padding: 14 }}>
-            {!preview ? (
-              <div onClick={() => inputRef.current.click()} style={{ border: "2px dashed #c8d5e8", borderRadius: 10, padding: "24px 16px", textAlign: "center", cursor: "pointer", background: "#fafbff" }}>
-                <div style={{ fontSize: 30, marginBottom: 6 }}>📷</div>
-                <div style={{ fontWeight: 600, color: couleur, fontSize: 14 }}>Appuyez pour choisir</div>
-                <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>JPEG, PNG ou PDF</div>
-                <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" capture="environment" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+        {/* ── Bloc 1 : Ajouter ordonnances ── */}
+        <div style={{ background:"#fff", borderRadius:14, overflow:"hidden", border:`1.5px solid ${files.length>0 ? couleur : "#e0e7ff"}`, boxShadow:files.length>0 ? `0 4px 16px ${couleur}18` : "0 1px 4px rgba(0,0,0,0.06)", transition:"border 0.2s" }}>
+          {/* En-tête */}
+          <div style={{ padding:"14px 16px", background:files.length>0 ? `${couleur}08` : "#f8f9ff", borderBottom:`1px solid ${files.length>0 ? couleur+"22" : "#f0f0f0"}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:couleur, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>📋</div>
+              <div>
+                <div style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>Ajouter votre ordonnance</div>
+                <div style={{ fontSize:11, color:"#888" }}>JPEG, PNG ou PDF — plusieurs possibles</div>
               </div>
-            ) : (
-              <div style={{ borderRadius: 10, overflow: "hidden", border: "1.5px solid #e0e7ff" }}>
-                <div style={{ padding: "9px 12px", background: "#f0f7ff", borderBottom: "1px solid #e0e7ff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#1a3a6e" }}>📎 {preview.name}</span>
-                  <button onClick={() => { setFile(null); setPreview(null); }} style={{ background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>✕</button>
-                </div>
-                {preview.type.startsWith("image/")
-                  ? <img src={preview.dataUrl} alt="" style={{ width: "100%", maxHeight: 180, objectFit: "contain", padding: 10, background: "#fff" }} />
-                  : <div style={{ padding: 20, textAlign: "center", color: "#888", background: "#fff" }}><div style={{ fontSize: 32 }}>📄</div><div style={{ fontSize: 12, marginTop: 4 }}>PDF prêt</div></div>
-                }
-          </div>
-        )}
-          </div>
-          {/* Bouton envoyer */}
-          {(file || nom.trim()) && (
-            <div style={{ padding: "0 14px 14px" }}>
-              <button onClick={handleSubmit} disabled={!nom.trim() || !file} style={{
-                width: "100%", padding: "13px", border: "none", borderRadius: 10,
-                background: nom.trim() && file ? couleur : "#c8d5e8",
-                color: "#fff", fontWeight: 800, fontSize: 15,
-                cursor: nom.trim() && file ? "pointer" : "not-allowed", fontFamily: "inherit",
-              }}>
-                📤 Envoyer mon ordonnance
-              </button>
             </div>
-          )}
-        </div>
+            {files.length > 0 && (
+              <span style={{ fontSize:11, fontWeight:700, background:couleur, color:"#fff", borderRadius:20, padding:"2px 10px" }}>
+                {files.length} fichier{files.length>1?"s":""}
+              </span>
+            )}
+          </div>
 
-        {/* Séparateur — "ou" */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ flex: 1, height: 1, background: "#e0e0e0" }} />
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#bbb", padding: "0 4px" }}>OU</div>
-          <div style={{ flex: 1, height: 1, background: "#e0e0e0" }} />
-        </div>
-
-        {/* ── Bloc 2 : Transfert email ── */}
-        <div style={{
-          background: "#fff", borderRadius: 14, overflow: "hidden",
-          border: `1.5px solid ${copied ? "#16a34a" : "#e0e7ff"}`,
-          boxShadow: copied ? "0 4px 16px #16a34a18" : "0 1px 4px rgba(0,0,0,0.06)",
-          transition: "border 0.3s, box-shadow 0.3s",
-        }}>
-          {/* En-tête bloc */}
-          <div style={{ padding: "14px 16px", background: "#f0f7ff", borderBottom: "1px solid #e0eeff", display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "#1e40af", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>✉️</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#1a1a1a" }}>Transférer par email</div>
-              <div style={{ fontSize: 11, color: "#888" }}>Si votre médecin vous a envoyé l'ordonnance par mail</div>
-            </div>
-          </div>
-          {/* Corps */}
-          <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Adresse email */}
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: 0.8 }}>Adresse à utiliser</div>
-            <div style={{
-              fontSize: 14, fontWeight: 700, color: "#1a1a1a", fontFamily: "monospace",
-              background: "#f0f7ff", borderRadius: 8, padding: "11px 14px",
-              wordBreak: "break-all", lineHeight: 1.5, letterSpacing: 0.2,
-              border: "1px solid #dbeafe",
-            }}>
-              {emailReception}
-            </div>
-            {/* Bouton copier */}
-            <button onClick={handleCopyEmail} style={{
-              width: "100%", padding: "13px", border: "none", borderRadius: 10,
-              background: copied ? "#16a34a" : "#1e40af",
-              color: "#fff", fontWeight: 800, fontSize: 15,
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              transition: "background 0.3s",
-            }}>
-              {copied ? "✅ Adresse copiée !" : "📋 Copier l'adresse"}
-            </button>
-            {/* Étapes compactes */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
-              {[
-                ["1", "Copiez l'adresse ci-dessus"],
-                ["2", "Ouvrez votre appli mail"],
-                ["3", "Transférez le mail de votre médecin à cette adresse"],
-              ].map(([n, t]) => (
-                <div key={n} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
-                    background: n === "1" ? "#1e40af" : "#f0f2f8",
-                    color: n === "1" ? "#fff" : "#888",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 800, fontSize: 11,
-                  }}>{n}</div>
-                  <div style={{ fontSize: 13, color: n === "1" ? "#1e40af" : "#666", fontWeight: n === "1" ? 600 : 400 }}>{t}</div>
+          {/* Liste des fichiers ajoutés */}
+          {files.length > 0 && (
+            <div style={{ padding:"10px 14px 0", display:"flex", flexDirection:"column", gap:6 }}>
+              {files.map((item, idx) => (
+                <div key={idx} style={{ display:"flex", alignItems:"center", gap:8, background:"#f8faff", borderRadius:8, padding:"8px 10px", border:"1px solid #e0e7ff" }}>
+                  <span style={{ fontSize:16 }}>{item.type === "application/pdf" ? "📄" : "🖼️"}</span>
+                  <span style={{ flex:1, fontSize:12, color:"#1a1a1a", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.name}</span>
+                  <button onClick={()=>removeFile(idx)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:16, padding:"0 2px", flexShrink:0 }}>×</button>
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Zone d'ajout */}
+          <div style={{ padding:14 }}>
+            <div onClick={()=>inputRef.current.click()} style={{ border:`2px dashed ${files.length>0 ? couleur+"66" : "#c8d5e8"}`, borderRadius:10, padding:"18px 16px", textAlign:"center", cursor:"pointer", background:files.length>0 ? `${couleur}05` : "#fafbff" }}>
+              <div style={{ fontSize:26, marginBottom:4 }}>➕</div>
+              <div style={{ fontWeight:600, color:couleur, fontSize:13 }}>
+                {files.length===0 ? "Appuyez pour ajouter" : "Ajouter une autre ordonnance"}
+              </div>
+              <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>JPEG, PNG ou PDF</div>
+              <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display:"none" }}
+                onChange={e => handleFiles(e.target.files)} />
+            </div>
           </div>
         </div>
 
-        <div style={{ fontSize: 11, color: "#bbb", textAlign: "center" }}>Données transmises de manière sécurisée à votre pharmacie uniquement.</div>
+        {/* Bouton envoyer */}
+        <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending}
+          style={{ width:"100%", padding:"15px", border:"none", borderRadius:12, background:!nom.trim()||files.length===0?`${couleur}55`:couleur, color:"#fff", fontWeight:800, fontSize:16, cursor:!nom.trim()||files.length===0?"not-allowed":"pointer", fontFamily:"inherit", boxShadow:nom.trim()&&files.length>0?`0 4px 16px ${couleur}44`:"none" }}>
+          {sending ? "Envoi en cours…" : files.length > 1 ? `Envoyer ${files.length} ordonnances →` : "Envoyer l'ordonnance →"}
+        </button>
+
+        {/* ── Bloc 2 : E-mail ── */}
+        <div style={{ background:"#fff", borderRadius:14, overflow:"hidden", border:`1.5px solid ${copied?"#16a34a":"#e0eeff"}`, boxShadow:copied?"0 4px 16px #16a34a18":"0 1px 4px rgba(0,0,0,0.06)", transition:"border 0.3s" }}>
+          <div style={{ padding:"14px 16px", background:"#f0f7ff", borderBottom:"1px solid #e0eeff", display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:32, height:32, borderRadius:8, background:"#1e40af", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>✉️</div>
+            <div>
+              <div style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>Transférer par e-mail</div>
+            </div>
+          </div>
+          <div style={{ padding:14, display:"flex", flexDirection:"column", gap:10 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:0.8 }}>E-mail de votre pharmacie</div>
+            <div style={{ fontSize:13, fontWeight:700, color:"#1a1a1a", fontFamily:"monospace", background:"#f0f7ff", borderRadius:8, padding:"11px 14px", wordBreak:"break-all", lineHeight:1.5, border:"1px solid #dbeafe" }}>
+              {emailReception}
+            </div>
+            <button onClick={handleCopyEmail} style={{ width:"100%", padding:"13px", border:"none", borderRadius:10, background:copied?"#16a34a":"#1e40af", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"background 0.3s" }}>
+              {copied ? "✅ E-mail copié !" : "📋 Copier l'e-mail"}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize:11, color:"#bbb", textAlign:"center" }}>Données transmises de manière sécurisée à votre pharmacie uniquement.</div>
       </div>
     </div>
   );
 }
+
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
