@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 12:37";
+const APP_VERSION = "v6.0 · 03/07/2026 13:19";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1658,11 +1658,33 @@ function ParametresTab({ pharmacie, onSave }) {
                   </div>
                   <button onClick={()=>removePoste(poste.id)} style={{background:"none",border:"none",color:"#e53e3e",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:8,borderTop:"1px solid #e0e7ff"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:8,borderTop:"1px solid #e0e7ff",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5}}>PIN vendeur</span>
-                  <input type="password" maxLength={4} value={poste.pin||""} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,pin:v}:p));}}
-                    placeholder="••••" style={{width:80,border:"1.5px solid #c7d2fe",borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none"}}/>
-                  <span style={{fontSize:11,fontWeight:600,color:poste.pin&&poste.pin.length===4?"#15803d":"#f59e0b"}}>{poste.pin&&poste.pin.length===4?"✅ Configuré":"⚠️ Manquant"}</span>
+                  <input type="password" maxLength={4}
+                    value={poste.pin||""}
+                    onChange={e=>{
+                      const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+                      setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,pin:v,_pinSaved:false}:p));
+                    }}
+                    onBlur={async e=>{
+                      const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+                      if(v.length!==4) return;
+                      // Sauvegarder le PIN en Supabase via Edge Function update-pin
+                      try {
+                        const sb = getSupabaseClient();
+                        if(sb && !isDemoMode) {
+                          await sb.functions.invoke("update-pin", { body:{ posteId: poste.id, pin: v } });
+                        }
+                        setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,_pinSaved:true}:p));
+                      } catch(err) {
+                        console.error("[PIN save]", err.message);
+                      }
+                    }}
+                    placeholder="••••"
+                    style={{width:80,border:`1.5px solid ${poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none",transition:"border 0.2s"}}/>
+                  <span style={{fontSize:11,fontWeight:600,color:poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#94a3b8"}}>
+                    {poste._pinSaved?"✅ Enregistré":poste.pin&&poste.pin.length===4?"⏳ Saisissez pour enregistrer":"⚠️ PIN manquant"}
+                  </span>
                   <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>Rôle : Vendeur</span>
                 </div>
               </div>
@@ -2769,183 +2791,82 @@ body {
   width: 210mm; height: 297mm;
   display: flex; flex-direction: column;
   align-items: center;
-  padding: 10mm 12mm 8mm;
+  padding: 8mm 12mm 6mm;
   overflow: hidden;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 }
-
-/* Logo */
-.logo-row {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 6mm;
-}
-.logo-pill {
-  width: 28px; height: 28px;
-  background: linear-gradient(135deg, #1a6e3a, #2d9d5e);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
-}
-.logo-text { font-size: 22px; font-weight: 900; color: #1a1a1a; letter-spacing: -0.5px; }
+.logo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4mm; }
+.logo-pill { width: 26px; height: 26px; background: linear-gradient(135deg, #1a6e3a, #2d9d5e); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.logo-text { font-size: 20px; font-weight: 900; color: #1a1a1a; }
 .logo-text span { color: #1a6e3a; }
-
-/* Bandeau titre */
-.title-band {
-  background: #1a4a35;
-  width: 100%;
-  border-radius: 10px 10px 0 0;
-  padding: 8px 16px;
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin-bottom: 0;
-}
-.cross { font-size: 20px; color: rgba(255,255,255,0.4); }
-.title-text {
-  font-size: 22px; font-weight: 900; color: #fff;
-  letter-spacing: 1px; text-transform: uppercase; text-align: center;
-}
-
-/* Nom pharmacie */
-.pharma-band {
-  background: #c8ddd5;
-  width: 100%;
-  padding: 7px 16px;
-  text-align: center;
-  margin-bottom: 5mm;
-  border-radius: 0 0 6px 6px;
-}
-.pharma-name {
-  font-size: 18px; font-weight: 900; color: #1a3a2a;
-  letter-spacing: 1.5px; text-transform: uppercase;
-}
-
-/* Carte QR */
-.qr-card {
-  background: #e8f2ee;
-  border-radius: 16px;
-  width: 100%;
-  padding: 5mm;
-  display: flex; flex-direction: column; align-items: center;
-  margin-bottom: 5mm;
-  flex: 1;
-}
-.method-badge {
-  background: #1a4a35;
-  border-radius: 8px;
-  padding: 7px 20px;
-  font-size: 14px; font-weight: 900; color: #fff;
-  letter-spacing: 1px; text-transform: uppercase;
-  margin-bottom: 5mm; width: 100%; text-align: center;
-}
-.qr-wrap {
-  background: #fff;
-  border-radius: 12px;
-  padding: 8mm;
-  display: inline-block;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-.qr-wrap img { width: 130mm; height: 130mm; display: block; }
-
-/* NFC */
-.nfc-card {
-  background: linear-gradient(135deg, #1a4a35 0%, #2d6e50 100%);
-  border-radius: 14px;
-  width: 100%;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.nfc-top {
-  padding: 5mm 6mm 4mm;
-  display: flex; align-items: center; gap: 4mm;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-.nfc-icon-wrap {
-  background: rgba(255,255,255,0.12);
-  border-radius: 10px;
-  width: 44px; height: 44px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-}
+.title-band { background: #1a4a35; width: 100%; border-radius: 10px 10px 0 0; padding: 7px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.cross { font-size: 18px; color: rgba(255,255,255,0.4); }
+.title-text { font-size: 21px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
+.pharma-band { background: #c8ddd5; width: 100%; padding: 6px 16px; text-align: center; margin-bottom: 3mm; border-radius: 0 0 6px 6px; }
+.pharma-name { font-size: 17px; font-weight: 900; color: #1a3a2a; letter-spacing: 1.5px; text-transform: uppercase; }
+.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 2mm; flex: 1; }
+.method-badge { background: #1a4a35; border-radius: 8px; padding: 6px 20px; font-size: 13px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3mm; width: 100%; text-align: center; }
+.qr-wrap { background: #fff; border-radius: 12px; padding: 6mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.qr-wrap img { width: 125mm; height: 125mm; display: block; }
+.nfc-card { background: linear-gradient(135deg, #1a4a35 0%, #2d6e50 100%); border-radius: 14px; width: 100%; overflow: hidden; flex-shrink: 0; }
+.nfc-top { padding: 5mm 7mm; display: flex; align-items: center; gap: 5mm; }
+.nfc-logo-circle { width: 64px; height: 64px; flex-shrink: 0; background: rgba(255,255,255,0.15); border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; }
 .nfc-method-text { flex: 1; }
-.nfc-method-label {
-  font-size: 11px; color: rgba(255,255,255,0.6);
-  font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-}
-.nfc-method-title {
-  font-size: 16px; font-weight: 900; color: #fff;
-  text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.2;
-}
-.phone-icon { font-size: 32px; }
-.nfc-bottom {
-  background: #c8ddd5;
-  padding: 4mm 6mm;
-  text-align: center;
-}
-.nfc-instruction {
-  font-size: 16px; font-weight: 700; color: #1a3a2a;
-  line-height: 1.5;
-}
-
-@media print {
-  body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .no-print { display: none !important; }
-}
+.nfc-method-label { font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 3px; }
+.nfc-method-title { font-size: 24px; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.15; }
+.nfc-bottom { background: #c8ddd5; padding: 5mm 7mm; text-align: center; }
+.nfc-instruction { font-size: 22px; font-weight: 800; color: #1a3a2a; line-height: 1.5; }
+@media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .no-print { display: none !important; } }
 </style></head>
 <body>
 
-<!-- LOGO -->
 <div class="logo-row">
-  <div class="logo-pill">💊</div>
+  <div class="logo-pill">&#128138;</div>
   <div class="logo-text">Ordo<span>Mail</span></div>
 </div>
 
-<!-- TITRE -->
 <div class="title-band">
-  <span class="cross">✚</span>
+  <span class="cross">&#10010;</span>
   <span class="title-text">Envoyer votre ordonnance</span>
-  <span class="cross">✚</span>
+  <span class="cross">&#10010;</span>
 </div>
 
-<!-- NOM PHARMACIE -->
 <div class="pharma-band">
   <div class="pharma-name">${nom}</div>
 </div>
 
-<!-- QR CODE -->
 <div class="qr-card">
-  <div class="method-badge">Méthode 1 : Scanner le code QR</div>
+  <div class="method-badge">M&#233;thode 1 : Scanner le code QR</div>
   <div class="qr-wrap">
-    ${qrSrc
-      ? `<img src="${qrSrc}" alt="QR Code"/>`
-      : `<div style="width:130mm;height:130mm;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:14px">QR non disponible</div>`}
+    ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:125mm;height:125mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
   </div>
 </div>
 
-<!-- NFC -->
 <div class="nfc-card">
   <div class="nfc-top">
-    <div class="nfc-icon-wrap">
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <circle cx="11" cy="14" r="2.5" fill="#fff"/>
-        <path d="M11 11.5 C11 8.5 13.5 6 17 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-        <path d="M11 9 C11 5 14.5 2 19 2" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".65"/>
-        <path d="M11 6.5 C11 1.5 15.5 -2 21 -1" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".35"/>
+    <div class="nfc-logo-circle">
+      <svg width="42" height="42" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="15" cy="21" r="3.5" fill="white"/>
+        <path d="M15 17.5 C15 13.5 18.5 10.5 22.5 10.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M15 13.5 C15 8 20 4.5 25.5 4.5" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.65"/>
+        <path d="M15 9.5 C15 2.5 21.5 -1 28.5 0" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+        <text x="3" y="40" font-family="Arial" font-weight="900" font-size="9" fill="white" letter-spacing="1">NFC</text>
       </svg>
     </div>
     <div class="nfc-method-text">
-      <div class="nfc-method-label">Méthode 2 :</div>
-      <div class="nfc-method-title">Ouverture automatique</div>
+      <div class="nfc-method-label">M&#233;thode 2 :</div>
+      <div class="nfc-method-title">Ouverture<br>automatique</div>
     </div>
-    <div class="phone-icon">📱</div>
   </div>
   <div class="nfc-bottom">
-    <div class="nfc-instruction">Approchez votre téléphone<br>pour ouvrir la page d'envoi</div>
+    <div class="nfc-instruction">Approchez votre t&#233;l&#233;phone du badge<br>pour ouvrir la page d'envoi automatiquement</div>
   </div>
 </div>
 
 </body>
-<button class="no-print" onclick="window.print()"
-  style="position:fixed;bottom:16px;right:16px;background:#1a4a35;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">
-  🖨️ Imprimer / PDF
+<button class="no-print" onclick="window.print()" style="position:fixed;bottom:16px;right:16px;background:#1a4a35;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">
+  &#128438; Imprimer / PDF
 </button>
 </html>`;
 
