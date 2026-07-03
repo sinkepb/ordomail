@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 13:19";
+const APP_VERSION = "v6.0 · 03/07/2026 13:28";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1646,6 +1646,15 @@ function ParametresTab({ pharmacie, onSave }) {
         {section==="postes"&&(
           <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
             <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🖥️ Gestion des postes</div>
+            {/* Code pharmacie pour connexion vendeurs */}
+            <div style={{background:"#f0fdf4",border:"1.5px solid #bbf7d0",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"#15803d",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Code de connexion vendeurs</div>
+                <div style={{fontSize:30,fontWeight:900,color:"#1a3a2a",fontFamily:"monospace",letterSpacing:6}}>{pharmacie.code_vendeur||pharmacie.codeVendeur||"------"}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Communiquez ce code à vos vendeurs — ils le saisissent avant leur PIN</div>
+              </div>
+              <div style={{fontSize:40}}>🔑</div>
+            </div>
             {postes.map((poste,i)=>(
               <div key={poste.id} style={{background:"#f8faff",borderRadius:10,padding:"12px 14px",marginBottom:8,border:"1px solid #e0e7ff"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -3345,10 +3354,14 @@ function BoutonProSanteConnect({ onClick, loading }) {
 // ─── Onglet connexion : PSC (admin) ou PIN (vendeur) ─────────────────────────
 function LoginTabContent({ onLogin }) {
   const [pscLoading, setPscLoading] = useState(false);
-  const [mode, setMode] = useState("choice"); // choice | pin
+  const [mode, setMode] = useState("choice"); // choice | email | pin | pin-code
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
+  const [codePharmacien, setCodePharmacien] = useState(""); // code 6 chiffres
+  const [codeError, setCodeError] = useState("");
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [pharmacieInfo, setPharmacieInfo] = useState(null); // pharmacie trouvée
   const [showFallback, setShowFallback] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -3369,13 +3382,42 @@ function LoginTabContent({ onLogin }) {
     setPscLoading(false);
   }
 
+  // Étape 1 : valider le code pharmacie 6 chiffres
+  async function handleCodePharmacien(code) {
+    if (code.length !== 6) return;
+    setCodeLoading(true); setCodeError("");
+    try {
+      if (isDemoMode) {
+        const db = window._ordomailDB || { pharmacies: [] };
+        const ph = db.pharmacies?.find(p => p.codeVendeur === code);
+        if (!ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+        setPharmacieInfo(ph);
+        setMode("pin-code");
+      } else {
+        const sb = getSupabaseClient();
+        const { data: ph, error } = await sb
+          .from("pharmacies")
+          .select("id, nom, couleur, code_vendeur")
+          .eq("code_vendeur", code)
+          .maybeSingle();
+        if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+        setPharmacieInfo(ph);
+        setMode("pin");
+      }
+    } catch(e) {
+      setCodeError("Erreur de connexion");
+    }
+    setCodeLoading(false);
+  }
+
   async function handlePinDigit(d) {
     if (pin.length >= 4) return;
     const newPin = pin + d;
     setPin(newPin); setPinError("");
     if (newPin.length === 4) {
       setPinLoading(true);
-      const result = await authSignInPIN(newPin);
+      // Passer l'ID pharmacie pour limiter la recherche
+      const result = await authSignInPIN(newPin, pharmacieInfo?.id);
       if (result.error) {
         setPinError("PIN incorrect ou poste inactif"); setPin(""); setPinLoading(false);
       } else {
@@ -3742,6 +3784,8 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                     .normalize("NFD").replace(/[̀-ͯ]/g,"")
                     .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
                   const emailReception = slug + "@in.ordomail.fr";
+                  // Code vendeur 6 chiffres unique
+                  const codeVendeur = String(Math.floor(100000 + Math.random() * 900000));
 
                   // 3. Créer la pharmacie via Edge Function (service_role)
                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;

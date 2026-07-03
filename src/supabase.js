@@ -102,10 +102,13 @@ export async function authSignInEmail(email, password) {
   return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id };
 }
 
-export async function authSignInPIN(pin) {
+export async function authSignInPIN(pin, pharmacieId) {
   if (IS_DEMO) {
     const db = getDB();
-    for (const ph of db.pharmacies) {
+    const pharmacies = pharmacieId
+      ? db.pharmacies.filter(p => p.id === pharmacieId)
+      : db.pharmacies;
+    for (const ph of pharmacies) {
       const poste = (ph.postes || []).find(p => p.pin === pin && p.actif);
       if (poste) return { pharmacie: ph, poste, userRole: 'vendeur', userId: poste.id, posteNom: poste.nom };
     }
@@ -113,7 +116,7 @@ export async function authSignInPIN(pin) {
   }
   // Mode prod : Edge Function verify-pin (bcrypt côté serveur)
   const sb = getSupabase();
-  const { data, error } = await sb.functions.invoke('verify-pin', { body: { pin } });
+  const { data, error } = await sb.functions.invoke('verify-pin', { body: { pin, pharmacieId } });
   if (error || !data?.success) return { error: error || new Error('PIN incorrect') };
   return { pharmacie: data.pharmacie, poste: data.poste, userRole: 'vendeur', userId: data.poste.id, posteNom: data.poste.nom };
 }
