@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 13:28";
+const APP_VERSION = "v6.0 · 03/07/2026 13:41";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2800,7 +2800,7 @@ body {
   width: 210mm; height: 297mm;
   display: flex; flex-direction: column;
   align-items: center;
-  padding: 8mm 12mm 6mm;
+  padding: 8mm 12mm 5mm;
   overflow: hidden;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
@@ -2814,18 +2814,33 @@ body {
 .title-text { font-size: 21px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
 .pharma-band { background: #c8ddd5; width: 100%; padding: 6px 16px; text-align: center; margin-bottom: 3mm; border-radius: 0 0 6px 6px; }
 .pharma-name { font-size: 17px; font-weight: 900; color: #1a3a2a; letter-spacing: 1.5px; text-transform: uppercase; }
-.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 2mm; flex: 1; }
+
+/* QR — flex:1 pour prendre tout l'espace disponible */
+.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5mm; flex: 1; }
 .method-badge { background: #1a4a35; border-radius: 8px; padding: 6px 20px; font-size: 13px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3mm; width: 100%; text-align: center; }
 .qr-wrap { background: #fff; border-radius: 12px; padding: 6mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-.qr-wrap img { width: 125mm; height: 125mm; display: block; }
+.qr-wrap img { width: 122mm; height: 122mm; display: block; }
+
+/* NFC card */
 .nfc-card { background: linear-gradient(135deg, #1a4a35 0%, #2d6e50 100%); border-radius: 14px; width: 100%; overflow: hidden; flex-shrink: 0; }
-.nfc-top { padding: 5mm 7mm; display: flex; align-items: center; gap: 5mm; }
-.nfc-logo-circle { width: 64px; height: 64px; flex-shrink: 0; background: rgba(255,255,255,0.15); border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; }
+.nfc-top { padding: 4mm 7mm; display: flex; align-items: center; gap: 5mm; }
+
+/* Logo NFC officiel : cercle blanc avec ondes + texte NFC */
+.nfc-logo-wrap {
+  width: 62px; height: 62px; flex-shrink: 0;
+  background: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
 .nfc-method-text { flex: 1; }
-.nfc-method-label { font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 3px; }
-.nfc-method-title { font-size: 24px; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.15; }
-.nfc-bottom { background: #c8ddd5; padding: 5mm 7mm; text-align: center; }
-.nfc-instruction { font-size: 22px; font-weight: 800; color: #1a3a2a; line-height: 1.5; }
+.nfc-method-label { font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2px; }
+/* Titre sur UNE seule ligne */
+.nfc-method-title { font-size: 22px; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+
+.nfc-bottom { background: #c8ddd5; padding: 4mm 7mm; text-align: center; }
+.nfc-instruction { font-size: 21px; font-weight: 800; color: #1a3a2a; line-height: 1.45; }
+
 @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .no-print { display: none !important; } }
 </style></head>
 <body>
@@ -2848,24 +2863,35 @@ body {
 <div class="qr-card">
   <div class="method-badge">M&#233;thode 1 : Scanner le code QR</div>
   <div class="qr-wrap">
-    ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:125mm;height:125mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
+    ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:122mm;height:122mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
   </div>
 </div>
 
 <div class="nfc-card">
   <div class="nfc-top">
-    <div class="nfc-logo-circle">
-      <svg width="42" height="42" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="15" cy="21" r="3.5" fill="white"/>
-        <path d="M15 17.5 C15 13.5 18.5 10.5 22.5 10.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-        <path d="M15 13.5 C15 8 20 4.5 25.5 4.5" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.65"/>
-        <path d="M15 9.5 C15 2.5 21.5 -1 28.5 0" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
-        <text x="3" y="40" font-family="Arial" font-weight="900" font-size="9" fill="white" letter-spacing="1">NFC</text>
+
+    <!-- Logo NFC officiel : cercle blanc + ondes wifi + NFC -->
+    <div class="nfc-logo-wrap">
+      <svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Cercle extérieur -->
+        <circle cx="23" cy="23" r="21" stroke="#111" stroke-width="2.5" fill="white"/>
+        <!-- Arc externe (grand) -->
+        <path d="M10.5 20 C10.5 13.1 16.2 7.5 23 7.5 C29.8 7.5 35.5 13.1 35.5 20" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Arc moyen -->
+        <path d="M14 21.5 C14 16.8 18.1 13 23 13 C27.9 13 32 16.8 32 21.5" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Arc interne (petit) -->
+        <path d="M17.5 23 C17.5 20.5 20 18.5 23 18.5 C26 18.5 28.5 20.5 28.5 23" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Point central -->
+        <circle cx="23" cy="25.5" r="2.2" fill="#111"/>
+        <!-- Texte NFC -->
+        <text x="23" y="38.5" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="8.5" fill="#111" letter-spacing="1.5">NFC</text>
       </svg>
     </div>
+
     <div class="nfc-method-text">
       <div class="nfc-method-label">M&#233;thode 2 :</div>
-      <div class="nfc-method-title">Ouverture<br>automatique</div>
+      <!-- Titre sur une seule ligne -->
+      <div class="nfc-method-title">Ouverture automatique</div>
     </div>
   </div>
   <div class="nfc-bottom">
