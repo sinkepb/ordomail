@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 13:57";
+const APP_VERSION = "v6.0 · 03/07/2026 14:14";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -172,7 +172,7 @@ function FeaturesSection() {
         <div style={{ textAlign:"center", marginBottom:52 }}>
           <div style={{ display:"inline-block", background:C.navyL, color:C.navy, fontSize:11, fontWeight:800, letterSpacing:1.5, padding:"5px 14px", borderRadius:20, marginBottom:16 }}>FONCTIONNALITÉS</div>
           <h2 style={{ fontSize:"clamp(24px, 6vw, 38px)", fontWeight:900, color:C.ink, margin:"0 0 14px", lineHeight:1.15 }}>Tout ce dont une pharmacie a besoin</h2>
-          <p style={{ fontSize:17, color:C.slate, maxWidth:520, margin:"0 auto" }}>Conçu pour le comptoir, pas pour un bureau IT.</p>
+          <p style={{ fontSize:17, color:C.slate, maxWidth:520, margin:"0 auto" }}>Conçu pour le comptoir, pas pour un bureau informatique.</p>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap:16, opacity:visible?1:0, transform:visible?"none":"translateY(20px)", transition:"all 0.6s ease" }}>
           {features.map((f,i)=>(
@@ -357,7 +357,7 @@ function CTASection({ onCTA }) {
     <section ref={ref} style={{ padding:"52px 16px", background:`linear-gradient(135deg, ${C.navyD} 0%, ${C.navy} 60%, ${C.green} 150%)` }}>
       <div style={{ maxWidth:640, margin:"0 auto", textAlign:"center", opacity:visible?1:0, transition:"opacity 0.7s ease" }}>
         <div style={{ fontSize:40, marginBottom:18 }}>💊</div>
-        <h2 style={{ fontSize:"clamp(24px, 6vw, 38px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.2 }}>Prêt à simplifier la réception des ordonnances ?</h2>
+        <h2 style={{ fontSize:"clamp(24px, 6vw, 38px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.2 }}>Prêt à simplifier la réception de vos ordonnances ?</h2>
         <p style={{ fontSize:17, color:"rgba(255,255,255,0.65)", marginBottom:32, lineHeight:1.65 }}>30 jours gratuits. Installation en moins de 10 minutes. Aucune carte bancaire requise.</p>
         <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
           <button onClick={()=>onCTA("trial")} style={{ padding:"14px 30px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 16px rgba(0,0,0,0.2)", transition:"transform 0.15s" }}
@@ -389,7 +389,7 @@ function Footer({ onNav }) {
               <span style={{ fontSize:20 }}>💊</span>
               <span style={{ fontWeight:900, fontSize:16, color:"#fff" }}>OrdoMail</span>
             </div>
-            <p style={{ fontSize:13, color:"#64748b", lineHeight:1.7, maxWidth:260 }}>La plateforme qui simplifie et sécurise la réception des ordonnances pour les pharmacies françaises.</p>
+            <p style={{ fontSize:13, color:"#64748b", lineHeight:1.7, maxWidth:260 }}>La plateforme qui simplifie et sécurise la réception des ordonnances dans les pharmacies françaises.</p>
           </div>
           {[
             ["Produit",["Fonctionnalités","Tarifs","Sécurité","Démo"]],
@@ -1546,7 +1546,7 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
       {/* Zone danger */}
       <div style={{background:"#fff",borderRadius:14,padding:20,border:"1px solid #fee2e2"}}>
         <div style={{fontWeight:700,fontSize:14,color:"#dc2626",marginBottom:10}}>⚠️ Zone de danger</div>
-        <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Données conservées 90 jours.</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Les données sont conservées 90 jours.</div>
         <Btn variant="danger" small>🗑 Supprimer mon compte</Btn>
       </div>
       {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={(p)=>{onUpgrade(p);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
@@ -1651,7 +1651,7 @@ function ParametresTab({ pharmacie, onSave }) {
               <div>
                 <div style={{fontSize:11,fontWeight:700,color:"#15803d",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Code de connexion vendeurs</div>
                 <div style={{fontSize:30,fontWeight:900,color:"#1a3a2a",fontFamily:"monospace",letterSpacing:6}}>{pharmacie.code_vendeur||pharmacie.codeVendeur||"------"}</div>
-                <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Communiquez ce code à vos vendeurs — ils le saisissent avant leur PIN</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Communiquez ce code à vos vendeurs — ils le saisissent avant leur code PIN</div>
               </div>
               <div style={{fontSize:40}}>🔑</div>
             </div>
@@ -1713,7 +1713,7 @@ function ParametresTab({ pharmacie, onSave }) {
                   </div>
                 ))}
               </div>
-              <div style={{marginTop:8,fontSize:11,color:"#64748b",lineHeight:1.6}}>ℹ️ C'est le titulaire qui crée et modifie les PINs depuis cette page.</div>
+              <div style={{marginTop:8,fontSize:11,color:"#64748b",lineHeight:1.6}}>ℹ️ C'est le titulaire qui crée et modifie les codes PIN depuis cette page.</div>
             </div>
           </div>
         )}
@@ -2178,7 +2178,7 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
       printArea.innerHTML = banner + `<div style="font-family:Arial;padding:20px;text-align:center;color:#555;font-size:14px">
         <div style="font-size:32px;margin-bottom:10px">📄</div>
         <div style="font-weight:700;margin-bottom:6px">${att.name}</div>
-        <div>Le PDF s'ouvre dans un nouvel onglet pour impression.</div>
+        <div>Le PDF s'ouvre dans un nouvel onglet pour l'impression.</div>
       </div>`;
       // Ouvrir le PDF dans un nouvel onglet — le navigateur affiche sa boîte d'impression native
       const pdfWin = window.open("", "_blank");
@@ -2676,7 +2676,7 @@ function PatientPage({ pharmacie, onBack }) {
               <div style={{ width:32, height:32, borderRadius:8, background:couleur, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>📋</div>
               <div>
                 <div style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>Ajouter votre ordonnance</div>
-                <div style={{ fontSize:11, color:"#888" }}>JPEG, PNG ou PDF — plusieurs possibles</div>
+                <div style={{ fontSize:11, color:"#888" }}>JPEG, PNG ou PDF — plusieurs fichiers possibles</div>
               </div>
             </div>
             {files.length > 0 && (
@@ -2704,7 +2704,7 @@ function PatientPage({ pharmacie, onBack }) {
             <div onClick={()=>inputRef.current.click()} style={{ border:`2px dashed ${files.length>0 ? couleur+"66" : "#c8d5e8"}`, borderRadius:10, padding:"18px 16px", textAlign:"center", cursor:"pointer", background:files.length>0 ? `${couleur}05` : "#fafbff" }}>
               <div style={{ fontSize:26, marginBottom:4 }}>➕</div>
               <div style={{ fontWeight:600, color:couleur, fontSize:13 }}>
-                {files.length===0 ? "Appuyez pour ajouter" : "Ajouter une autre ordonnance"}
+                {files.length===0 ? "Appuyez pour ajouter un fichier" : "Ajouter une autre ordonnance"}
               </div>
               <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>JPEG, PNG ou PDF</div>
               <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display:"none" }}
@@ -2852,7 +2852,7 @@ body {
 
 <div class="title-band">
   <span class="cross">&#10010;</span>
-  <span class="title-text">Envoyer votre ordonnance</span>
+  <span class="title-text">Envoyez votre ordonnance</span>
   <span class="cross">&#10010;</span>
 </div>
 
@@ -2861,7 +2861,7 @@ body {
 </div>
 
 <div class="qr-card">
-  <div class="method-badge">M&#233;thode 1 : Scanner le code QR</div>
+  <div class="method-badge">M&#233;thode 1 : Scannez le code QR</div>
   <div class="qr-wrap">
     ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:122mm;height:122mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
   </div>
@@ -3005,7 +3005,7 @@ body {
             {nfcStatus === "unsupported" && (
               <div style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#92400e", textAlign: "left" }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>NFC non disponible dans ce navigateur</div>
-                <div>Utilisez Chrome sur Android. Sur iPhone, la programmation NFC n'est pas supportée (lecture seule).</div>
+                <div>Utilisez Chrome sur Android. Sur iPhone, la programmation NFC n'est pas prise en charge (lecture seule).</div>
               </div>
             )}
           </div>
