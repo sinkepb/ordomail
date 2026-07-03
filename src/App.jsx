@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 13:41";
+const APP_VERSION = "v6.0 · 03/07/2026 13:53";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2816,9 +2816,9 @@ body {
 .pharma-name { font-size: 17px; font-weight: 900; color: #1a3a2a; letter-spacing: 1.5px; text-transform: uppercase; }
 
 /* QR — flex:1 pour prendre tout l'espace disponible */
-.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5mm; flex: 1; }
+.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 3mm 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5mm; }
 .method-badge { background: #1a4a35; border-radius: 8px; padding: 6px 20px; font-size: 13px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3mm; width: 100%; text-align: center; }
-.qr-wrap { background: #fff; border-radius: 12px; padding: 6mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.qr-wrap { background: #fff; border-radius: 12px; padding: 4mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
 .qr-wrap img { width: 122mm; height: 122mm; display: block; }
 
 /* NFC card */
