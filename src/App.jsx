@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 01/07/2026 11:04";
+const APP_VERSION = "v6.0 · 03/07/2026 01:08";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2399,49 +2399,66 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
 
 // ─── Ordo Row — vue liste ─────────────────────────────────────────────────────
 function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
-  const isNew = ordo.status === "nouveau";
-  const nom = ordo.extracted?.nom || ordo.fromName;
-  const accent = getOrdoAccent(ordo.id);
+  const isNew   = ordo.status === "nouveau";
+  const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
+  const email   = ordo.fromEmail || "";
+  const accent  = getOrdoAccent(ordo.id);
+  const hasFile = !!(ordo.attachments?.[0]?.dataUrl || ordo.attachments?.[0]?.path);
+  const srcIcon = ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️";
+
   return (
     <div style={{
       background: isNew ? accent.bg + "55" : "#fff",
       borderRadius: 12, marginBottom: 6, padding: "12px 18px",
-      display: "flex", alignItems: "center", gap: 16,
+      display: "flex", alignItems: "center", gap: 14,
       border: `1.5px solid ${accent.border}`,
       boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-      transition: "background 0.15s",
     }}>
-      <div style={{ width: 40, height: 40, borderRadius: "50%", background: isNew ? accent.bandeau : accent.bg, border: `2px solid ${accent.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: isNew ? "#fff" : accent.avatar, fontWeight: 900, fontSize: 17, flexShrink: 0 }}>
-        {nom?.charAt(0) || "?"}
+      {/* Avatar */}
+      <div style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+        background: isNew ? accent.bandeau : accent.bg,
+        border: `2px solid ${accent.border}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: isNew ? "#fff" : accent.avatar, fontWeight: 900, fontSize: 17 }}>
+        {nom?.charAt(0)?.toUpperCase() || "?"}
       </div>
+
+      {/* Nom + email */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 16, color: "#1a1a1a" }}>{nom}</div>
-        {cv
-          ? <div style={{ fontSize: 12, color: "#15623a", fontFamily: "monospace", fontWeight: 700 }}>💳 {cv}</div>
-          : <div style={{ fontSize: 12, color: "#ccc" }}>Carte vitale non extraite</div>
-        }
+        <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+        {email && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email}</div>}
+        <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{timeAgo(ordo.receivedAt)}</div>
       </div>
-      <div style={{ fontSize: 10, color: "#aaa", flexShrink: 0, display: "none" }} className="hide-mobile">{timeAgo(ordo.receivedAt)}</div>
-      <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0, background: isNew ? "#fff8e1" : "#e8f5e9", color: isNew ? "#b7791f" : "#2e7d32", border: `1px solid ${isNew ? "#f6e05e" : "#a5d6a7"}` }}>
+
+      {/* Source + statut */}
+      <span style={{ fontSize: 14, flexShrink: 0 }} title={ordo.source}>{srcIcon}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,
+        background: isNew ? "#fff8e1" : "#e8f5e9",
+        color: isNew ? "#b7791f" : "#2e7d32",
+        border: `1px solid ${isNew ? "#f6e05e" : "#a5d6a7"}` }}>
         {isNew ? "NOUVEAU" : "IMPRIMÉ"}
       </span>
-      {ordo.source === "qrcode" && <span style={{ fontSize: 10, background: "#f3e8ff", color: "#6b21a8", borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>📱</span>}
+
+      {/* Actions */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-        <Btn variant="ghost" small onClick={onView} disabled={!ordo.attachments[0]?.dataUrl}>👁</Btn>
-        {!ordo.attachments[0]?.dataUrl && ordo.source === "email" && (
-          <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank"); }}
-            title="Fiche PDF"
-            style={{ padding: "4px 8px", border: "1.5px solid #c7d2fe", borderRadius: 7, background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-            📄
-          </button>
-        )}
-        <Btn small onClick={onPrint} style={{ background: isNew ? accent.bandeau : "#78909c" }}>🖨️</Btn>
+        <button onClick={onView} disabled={!hasFile}
+          style={{ padding: "6px 10px", border: `1.5px solid ${hasFile ? accent.border : "#e2e8f0"}`,
+            borderRadius: 8, background: hasFile ? "#f8faff" : "#f5f5f5",
+            color: hasFile ? accent.avatar : "#ccc", fontWeight: 700, fontSize: 13,
+            cursor: hasFile ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+          👁
+        </button>
+        <button onClick={onPrint}
+          style={{ padding: "6px 12px", border: "none", borderRadius: 8,
+            background: isNew ? accent.bandeau : "#475569", color: "#fff",
+            fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+          🖨️ Imprimer
+        </button>
         {!isNew && (
-          <button onClick={onReopen} style={{
-            padding: "4px 8px", border: "1.5px solid #e6a817", borderRadius: 8,
-            background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 10,
-            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-          }}>↩</button>
+          <button onClick={onReopen}
+            style={{ padding: "6px 9px", border: "1.5px solid #e6a817", borderRadius: 8,
+              background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 11,
+              cursor: "pointer", fontFamily: "inherit" }}>↩</button>
         )}
       </div>
     </div>
@@ -3647,7 +3664,7 @@ function LoginPage({ onLogin, onBack }) {
 
 
 // ─── AppLogin ─────────────────────────────────────────────────────────────────
-function AppLogin({ onBack, onGoToPricing }) {
+function AppLogin({ onBack, onLogout, onGoToPricing }) {
   // Récupérer la session restaurée depuis le refresh
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
@@ -3663,10 +3680,10 @@ function AppLogin({ onBack, onGoToPricing }) {
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>💳 Abonnements</button>
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
           </div>
         </div>
-        <AdminDashboard onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }}/>
+        <AdminDashboard onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }}/>
       </div>
     );
     return (
@@ -3679,10 +3696,10 @@ function AppLogin({ onBack, onGoToPricing }) {
             {session.userRole==="vendeur"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.7)",padding:"2px 8px",borderRadius:12}}>🖥️ {session.posteNom||"Vendeur"}</span>}
             {session.userRole==="admin"&&<button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",padding:"4px 11px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>💳</button>}
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
+            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
           </div>
         </div>
-        <PharmacieDashboard pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); setRoute("landing"); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <PharmacieDashboard pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }
@@ -4437,7 +4454,7 @@ export default function App() {
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
       {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}
-      {(route==="dashboard"||route==="admin")&&<AppLogin onBack={()=>setRoute("landing")} onGoToPricing={()=>setRoute("pricing")}/>}
+      {(route==="dashboard"||route==="admin")&&<AppLogin onBack={()=>setRoute("landing")} onLogout={()=>setRoute("landing")} onGoToPricing={()=>setRoute("pricing")}/>}
     </>
   );
 }
