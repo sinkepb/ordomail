@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 01:08";
+const APP_VERSION = "v6.0 · 03/07/2026 12:37";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2476,7 +2476,7 @@ function PatientPage({ pharmacie, onBack }) {
   const [sending, setSending] = useState(false);
   const inputRef              = useRef();
   const couleur               = pharmacie?.couleur || "#1a3a6e";
-  const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.immodiaspora.fr`;
+  const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
 
   // Ajouter un ou plusieurs fichiers
   function handleFiles(selectedFiles) {
@@ -3605,7 +3605,7 @@ function LoginTabContent({ onLogin }) {
                     const sb = getSupabaseClient();
                     if (!sb) { setEmailError("Supabase non disponible"); return; }
                     await sb.auth.resetPasswordForEmail(email, {
-                      redirectTo: "https://ordomail.vercel.app",
+                      redirectTo: "https://ordomail.fr",
                     });
                     setResetSent(true);
                   } catch(e) {
@@ -3820,7 +3820,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                   const slug = form.pharmacie.toLowerCase()
                     .normalize("NFD").replace(/[̀-ͯ]/g,"")
                     .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
-                  const emailReception = slug + "@in.immodiaspora.fr";
+                  const emailReception = slug + "@in.ordomail.fr";
 
                   // 3. Créer la pharmacie via Edge Function (service_role)
                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
