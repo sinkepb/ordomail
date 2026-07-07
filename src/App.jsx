@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 07/07/2026 22:34";
+const APP_VERSION = "v6.0 · 07/07/2026 22:43";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2828,13 +2828,28 @@ function PatientStories({ pharmacie, nom, onRestart }) {
     if (current > 0) setCurrent(c => c - 1);
   }
 
-  // Swipe tactile
-  function handleTouchStart(e) { setTouchStart(e.touches[0].clientX); }
+  // Swipe tactile — coordonnées X ET Y pour différencier swipe horizontal / scroll
+  const touchStartY = useRef(null);
+  function handleTouchStart(e) {
+    setTouchStart(e.touches[0].clientX);
+    touchStartY.current = e.touches[0].clientY;
+  }
   function handleTouchEnd(e) {
     if (touchStart === null) return;
-    const diff = touchStart - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 50) { diff > 0 ? goNext() : goPrev(); }
+    const diffX = touchStart - e.changedTouches[0].clientX;
+    const diffY = (touchStartY.current || 0) - e.changedTouches[0].clientY;
+    // Swipe horizontal uniquement si deplacement X > Y (pas un scroll vertical)
+    if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY)) {
+      diffX > 0 ? goNext() : goPrev();
+    } else if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) {
+      // Tap simple : gauche = prev, droite = next
+      const screenW = window.innerWidth;
+      const tapX = e.changedTouches[0].clientX;
+      if (tapX < screenW * 0.35) goPrev();
+      else if (tapX > screenW * 0.65) goNext();
+    }
     setTouchStart(null);
+    touchStartY.current = null;
   }
 
   const [r1, r2] = story.bg;
@@ -2874,9 +2889,7 @@ function PatientStories({ pharmacie, nom, onRestart }) {
         </div>
       </div>
 
-      {/* Zones cliquables prev/next */}
-      <div style={{ position: "absolute", top: 0, left: 0, width: "35%", height: "100%", zIndex: 5 }} onClick={goPrev}/>
-      <div style={{ position: "absolute", top: 0, right: 0, width: "35%", height: "100%", zIndex: 5 }} onClick={goNext}/>
+      {/* Navigation tap : géré dans handleTouchEnd */}
 
       {/* Contenu story */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 28px", textAlign: "center", position: "relative", zIndex: 6 }}>
