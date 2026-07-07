@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 07/07/2026 20:47";
+const APP_VERSION = "v6.0 · 07/07/2026 22:34";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1181,10 +1181,10 @@ function Input({ label, value, onChange, type="text", placeholder="", icon="" })
 
 // ─── Plans & limites (source de vérité unique) ───────────────────────────────
 const PLAN_LIMITS = {
-  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19, priceAnnual:15, icon:"🌱", color:"#0369a1", offresStories: false },
-  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39, priceAnnual:31, icon:"⭐", color:"#1a3a6e", offresStories: false },
-  pro:      { id:"pro",      maxPostes: 15,  maxOrdos: 99999, label:"Pro",       price:79, priceAnnual:63, icon:"🏥", color:"#4c1d95", offresStories: false },
-  premium:  { id:"premium",  maxPostes: 999, maxOrdos: 99999, label:"Premium",  price:119, priceAnnual:95, icon:"💎", color:"#b45309", offresStories: true  },
+  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19, priceAnnual:15, icon:"🌱", color:"#0369a1", offresStories: true },
+  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39, priceAnnual:31, icon:"⭐", color:"#1a3a6e", offresStories: true },
+  pro:      { id:"pro",      maxPostes: 15,  maxOrdos: 99999, label:"Pro",       price:79, priceAnnual:63, icon:"🏥", color:"#4c1d95", offresStories: true },
+  premium:  { id:"premium",  maxPostes: 999, maxOrdos: 99999, label:"Premium",  price:119, priceAnnual:95, icon:"💎", color:"#b45309", offresStories: true },
 };
 const PLAN_ORDER = ["starter","standard","pro","premium"];
 
