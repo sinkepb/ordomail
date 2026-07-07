@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 03/07/2026 14:20";
+const APP_VERSION = "v6.0 · 07/07/2026 20:47";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -1181,11 +1181,12 @@ function Input({ label, value, onChange, type="text", placeholder="", icon="" })
 
 // ─── Plans & limites (source de vérité unique) ───────────────────────────────
 const PLAN_LIMITS = {
-  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19, priceAnnual:15, icon:"🌱", color:"#0369a1" },
-  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39, priceAnnual:31, icon:"⭐", color:"#1a3a6e" },
-  pro:      { id:"pro",      maxPostes: 999, maxOrdos: 99999, label:"Pro",       price:79, priceAnnual:63, icon:"🏥", color:"#4c1d95" },
+  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19, priceAnnual:15, icon:"🌱", color:"#0369a1", offresStories: false },
+  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39, priceAnnual:31, icon:"⭐", color:"#1a3a6e", offresStories: false },
+  pro:      { id:"pro",      maxPostes: 15,  maxOrdos: 99999, label:"Pro",       price:79, priceAnnual:63, icon:"🏥", color:"#4c1d95", offresStories: false },
+  premium:  { id:"premium",  maxPostes: 999, maxOrdos: 99999, label:"Premium",  price:119, priceAnnual:95, icon:"💎", color:"#b45309", offresStories: true  },
 };
-const PLAN_ORDER = ["starter","standard","pro"];
+const PLAN_ORDER = ["starter","standard","pro","premium"];
 
 function getNextPlan(currentPlan) {
   const idx = PLAN_ORDER.indexOf(currentPlan);
@@ -1399,6 +1400,198 @@ function PlanSwitcherModal({ pharmacie, postes, onConfirm, onClose }) {
 // ABONNEMENT & COMPTE (ParametresTab sub-sections)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+
+// ─── Section Offres Stories (Premium) ────────────────────────────────────────
+function OffresSection({ pharmacie, planInfo }) {
+  const isPremium = planInfo?.offresStories === true;
+  const [offres, setOffres]     = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+  const [saving, setSaving]     = useState(false);
+  const sb = getSupabaseClient();
+
+  // Types d'offres
+  const TYPES = [
+    { id:"promo",    label:"Promotion",   emoji:"🏷️", desc:"Réduction sur un produit" },
+    { id:"service",  label:"Service",     emoji:"🩺", desc:"Mise en avant d'un service" },
+    { id:"fidelite", label:"Fidélité",    emoji:"🎁", desc:"Offre de fidélité" },
+  ];
+
+  useEffect(() => {
+    if (!isPremium || !sb) return;
+    sb.from("offres_stories").select("*").eq("pharmacie_id", pharmacie.id).order("created_at", { ascending: false })
+      .then(({ data }) => { if (data) setOffres(data); });
+  }, [isPremium]);
+
+  async function saveOffre() {
+    if (!form.titre.trim()) return;
+    setSaving(true);
+    const payload = { ...form, pharmacie_id: pharmacie.id };
+    if (sb && !isDemoMode) {
+      const { data } = await sb.from("offres_stories").insert(payload).select().single();
+      if (data) setOffres(prev => [data, ...prev]);
+    } else {
+      setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
+    }
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+    setShowForm(false);
+    setSaving(false);
+  }
+
+  async function toggleOffre(id, actif) {
+    setOffres(prev => prev.map(o => o.id === id ? { ...o, actif: !actif } : o));
+    if (sb && !isDemoMode) await sb.from("offres_stories").update({ actif: !actif }).eq("id", id);
+  }
+
+  async function deleteOffre(id) {
+    setOffres(prev => prev.filter(o => o.id !== id));
+    if (sb && !isDemoMode) await sb.from("offres_stories").delete().eq("id", id);
+  }
+
+  // Paywall si pas premium
+  if (!isPremium) return (
+    <div style={{ background:"#fff", borderRadius:14, padding:28, boxShadow:"0 2px 10px rgba(0,0,0,0.07)", textAlign:"center" }}>
+      <div style={{ fontSize:48, marginBottom:12 }}>💎</div>
+      <div style={{ fontWeight:900, fontSize:18, color:"#1a1a1a", marginBottom:8 }}>Offres & Promotions en Stories</div>
+      <div style={{ fontSize:14, color:"#64748b", lineHeight:1.7, marginBottom:20, maxWidth:340, margin:"0 auto 20px" }}>
+        Diffusez vos promotions, services et offres de fidélité directement dans les stories vues par vos patients pendant leur attente.<br/><br/>
+        Fonctionnalité disponible avec le plan <strong>Premium</strong>.
+      </div>
+      <div style={{ background:"#fef9f0", border:"1.5px solid #f59e0b", borderRadius:12, padding:"16px 20px", marginBottom:20, display:"inline-block", textAlign:"left" }}>
+        <div style={{ fontWeight:800, fontSize:15, color:"#92400e", marginBottom:8 }}>💎 Plan Premium — 119€/mois</div>
+        {["Postes illimités","Offres & Promotions en Stories","Ordonnances illimitées","Support prioritaire"].map(f=>(
+          <div key={f} style={{ fontSize:13, color:"#78350f", marginBottom:4 }}>✅ {f}</div>
+        ))}
+      </div>
+      <br/>
+      <button style={{ padding:"12px 28px", border:"none", borderRadius:12, background:"#b45309", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>
+        Passer en Premium →
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ background:"#fff", borderRadius:14, padding:22, boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+        <div>
+          <div style={{ fontWeight:800, fontSize:15 }}>🎯 Offres & Promotions</div>
+          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>Affichées dans les stories de vos patients en attente</div>
+        </div>
+        <button onClick={()=>setShowForm(true)}
+          style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          + Nouvelle offre
+        </button>
+      </div>
+
+      {/* Formulaire création */}
+      {showForm && (
+        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18 }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>Créer une offre</div>
+
+          {/* Type */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            {TYPES.map(t=>(
+              <button key={t.id} onClick={()=>setForm(f=>({...f,type:t.id}))}
+                style={{ flex:1, padding:"8px 4px", border:`2px solid ${form.type===t.id?"#1a3a6e":"#e0e7ff"}`, borderRadius:10,
+                  background:form.type===t.id?"#1a3a6e":"#fff", color:form.type===t.id?"#fff":"#374151",
+                  fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit", textAlign:"center" }}>
+                <div style={{ fontSize:18, marginBottom:2 }}>{t.emoji}</div>
+                <div>{t.label}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Emoji + titre */}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+            <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
+              style={{ width:52, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px", fontSize:20, textAlign:"center", fontFamily:"inherit" }}/>
+            <input value={form.titre} onChange={e=>setForm(f=>({...f,titre:e.target.value}))}
+              placeholder="Titre de l'offre (ex: -20% sur Doliprane)"
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
+          </div>
+
+          {/* Description */}
+          <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}
+            placeholder="Description courte (1-2 lignes)"
+            rows={2}
+            style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
+
+          {/* Badge + couleur + date fin */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            <input value={form.badge} onChange={e=>setForm(f=>({...f,badge:e.target.value}))}
+              placeholder='Badge (ex: "-20%")'
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+            <input type="color" value={form.couleur} onChange={e=>setForm(f=>({...f,couleur:e.target.value}))}
+              style={{ width:44, height:38, border:"1.5px solid #e0e7ff", borderRadius:8, cursor:"pointer", padding:2 }}/>
+            <input type="date" value={form.date_fin} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+          </div>
+
+          {/* Preview story */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
+            <div style={{ width:120, height:200, borderRadius:16, background:`linear-gradient(160deg,${form.couleur},${form.couleur}99)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
+              {form.badge && <div style={{ background:"rgba(255,255,255,0.25)", borderRadius:20, padding:"2px 8px", fontSize:11, fontWeight:900, color:"#fff", marginBottom:6 }}>{form.badge}</div>}
+              <div style={{ fontSize:28, marginBottom:6 }}>{form.emoji||"🎁"}</div>
+              <div style={{ fontSize:11, fontWeight:800, color:"#fff", lineHeight:1.3 }}>{form.titre||"Titre"}</div>
+              {form.description && <div style={{ fontSize:9, color:"rgba(255,255,255,0.8)", marginTop:4, lineHeight:1.4 }}>{form.description.slice(0,40)}</div>}
+            </div>
+          </div>
+
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={()=>setShowForm(false)}
+              style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              Annuler
+            </button>
+            <button onClick={saveOffre} disabled={!form.titre.trim()||saving}
+              style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              {saving ? "Enregistrement…" : "✅ Publier l'offre"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Liste des offres */}
+      {offres.length === 0 && !showForm && (
+        <div style={{ textAlign:"center", padding:"32px 0", color:"#94a3b8" }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>🎯</div>
+          <div style={{ fontSize:14, fontWeight:600 }}>Aucune offre créée</div>
+          <div style={{ fontSize:12, marginTop:4 }}>Créez votre première offre pour l'afficher dans les stories</div>
+        </div>
+      )}
+      {offres.map(offre => (
+        <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
+          <div style={{ width:44, height:44, borderRadius:10, background:`linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
+            {offre.emoji||"🎁"}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:offre.actif?"#1a1a1a":"#94a3b8", display:"flex", alignItems:"center", gap:6 }}>
+              {offre.titre}
+              {offre.badge && <span style={{ fontSize:10, background:"#fef3c7", color:"#92400e", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>{offre.badge}</span>}
+              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
+                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":"Fidélité"}
+              </span>
+            </div>
+            {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
+            {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
+          </div>
+          <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+            <button onClick={()=>toggleOffre(offre.id, offre.actif)}
+              style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#bbf7d0"}`, borderRadius:8, background:offre.actif?"#fff":"#f0fdf4", color:offre.actif?"#64748b":"#15803d", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              {offre.actif?"Pause":"▶ Activer"}
+            </button>
+            <button onClick={()=>deleteOffre(offre.id)}
+              style={{ padding:"5px 8px", border:"1.5px solid #fee2e2", borderRadius:8, background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+              ✕
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 function AbonnementSection({ pharmacie, onUpgrade }) {
   const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
   const plan = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
@@ -1610,7 +1803,7 @@ function ParametresTab({ pharmacie, onSave }) {
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -1734,6 +1927,9 @@ function ParametresTab({ pharmacie, onSave }) {
           </div>
         )}
 
+        {section==="offres"&&(
+          <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
+        )}
         {section==="abonnement"&&(
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
             try {
@@ -2499,6 +2695,283 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PAGE PATIENT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Stories post-envoi (format WhatsApp/Instagram) ─────────────────────────
+const HEALTH_STORIES = [
+  {
+    id: 1,
+    emoji: "✅",
+    bg: ["#1a6e3a", "#15803d"],
+    title: "Ordonnance reçue !",
+    text: "Votre pharmacien prépare votre commande. Restez dans la file — nous vous appelons quand c'est prêt.",
+    type: "info",
+  },
+  {
+    id: 2,
+    emoji: "💊",
+    bg: ["#1a3a6e", "#1e40af"],
+    title: "Le saviez-vous ?",
+    text: "1 patient sur 3 arrête son traitement trop tôt. Même si vous vous sentez mieux, terminez toujours votre prescription.",
+    type: "info",
+  },
+  {
+    id: 3,
+    emoji: "🧠",
+    bg: ["#4c1d95", "#6d28d9"],
+    title: "Quiz santé",
+    text: null,
+    type: "quiz",
+    question: "Que faire avec les médicaments non utilisés ?",
+    answers: [
+      { text: "Les jeter à la poubelle", correct: false, emoji: "🗑️" },
+      { text: "Les rapporter en pharmacie", correct: true, emoji: "✅" },
+      { text: "Les garder pour plus tard", correct: false, emoji: "📦" },
+    ],
+    explanation: "Les pharmacies collectent gratuitement vos médicaments non utilisés via le programme Cyclamed.",
+  },
+  {
+    id: 4,
+    emoji: "💬",
+    bg: ["#92400e", "#b45309"],
+    title: "À demander au pharmacien",
+    text: "Puis-je prendre ce médicament avec mon traitement habituel ? Y a-t-il un générique disponible ?",
+    type: "info",
+  },
+  {
+    id: 5,
+    emoji: "🎁",
+    bg: ["#065f46", "#047857"],
+    title: "Le saviez-vous ?",
+    text: "Votre pharmacie propose souvent la vaccination sans RDV, des bilans de médication gratuits et la livraison à domicile.",
+    type: "info",
+  },
+];
+
+function PatientStories({ pharmacie, nom, onRestart }) {
+  const [current, setCurrent] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [quizAnswer, setQuizAnswer] = useState(null); // index réponse choisie
+  const [touchStart, setTouchStart] = useState(null);
+  const timerRef = useRef(null);
+  const DURATION = 6000; // 6s par story (sauf quiz)
+  const [allStories, setAllStories] = useState(HEALTH_STORIES);
+
+  // Charger les offres actives de la pharmacie
+  useEffect(() => {
+    const sb = getSupabaseClient();
+    if (!sb || !pharmacie?.id) return;
+    sb.from("offres_stories")
+      .select("*")
+      .eq("pharmacie_id", pharmacie.id)
+      .eq("actif", true)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        // Convertir les offres en stories
+        const offreStories = data
+          .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
+          .map(o => ({
+            id: `offre-${o.id}`,
+            emoji: o.emoji || "🎁",
+            bg: [o.couleur || "#1a3a6e", (o.couleur || "#1a3a6e") + "99"],
+            title: o.titre,
+            text: o.description || "",
+            type: "offre",
+            badge: o.badge || null,
+          }));
+        if (offreStories.length > 0) {
+          // Insérer les offres après la story 2 (conseil santé)
+          const base = [...HEALTH_STORIES];
+          base.splice(2, 0, ...offreStories);
+          setAllStories(base);
+        }
+      });
+  }, [pharmacie?.id]);
+
+  const story = allStories[current];
+  const totalStories = allStories.length;
+  const isQuiz = story?.type === "quiz";
+  const isOffre = story?.type === "offre";
+  const couleur = pharmacie?.couleur || "#1a3a6e";
+
+  // Avancer automatiquement sauf si quiz en cours
+  useEffect(() => {
+    setProgress(0);
+    setQuizAnswer(null);
+    if (isQuiz) return; // Pause sur le quiz
+
+    const start = Date.now();
+    timerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.min((elapsed / DURATION) * 100, 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        clearInterval(timerRef.current);
+        goNext();
+      }
+    }, 50);
+    return () => clearInterval(timerRef.current);
+  }, [current]);
+
+  // Reprendre après réponse quiz
+  useEffect(() => {
+    if (!isQuiz || quizAnswer === null) return;
+    const t = setTimeout(() => goNext(), 3000);
+    return () => clearTimeout(t);
+  }, [quizAnswer]);
+
+  function goNext() {
+    if (current < HEALTH_STORIES.length - 1) {
+      setCurrent(c => c + 1);
+    }
+  }
+  function goPrev() {
+    if (current > 0) setCurrent(c => c - 1);
+  }
+
+  // Swipe tactile
+  function handleTouchStart(e) { setTouchStart(e.touches[0].clientX); }
+  function handleTouchEnd(e) {
+    if (touchStart === null) return;
+    const diff = touchStart - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) { diff > 0 ? goNext() : goPrev(); }
+    setTouchStart(null);
+  }
+
+  const [r1, r2] = story.bg;
+
+  return (
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        minHeight: "100vh", width: "100%",
+        background: `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
+        display: "flex", flexDirection: "column",
+        position: "relative", overflow: "hidden",
+        userSelect: "none",
+      }}>
+
+      {/* Barres de progression */}
+      <div style={{ display: "flex", gap: 4, padding: "14px 16px 8px", position: "relative", zIndex: 10 }}>
+        {allStories.map((s, i) => (
+          <div key={s.id} style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)", overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 2,
+              background: "#fff",
+              width: i < current ? "100%" : i === current ? (isQuiz && quizAnswer !== null ? "100%" : `${progress}%`) : "0%",
+              transition: i === current && !isQuiz ? "none" : "width 0.3s",
+            }}/>
+          </div>
+        ))}
+      </div>
+
+      {/* Header */}
+      <div style={{ padding: "6px 16px 0", display: "flex", alignItems: "center", gap: 10, zIndex: 10 }}>
+        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>💊</div>
+        <div>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{pharmacie?.nom || "Votre pharmacie"}</div>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11 }}>Bonjour {nom} 👋</div>
+        </div>
+      </div>
+
+      {/* Zones cliquables prev/next */}
+      <div style={{ position: "absolute", top: 0, left: 0, width: "35%", height: "100%", zIndex: 5 }} onClick={goPrev}/>
+      <div style={{ position: "absolute", top: 0, right: 0, width: "35%", height: "100%", zIndex: 5 }} onClick={goNext}/>
+
+      {/* Contenu story */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 28px", textAlign: "center", position: "relative", zIndex: 6 }}>
+
+        <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
+
+        {/* Story info */}
+        {!isQuiz && !isOffre && (
+          <div style={{ fontSize: 16, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, maxWidth: 300 }}>{story.text}</div>
+        )}
+
+        {/* Story offre pharmacie */}
+        {story.type === "offre" && (
+          <div style={{ width:"100%", maxWidth:300 }}>
+            {story.badge && (
+              <div style={{ display:"inline-block", background:"rgba(255,255,255,0.25)", borderRadius:24, padding:"4px 16px", fontSize:18, fontWeight:900, color:"#fff", marginBottom:14, border:"2px solid rgba(255,255,255,0.4)" }}>
+                {story.badge}
+              </div>
+            )}
+            <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280 }}>{story.text}</div>
+            <div style={{ marginTop:18, padding:"10px 16px", background:"rgba(255,255,255,0.15)", borderRadius:12, fontSize:13, color:"rgba(255,255,255,0.8)", fontWeight:600 }}>
+              💬 Demandez à votre pharmacien
+            </div>
+          </div>
+        )}
+        {/* Story quiz */}
+        {isQuiz && (
+          <div style={{ width: "100%", maxWidth: 320 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", marginBottom: 18, lineHeight: 1.5 }}>{story.question}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {story.answers.map((ans, idx) => {
+                const chosen = quizAnswer === idx;
+                const revealed = quizAnswer !== null;
+                const isCorrect = ans.correct;
+                let bg = "rgba(255,255,255,0.15)";
+                let border = "rgba(255,255,255,0.3)";
+                if (revealed && isCorrect) { bg = "rgba(34,197,94,0.35)"; border = "#4ade80"; }
+                else if (revealed && chosen && !isCorrect) { bg = "rgba(239,68,68,0.35)"; border = "#f87171"; }
+                return (
+                  <button key={idx}
+                    onClick={e => { e.stopPropagation(); if (quizAnswer === null) setQuizAnswer(idx); }}
+                    style={{
+                      padding: "13px 16px", borderRadius: 14,
+                      border: `2px solid ${border}`,
+                      background: bg, color: "#fff",
+                      fontWeight: 700, fontSize: 15,
+                      cursor: quizAnswer === null ? "pointer" : "default",
+                      fontFamily: "inherit", textAlign: "left",
+                      display: "flex", alignItems: "center", gap: 10,
+                      transition: "all 0.3s",
+                    }}>
+                    <span>{ans.emoji}</span>
+                    <span>{ans.text}</span>
+                    {revealed && isCorrect && <span style={{ marginLeft: "auto" }}>✓</span>}
+                    {revealed && chosen && !isCorrect && <span style={{ marginLeft: "auto" }}>✗</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {quizAnswer !== null && (
+              <div style={{ marginTop: 14, padding: "12px 16px", background: "rgba(255,255,255,0.12)", borderRadius: 12, fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>
+                💡 {story.explanation}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Indicateur swipe */}
+      {quizAnswer === null && !isQuiz && (
+        <div style={{ padding: "0 0 24px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 12, zIndex: 10 }}>
+          ← Swipez →
+        </div>
+      )}
+      {quizAnswer !== null && (
+        <div style={{ padding: "0 0 24px", textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 12, zIndex: 10 }}>
+          Suite dans 3 secondes…
+        </div>
+      )}
+
+      {/* Bouton fin de stories */}
+      {current === allStories.length - 1 && progress > 80 && (
+        <div style={{ padding: "0 24px 32px", zIndex: 10 }}>
+          <button onClick={onRestart}
+            style={{ width: "100%", padding: "14px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+            Envoyer une autre ordonnance
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function PatientPage({ pharmacie, onBack }) {
   const [step, setStep]       = useState("form");
   const [nom, setNom]         = useState("");
@@ -2617,19 +3090,11 @@ function PatientPage({ pharmacie, onBack }) {
   }
 
   if (step === "success") return (
-    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,${couleur} 0%,#1a6e3a 100%)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:32, textAlign:"center" }}>
-      <div style={{ fontSize:72, marginBottom:16 }}>✅</div>
-      <div style={{ color:"#fff", fontSize:22, fontWeight:800, marginBottom:8 }}>
-        {files.length > 1 ? `${files.length} ordonnances envoyées !` : "Ordonnance envoyée !"}
-      </div>
-      <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.7, maxWidth:280 }}>
-        {pharmacie?.nom} a bien reçu {files.length > 1 ? "vos ordonnances" : "votre ordonnance"}.<br/>Vous pouvez vous présenter à la pharmacie.
-      </div>
-      <button onClick={()=>{ setStep("form"); setFiles([]); setNom(""); }}
-        style={{ marginTop:28, padding:"11px 24px", borderRadius:30, border:"none", background:"rgba(255,255,255,0.2)", color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer" }}>
-        Envoyer d'autres ordonnances
-      </button>
-    </div>
+    <PatientStories
+      pharmacie={pharmacie}
+      nom={nom}
+      onRestart={() => { setStep("form"); setFiles([]); setNom(""); }}
+    />
   );
 
   if (step === "uploading") return (
