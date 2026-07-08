@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 07/07/2026 22:43";
+const APP_VERSION = "v6.0 · 08/07/2026 00:17";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2820,7 +2820,7 @@ function PatientStories({ pharmacie, nom, onRestart }) {
   }, [quizAnswer]);
 
   function goNext() {
-    if (current < HEALTH_STORIES.length - 1) {
+    if (current < allStories.length - 1) {
       setCurrent(c => c + 1);
     }
   }
