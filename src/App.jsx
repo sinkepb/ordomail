@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 08/07/2026 00:17";
+const APP_VERSION = "v6.0 · 08/07/2026 22:24";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
@@ -2753,38 +2753,75 @@ function PatientStories({ pharmacie, nom, onRestart }) {
   const [quizAnswer, setQuizAnswer] = useState(null); // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);
   const timerRef = useRef(null);
-  const DURATION = 6000; // 6s par story (sauf quiz)
+  const DURATION = 6000;
   const [allStories, setAllStories] = useState(HEALTH_STORIES);
 
-  // Charger les offres actives de la pharmacie
   useEffect(() => {
     const sb = getSupabaseClient();
-    if (!sb || !pharmacie?.id) return;
-    sb.from("offres_stories")
-      .select("*")
-      .eq("pharmacie_id", pharmacie.id)
-      .eq("actif", true)
-      .then(({ data }) => {
-        if (!data || data.length === 0) return;
-        // Convertir les offres en stories
-        const offreStories = data
-          .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
-          .map(o => ({
-            id: `offre-${o.id}`,
-            emoji: o.emoji || "🎁",
-            bg: [o.couleur || "#1a3a6e", (o.couleur || "#1a3a6e") + "99"],
-            title: o.titre,
-            text: o.description || "",
-            type: "offre",
-            badge: o.badge || null,
+    let base = [...HEALTH_STORIES];
+
+    async function loadDynamic() {
+      if (!sb) return;
+
+      // Charger contenu santé aléatoire depuis la table stories_content
+      try {
+        const { data: contents } = await sb
+          .from("stories_content")
+          .select("*")
+          .eq("actif", true);
+        if (contents && contents.length > 0) {
+          // Mélanger et prendre 3 max
+          const shuffled = contents.sort(() => Math.random() - 0.5).slice(0, 3);
+          const dynamicStories = shuffled.map(s => ({
+            id: `content-${s.id}`,
+            emoji: s.emoji || "💡",
+            bg: s.type === "quiz"
+              ? ["#4c1d95", "#6d28d9"]
+              : s.type === "conseil"
+              ? ["#1a3a6e", "#1e40af"]
+              : ["#065f46", "#047857"],
+            title: s.titre,
+            text: s.type !== "quiz" ? s.contenu : null,
+            type: s.type, // "info" | "quiz" | "conseil"
+            question: s.question || null,
+            answers: s.reponses ? JSON.parse(s.reponses) : null,
+            explanation: s.explication || null,
           }));
-        if (offreStories.length > 0) {
-          // Insérer les offres après la story 2 (conseil santé)
-          const base = [...HEALTH_STORIES];
-          base.splice(2, 0, ...offreStories);
-          setAllStories(base);
+          // Remplacer les stories statiques par les dynamiques (garder story 1 confirmation)
+          base = [base[0], ...dynamicStories];
         }
-      });
+      } catch(e) { console.warn("[stories_content]", e.message); }
+
+      // Charger offres pharmacie
+      if (pharmacie?.id) {
+        try {
+          const { data: offres } = await sb
+            .from("offres_stories")
+            .select("*")
+            .eq("pharmacie_id", pharmacie.id)
+            .eq("actif", true);
+          if (offres && offres.length > 0) {
+            const offreStories = offres
+              .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
+              .map(o => ({
+                id: `offre-${o.id}`,
+                emoji: o.emoji || "🎁",
+                bg: [o.couleur || "#1a3a6e", (o.couleur || "#1a3a6e") + "99"],
+                title: o.titre,
+                text: o.description || "",
+                type: "offre",
+                badge: o.badge || null,
+              }));
+            // Insérer les offres en 2ème position
+            base.splice(1, 0, ...offreStories);
+          }
+        } catch(e) { console.warn("[offres_stories]", e.message); }
+      }
+
+      setAllStories(base);
+    }
+
+    loadDynamic();
   }, [pharmacie?.id]);
 
   const story = allStories[current];
@@ -4454,19 +4491,258 @@ function BackofficeAdmin({ onBack }) {
 }
 
 // ─── Dashboard admin live (données Supabase) ──────────────────────────────────
+
+// ─── Admin : Gestion du contenu stories santé ────────────────────────────────
+function StoriesContentAdmin() {
+  const [items, setItems]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing]   = useState(null);
+  const [form, setForm]         = useState({
+    type: "info", titre: "", contenu: "", emoji: "💡",
+    question: "", reponses: "", explication: "", actif: true,
+  });
+  const [saving, setSaving]     = useState(false);
+  const [search, setSearch]     = useState("");
+  const sb = getSupabaseClient();
+
+  const TYPES = [
+    { id:"info",    label:"Information",  emoji:"💡", color:"#1a3a6e" },
+    { id:"conseil", label:"Conseil santé",emoji:"💊", color:"#15803d" },
+    { id:"quiz",    label:"Quiz",         emoji:"🧠", color:"#6d28d9" },
+  ];
+
+  useEffect(() => { loadItems(); }, []);
+
+  async function loadItems() {
+    setLoading(true);
+    if (!sb) { setLoading(false); return; }
+    const { data } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
+    if (data) setItems(data);
+    setLoading(false);
+  }
+
+  function openNew() {
+    setEditing(null);
+    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true });
+    setShowForm(true);
+  }
+
+  function openEdit(item) {
+    setEditing(item.id);
+    setForm({
+      type: item.type, titre: item.titre, contenu: item.contenu || "",
+      emoji: item.emoji || "💡", question: item.question || "",
+      reponses: item.reponses || "", explication: item.explication || "",
+      actif: item.actif,
+    });
+    setShowForm(true);
+  }
+
+  async function saveItem() {
+    if (!form.titre.trim()) return;
+    setSaving(true);
+    const payload = {
+      type: form.type, titre: form.titre, contenu: form.contenu,
+      emoji: form.emoji, question: form.question,
+      reponses: form.reponses, explication: form.explication, actif: form.actif,
+    };
+    if (editing) {
+      await sb.from("stories_content").update(payload).eq("id", editing);
+      setItems(prev => prev.map(x => x.id === editing ? { ...x, ...payload } : x));
+    } else {
+      const { data } = await sb.from("stories_content").insert(payload).select().single();
+      if (data) setItems(prev => [data, ...prev]);
+    }
+    setShowForm(false); setSaving(false); setEditing(null);
+  }
+
+  async function deleteItem(id) {
+    if (!window.confirm("Supprimer ce contenu ?")) return;
+    await sb.from("stories_content").delete().eq("id", id);
+    setItems(prev => prev.filter(x => x.id !== id));
+  }
+
+  async function toggleActif(id, actif) {
+    await sb.from("stories_content").update({ actif: !actif }).eq("id", id);
+    setItems(prev => prev.map(x => x.id === id ? { ...x, actif: !actif } : x));
+  }
+
+  const filtered = items.filter(x =>
+    x.titre.toLowerCase().includes(search.toLowerCase()) ||
+    (x.contenu||"").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+        <div>
+          <div style={{ fontWeight:900, fontSize:18 }}>📱 Contenu Stories Santé</div>
+          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{items.length} contenus · Affichés aléatoirement aux patients</div>
+        </div>
+        <button onClick={openNew}
+          style={{ padding:"10px 18px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          + Ajouter
+        </button>
+      </div>
+
+      {/* Barre recherche */}
+      <input value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="🔍 Rechercher…"
+        style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:10, padding:"10px 14px", fontSize:14, fontFamily:"inherit", marginBottom:16, outline:"none" }}/>
+
+      {/* Formulaire */}
+      {showForm && (
+        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:14, padding:20, marginBottom:20 }}>
+          <div style={{ fontWeight:700, fontSize:15, marginBottom:16 }}>{editing ? "✏️ Modifier" : "➕ Nouveau contenu"}</div>
+
+          {/* Type */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            {TYPES.map(t => (
+              <button key={t.id} onClick={()=>setForm(f=>({...f, type:t.id, emoji:t.emoji}))}
+                style={{ flex:1, padding:"8px 4px", border:`2px solid ${form.type===t.id?t.color:"#e0e7ff"}`,
+                  borderRadius:10, background:form.type===t.id?t.color:"#fff",
+                  color:form.type===t.id?"#fff":"#374151", fontWeight:700, fontSize:12,
+                  cursor:"pointer", fontFamily:"inherit", textAlign:"center" }}>
+                <div style={{ fontSize:18 }}>{t.emoji}</div>
+                <div>{t.label}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Emoji + Titre */}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+            <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
+              style={{ width:52, border:"1.5px solid #e0e7ff", borderRadius:8, padding:8, fontSize:20, textAlign:"center", fontFamily:"inherit" }}/>
+            <input value={form.titre} onChange={e=>setForm(f=>({...f,titre:e.target.value}))}
+              placeholder="Titre" style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
+          </div>
+
+          {/* Contenu texte (info + conseil) */}
+          {form.type !== "quiz" && (
+            <textarea value={form.contenu} onChange={e=>setForm(f=>({...f,contenu:e.target.value}))}
+              placeholder="Contenu de la story (2-3 lignes max)" rows={3}
+              style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
+          )}
+
+          {/* Champs quiz */}
+          {form.type === "quiz" && (
+            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:10 }}>
+              <input value={form.question} onChange={e=>setForm(f=>({...f,question:e.target.value}))}
+                placeholder="Question du quiz"
+                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+              <textarea value={form.reponses} onChange={e=>setForm(f=>({...f,reponses:e.target.value}))}
+                rows={5} placeholder={`Réponses au format JSON:
+[{"text":"Réponse A","correct":false,"emoji":"❌"},
+ {"text":"Réponse B","correct":true,"emoji":"✅"}]`}
+                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:12, fontFamily:"monospace", resize:"vertical" }}/>
+              <input value={form.explication} onChange={e=>setForm(f=>({...f,explication:e.target.value}))}
+                placeholder="Explication après réponse"
+                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+            </div>
+          )}
+
+          {/* Actif */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+            <input type="checkbox" checked={form.actif} onChange={e=>setForm(f=>({...f,actif:e.target.checked}))} id="actif-check"/>
+            <label htmlFor="actif-check" style={{ fontSize:13, fontWeight:600, color:"#374151", cursor:"pointer" }}>Actif (affiché aux patients)</label>
+          </div>
+
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={()=>{setShowForm(false);setEditing(null);}}
+              style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              Annuler
+            </button>
+            <button onClick={saveItem} disabled={!form.titre.trim()||saving}
+              style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              {saving ? "Enregistrement…" : editing ? "✅ Enregistrer" : "✅ Publier"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Stats rapides */}
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {TYPES.map(t => (
+          <div key={t.id} style={{ flex:1, background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
+            <div style={{ fontSize:20 }}>{t.emoji}</div>
+            <div style={{ fontSize:20, fontWeight:900, color:t.color }}>{items.filter(x=>x.type===t.id).length}</div>
+            <div style={{ fontSize:10, color:"#64748b" }}>{t.label}</div>
+          </div>
+        ))}
+        <div style={{ flex:1, background:"#f0fdf4", border:"1.5px solid #bbf7d0", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
+          <div style={{ fontSize:20 }}>✅</div>
+          <div style={{ fontSize:20, fontWeight:900, color:"#15803d" }}>{items.filter(x=>x.actif).length}</div>
+          <div style={{ fontSize:10, color:"#64748b" }}>Actifs</div>
+        </div>
+      </div>
+
+      {/* Liste */}
+      {loading && <div style={{ textAlign:"center", padding:32, color:"#94a3b8" }}>Chargement…</div>}
+      {!loading && filtered.length === 0 && (
+        <div style={{ textAlign:"center", padding:32, color:"#94a3b8" }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>📭</div>
+          <div>{search ? "Aucun résultat" : "Aucun contenu créé"}</div>
+        </div>
+      )}
+      {filtered.map(item => {
+        const typeInfo = TYPES.find(t=>t.id===item.type) || TYPES[0];
+        return (
+          <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"14px 16px",
+            border:`1.5px solid ${item.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8,
+            background:item.actif?"#fff":"#f8f9fa", opacity:item.actif?1:0.6 }}>
+            <div style={{ width:42, height:42, borderRadius:10, background:typeInfo.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
+              {item.emoji||typeInfo.emoji}
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+                <span style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>{item.titre}</span>
+                <span style={{ fontSize:10, background:typeInfo.color+"22", color:typeInfo.color, borderRadius:20, padding:"1px 8px", fontWeight:700 }}>{typeInfo.label}</span>
+                {!item.actif && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:20, padding:"1px 8px", fontWeight:700 }}>Inactif</span>}
+              </div>
+              {item.contenu && <div style={{ fontSize:12, color:"#64748b", lineHeight:1.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.contenu}</div>}
+              {item.question && <div style={{ fontSize:12, color:"#6d28d9", marginTop:2 }}>❓ {item.question}</div>}
+            </div>
+            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+              <button onClick={()=>toggleActif(item.id, item.actif)}
+                style={{ padding:"5px 10px", border:`1.5px solid ${item.actif?"#fecdd3":"#bbf7d0"}`, borderRadius:8,
+                  background:item.actif?"#fff5f5":"#f0fdf4", color:item.actif?"#dc2626":"#15803d",
+                  fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                {item.actif?"Désactiver":"Activer"}
+              </button>
+              <button onClick={()=>openEdit(item)}
+                style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                ✏️
+              </button>
+              <button onClick={()=>deleteItem(item.id)}
+                style={{ padding:"5px 9px", border:"1.5px solid #fee2e2", borderRadius:8, background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                🗑️
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
 function AdminDashboardLive() {
-  const [tab,       setTab]       = useState("clients");
-  const [clients,   setClients]   = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [search,    setSearch]    = useState("");
-  const [selected,  setSelected]  = useState(null); // pharmacie sélectionnée
-  const [saving,    setSaving]    = useState(false);
-  const [msg,       setMsg]       = useState("");
+  const [tab,      setTab]      = useState("clients");
+  const [clients,  setClients]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [search,   setSearch]   = useState("");
+  const [selected, setSelected] = useState(null);
+  const [saving,   setSaving]   = useState(false);
+  const [msg,      setMsg]      = useState("");
+  const [metrics,  setMetrics]  = useState(null); // métriques globales
 
   const PLANS = {
-    starter:  { label: "Starter",  prix: 19,  maxPostes: 1 },
-    standard: { label: "Standard", prix: 39,  maxPostes: 3 },
-    pro:      { label: "Pro",      prix: 79,  maxPostes: 10 },
+    starter:  { label:"Starter",  prix:19,  maxPostes:2,   color:"#0369a1" },
+    standard: { label:"Standard", prix:39,  maxPostes:5,   color:"#1a3a6e" },
+    pro:      { label:"Pro",      prix:79,  maxPostes:15,  color:"#4c1d95" },
+    premium:  { label:"Premium",  prix:119, maxPostes:999, color:"#b45309" },
   };
 
   useEffect(() => { loadClients(); }, []);
@@ -4474,170 +4750,427 @@ function AdminDashboardLive() {
   async function loadClients() {
     setLoading(true);
     if (isDemoMode) {
-      // Mode démo : données mock
       const db = window._ordomailDB;
       const pharmacies = db?.pharmacies || [];
-      setClients(pharmacies.map(p => ({
+      const enriched = pharmacies.map(p => ({
         ...p,
-        postesActifs: (p.postes || []).filter(x => x.actif).length,
-        postesTotal:  (p.postes || []).length,
-        ordonnances:  (p.ordonnances || []).length,
+        postesActifs:  (p.postes||[]).filter(x=>x.actif).length,
+        postesTotal:   (p.postes||[]).length,
+        ordos_total:   (p.ordonnances||[]).length,
+        ordos_mois:    Math.floor(Math.random()*80)+10,
+        ordos_semaine: Math.floor(Math.random()*20)+2,
+        ordos_attente: Math.floor(Math.random()*5),
+        taux_traitement: Math.floor(Math.random()*30)+70,
+        delai_moyen_min: Math.floor(Math.random()*8)+1,
+        canal_qr_pct:  Math.floor(Math.random()*60)+30,
+        canal_email_pct: Math.floor(Math.random()*40)+10,
+        last_login:    new Date(Date.now() - Math.random()*7*86400000).toISOString(),
+        last_ordo:     new Date(Date.now() - Math.random()*3*86400000).toISOString(),
+        score_activite: Math.floor(Math.random()*40)+60,
+        offres_actives: Math.floor(Math.random()*3),
+        pins_configures: Math.floor(Math.random()*3)+1,
         trial_ends_at: null,
-      })));
+      }));
+      setClients(enriched);
+      computeGlobalMetrics(enriched);
       setLoading(false);
       return;
     }
     try {
       const sb = getSupabaseClient();
-      // Charger pharmacies + postes + comptage ordonnances
       const { data: pharmacies } = await sb
         .from("pharmacies")
         .select("*, postes(*)")
         .order("created_at", { ascending: false });
-
       if (!pharmacies) { setLoading(false); return; }
 
-      // Compter les ordonnances par pharmacie
+      const now30 = new Date(Date.now() - 30*86400000).toISOString();
+      const now7  = new Date(Date.now() - 7*86400000).toISOString();
+      const now24 = new Date(Date.now() - 86400000).toISOString();
+
       const enriched = await Promise.all(pharmacies.map(async ph => {
-        const { count } = await sb
-          .from("ordonnances")
-          .select("*", { count: "exact", head: true })
-          .eq("pharmacie_id", ph.id);
+        const [
+          { count: total },
+          { count: mois },
+          { count: semaine },
+          { count: attente },
+          { data: canaux },
+          { data: offres },
+        ] = await Promise.all([
+          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id),
+          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now30),
+          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now7),
+          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("status","nouveau").lte("received_at",now24),
+          sb.from("ordonnances").select("source").eq("pharmacie_id",ph.id).gte("received_at",now30),
+          sb.from("offres_stories").select("id",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("actif",true),
+        ]);
+
+        // Calcul canaux
+        const total_canaux = canaux?.length || 0;
+        const qr_count = canaux?.filter(o=>o.source==="qrcode").length || 0;
+        const email_count = canaux?.filter(o=>o.source==="email").length || 0;
+        const canal_qr_pct    = total_canaux ? Math.round(qr_count/total_canaux*100) : 0;
+        const canal_email_pct = total_canaux ? Math.round(email_count/total_canaux*100) : 0;
+
+        // Score activité 0-100
+        const score = Math.min(100, Math.round(
+          (mois||0)*0.4 +
+          (semaine||0)*2 +
+          (canal_qr_pct)*0.2 +
+          ((ph.postes||[]).filter(p=>p.actif&&p.pin_hash).length)*5
+        ));
+
+        // Pins configurés
+        const pins_configures = (ph.postes||[]).filter(p=>p.pin_hash).length;
+
         return {
           ...ph,
-          postesActifs: (ph.postes || []).filter(p => p.actif).length,
-          postesTotal:  (ph.postes || []).length,
-          ordonnances:  count || 0,
+          postesActifs:    (ph.postes||[]).filter(p=>p.actif).length,
+          postesTotal:     (ph.postes||[]).length,
+          ordos_total:     total || 0,
+          ordos_mois:      mois  || 0,
+          ordos_semaine:   semaine || 0,
+          ordos_attente:   attente || 0,
+          canal_qr_pct,
+          canal_email_pct,
+          offres_actives:  offres?.length || 0,
+          pins_configures,
+          score_activite:  score,
+          taux_traitement: total ? Math.round(((total-(attente||0))/total)*100) : 0,
         };
       }));
 
       setClients(enriched);
-    } catch(e) {
-      console.error("[Admin]", e.message);
-    }
+      computeGlobalMetrics(enriched);
+    } catch(e) { console.error(e); }
     setLoading(false);
   }
 
-  async function savePlan(pharmacieId, newPlan, newPostesActifs) {
-    setSaving(true); setMsg("");
-    try {
-      const sb = getSupabaseClient();
-      // Mettre à jour le plan
-      await sb.from("pharmacies").update({ plan: newPlan }).eq("id", pharmacieId);
-
-      // Mettre à jour les postes actifs/inactifs
-      const ph = clients.find(c => c.id === pharmacieId);
-      if (ph?.postes) {
-        for (let i = 0; i < ph.postes.length; i++) {
-          const actif = i < newPostesActifs;
-          await sb.from("postes")
-            .update({ actif })
-            .eq("id", ph.postes[i].id);
-        }
-      }
-
-      setMsg("✅ Contrat mis à jour");
-      await loadClients();
-      // Mettre à jour le selected
-      setSelected(prev => prev ? { ...prev, plan: newPlan, postesActifs: newPostesActifs } : prev);
-    } catch(e) {
-      setMsg("❌ " + e.message);
-    }
-    setSaving(false);
+  function computeGlobalMetrics(data) {
+    const actifs = data.filter(c => (c.ordos_mois||0) > 0);
+    const mrr    = data.reduce((s,c) => s + (PLANS[c.plan]?.prix||0), 0);
+    const arr    = mrr * 12;
+    const total_ordos_mois = data.reduce((s,c) => s + (c.ordos_mois||0), 0);
+    const churn_risk = data.filter(c => (c.score_activite||0) < 30).length;
+    const upsell     = data.filter(c => c.plan === "starter" && (c.ordos_mois||0) > 150).length;
+    setMetrics({ mrr, arr, total_ordos_mois, churn_risk, upsell, actifs: actifs.length, total: data.length });
   }
 
+  function scoreColor(s) { return s>=70?"#15803d":s>=40?"#f59e0b":"#dc2626"; }
+  function scoreBg(s)    { return s>=70?"#f0fdf4":s>=40?"#fef9f0":"#fff5f5"; }
+
   const filtered = clients.filter(c =>
-    !search ||
     c.nom?.toLowerCase().includes(search.toLowerCase()) ||
     c.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const mrr    = clients.reduce((s, c) => s + (PLANS[c.plan]?.prix || 0), 0);
-  const actifs  = clients.filter(c => c.trial_ends_at === null || new Date(c.trial_ends_at) < new Date()).length;
-  const trials  = clients.filter(c => c.trial_ends_at && new Date(c.trial_ends_at) >= new Date()).length;
-
   return (
-    <div style={{padding:20,maxWidth:1100,margin:"0 auto"}}>
-      {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:24}}>
-        {[
-          ["MRR", `${mrr} €`, "#3b82f6"],
-          ["ARR", `${mrr*12} €`, "#10b981"],
-          ["Clients", clients.length, "#6366f1"],
-          ["En essai", trials, "#f59e0b"],
-        ].map(([l,v,color]) => (
-          <div key={l} style={{background:"#1e293b",borderRadius:12,padding:16,border:"1px solid #334155"}}>
-            <div style={{fontSize:11,color:"#64748b",marginBottom:4}}>{l}</div>
-            <div style={{fontWeight:900,fontSize:24,color}}>{v}</div>
+    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",color:"#e2e8f0"}}>
+      {/* Header */}
+      <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"16px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:22}}>💊</span>
+          <div>
+            <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>OrdoMail Admin</div>
+            <div style={{fontSize:11,color:"#64748b"}}>Tableau de bord opérateur</div>
           </div>
-        ))}
+        </div>
+        <div style={{fontSize:11,color:"#64748b"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</div>
       </div>
 
-      {/* Onglets */}
-      <div style={{display:"flex",gap:6,marginBottom:20}}>
-        {[["clients","👥 Clients"],["contrats","📋 Contrats"]].map(([k,l]) => (
-          <button key={k} onClick={()=>{setTab(k);setSelected(null);}} style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#3b82f6":"#1e293b",color:tab===k?"#fff":"#64748b"}}>{l}</button>
-        ))}
-        <button onClick={loadClients} style={{marginLeft:"auto",padding:"7px 14px",border:"1px solid #334155",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12,background:"transparent",color:"#64748b"}}>🔄 Actualiser</button>
-      </div>
+      <div style={{padding:24}}>
 
-      {loading ? (
-        <div style={{textAlign:"center",padding:40,color:"#64748b"}}>⏳ Chargement…</div>
-      ) : tab === "clients" ? (
-        /* ── Liste clients ── */
-        <div>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher pharmacie ou email…"
-            style={{width:"100%",padding:"10px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:9,color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:16,boxSizing:"border-box"}}/>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {filtered.length === 0 && <div style={{color:"#64748b",textAlign:"center",padding:24}}>Aucun client</div>}
-            {filtered.map(ph => (
-              <div key={ph.id} onClick={()=>{setTab("contrats");setSelected(ph);}}
-                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border 0.15s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f6"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
-                <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>💊</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:2}}>{ph.nom}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>{ph.email}</div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,marginBottom:4,
-                    background: ph.plan==="pro"?"#4c1d95":ph.plan==="standard"?"#1e3a5f":"#1e293b",
-                    color: ph.plan==="pro"?"#c4b5fd":ph.plan==="standard"?"#93c5fd":"#64748b"}}>
-                    {PLANS[ph.plan]?.label || ph.plan}
-                  </div>
-                  <div style={{fontSize:11,color:"#64748b"}}>{ph.postesActifs}/{ph.postesTotal} postes · {ph.ordonnances} ordos</div>
-                </div>
-                <div style={{color:"#334155",fontSize:16}}>→</div>
+        {/* KPIs globaux */}
+        {metrics && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:12,marginBottom:24}}>
+            {[
+              { label:"MRR",          value:`${metrics.mrr}€`,    sub:"revenu mensuel",    icon:"💰", color:"#4ade80" },
+              { label:"ARR",          value:`${metrics.arr}€`,    sub:"revenu annuel",     icon:"📈", color:"#60a5fa" },
+              { label:"Clients",      value:metrics.total,        sub:"pharmacies",        icon:"🏥", color:"#a78bfa" },
+              { label:"Actifs/mois",  value:metrics.actifs,       sub:"avec activité",     icon:"✅", color:"#34d399" },
+              { label:"Ordos/mois",   value:metrics.total_ordos_mois, sub:"total réseau", icon:"📋", color:"#fbbf24" },
+              { label:"Risque churn", value:metrics.churn_risk,   sub:"score < 30",        icon:"⚠️", color:"#f87171" },
+              { label:"Upsell",       value:metrics.upsell,       sub:"Starter saturés",   icon:"🚀", color:"#fb923c" },
+            ].map(k => (
+              <div key={k.label} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:18,marginBottom:4}}>{k.icon}</div>
+                <div style={{fontSize:22,fontWeight:900,color:k.color}}>{k.value}</div>
+                <div style={{fontSize:10,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</div>
+                <div style={{fontSize:10,color:"#475569"}}>{k.sub}</div>
               </div>
             ))}
           </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:8,marginBottom:20}}>
+          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"]].map(([k,l]) => (
+            <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
+              style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
+                fontWeight:tab===k?700:500,
+                background:tab===k?"#3b82f6":"#1e293b",
+                color:tab===k?"#fff":"#94a3b8",
+                border:`1px solid ${tab===k?"#3b82f6":"#334155"}`}}>
+              {l}
+            </button>
+          ))}
+          <button onClick={loadClients}
+            style={{marginLeft:"auto",padding:"7px 14px",border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            🔄 Actualiser
+          </button>
         </div>
-      ) : (
-        /* ── Gestion contrat ── */
-        selected ? (
-          <ContratEditor
-            pharmacie={selected}
-            plans={PLANS}
-            onSave={savePlan}
-            onClose={()=>setSelected(null)}
-            saving={saving}
-            msg={msg}
-            onClearMsg={()=>setMsg("")}
-          />
+
+        {loading && <div style={{textAlign:"center",padding:48,color:"#64748b"}}>⏳ Chargement…</div>}
+
+        {!loading && tab === "clients" ? (
+          selected ? (
+            /* ── Détail client ── */
+            <ClientDetail client={selected} plans={PLANS} onClose={()=>setSelected(null)} onRefresh={loadClients}/>
+          ) : (
+            /* ── Liste clients ── */
+            <div>
+              <input value={search} onChange={e=>setSearch(e.target.value)}
+                placeholder="🔍 Rechercher pharmacie ou email…"
+                style={{width:"100%",padding:"10px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:9,color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:16,boxSizing:"border-box"}}/>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {filtered.map(ph => (
+                  <div key={ph.id} onClick={()=>setSelected(ph)}
+                    style={{background:"#1e293b",border:`1px solid ${(ph.ordos_attente||0)>0?"#f59e0b":"#334155"}`,borderRadius:12,padding:"14px 18px",cursor:"pointer",transition:"border 0.15s"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:14}}>
+                      {/* Avatar */}
+                      <div style={{width:44,height:44,borderRadius:11,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💊</div>
+                      {/* Infos */}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                          <span style={{fontWeight:800,fontSize:15,color:"#fff"}}>{ph.nom}</span>
+                          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:PLANS[ph.plan]?.color||"#334155",color:"#fff"}}>{PLANS[ph.plan]?.label||ph.plan}</span>
+                          {ph.trial_ends_at && new Date(ph.trial_ends_at)>new Date() && (
+                            <span style={{fontSize:10,background:"#fef3c7",color:"#92400e",borderRadius:20,padding:"2px 8px",fontWeight:700}}>
+                              Trial · {Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000)}j
+                            </span>
+                          )}
+                          {(ph.ordos_attente||0)>0 && (
+                            <span style={{fontSize:10,background:"#f59e0b",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>
+                              ⚠️ {ph.ordos_attente} en attente
+                            </span>
+                          )}
+                        </div>
+                        <div style={{fontSize:11,color:"#64748b"}}>{ph.email}</div>
+                      </div>
+                      {/* Métriques rapides */}
+                      <div style={{display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:18,fontWeight:900,color:"#60a5fa"}}>{ph.ordos_mois||0}</div>
+                          <div style={{fontSize:9,color:"#475569"}}>ordos/mois</div>
+                        </div>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:18,fontWeight:900,color:"#4ade80"}}>{ph.taux_traitement||0}%</div>
+                          <div style={{fontSize:9,color:"#475569"}}>traité</div>
+                        </div>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:18,fontWeight:900,color:scoreColor(ph.score_activite||0)}}>{ph.score_activite||0}</div>
+                          <div style={{fontSize:9,color:"#475569"}}>score</div>
+                        </div>
+                        <div style={{fontSize:11,color:"#475569"}}>→</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        ) : tab === "stories" ? (
+          <StoriesContentAdmin/>
         ) : (
-          <div style={{textAlign:"center",padding:40}}>
-            <div style={{fontSize:40,marginBottom:12}}>📋</div>
-            <div style={{color:"#64748b",fontSize:14}}>Sélectionnez un client dans l'onglet Clients</div>
-            <button onClick={()=>setTab("clients")} style={{marginTop:16,padding:"8px 20px",border:"1px solid #334155",borderRadius:8,background:"transparent",color:"#94a3b8",cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Voir les clients →</button>
-          </div>
-        )
-      )}
+          selected ? (
+            <ContratEditor
+              pharmacie={selected}
+              plans={PLANS}
+              onSave={async (id,plan,postes)=>{
+                setSaving(true);
+                const sb = getSupabaseClient();
+                await sb.from("pharmacies").update({plan}).eq("id",id);
+                setMsg("✅ Contrat mis à jour");
+                setSaving(false);
+                setTimeout(()=>setMsg(""),3000);
+                loadClients();
+              }}
+              onClose={()=>setSelected(null)}
+              saving={saving}
+              msg={msg}
+              onClearMsg={()=>setMsg("")}
+            />
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {filtered.map(ph=>(
+                <div key={ph.id} onClick={()=>setSelected(ph)}
+                  style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💊</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,color:"#fff"}}>{ph.nom}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>{ph.email} · {PLANS[ph.plan]?.label||ph.plan} · {PLANS[ph.plan]?.prix||0}€/mois</div>
+                  </div>
+                  <div style={{fontSize:11,color:"#475569"}}>Modifier →</div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Éditeur de contrat ────────────────────────────────────────────────────────
+// ─── Détail client avec toutes les métriques ──────────────────────────────────
+function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
+  const planInfo = plans[ph.plan] || {};
+  const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
+  const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
+  const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
+
+  return (
+    <div style={{background:"#1e293b",borderRadius:16,border:"1px solid #334155",overflow:"hidden"}}>
+      {/* Header client */}
+      <div style={{padding:"20px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:16}}>
+        <div style={{width:52,height:52,borderRadius:14,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>💊</div>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:900,fontSize:20,color:"#fff"}}>{ph.nom}</div>
+          <div style={{fontSize:13,color:"#64748b"}}>{ph.email} · {ph.adresse}</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <span style={{padding:"4px 12px",borderRadius:20,background:planInfo.color||"#334155",color:"#fff",fontSize:12,fontWeight:700}}>{planInfo.label||ph.plan}</span>
+          {trialLeft > 0 && <span style={{padding:"4px 12px",borderRadius:20,background:"#fef3c7",color:"#92400e",fontSize:12,fontWeight:700}}>Trial · {trialLeft}j restants</span>}
+          {trialLeft <= 0 && ph.trial_ends_at && <span style={{padding:"4px 12px",borderRadius:20,background:"#fee2e2",color:"#dc2626",fontSize:12,fontWeight:700}}>Trial expiré</span>}
+        </div>
+        <button onClick={onClose} style={{background:"#0f172a",border:"1px solid #334155",color:"#64748b",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>← Retour</button>
+      </div>
+
+      <div style={{padding:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+
+        {/* ── Colonne gauche ── */}
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+          {/* Score global */}
+          <div style={{background:scoreBg(ph.score_activite||0),border:`1px solid ${scoreColor(ph.score_activite||0)}33`,borderRadius:12,padding:16,textAlign:"center"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Score d'activité</div>
+            <div style={{fontSize:52,fontWeight:900,color:scoreColor(ph.score_activite||0),lineHeight:1}}>{ph.score_activite||0}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:4}}>/100 · {(ph.score_activite||0)>=70?"🟢 Engagé":(ph.score_activite||0)>=40?"🟡 Modéré":"🔴 Risque churn"}</div>
+          </div>
+
+          {/* Métriques volume */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>📋 Volume ordonnances</div>
+            {[
+              ["Ce mois",    ph.ordos_mois||0,    "#60a5fa"],
+              ["Cette semaine", ph.ordos_semaine||0, "#a78bfa"],
+              ["Total",      ph.ordos_total||0,   "#94a3b8"],
+              ["En attente", ph.ordos_attente||0, (ph.ordos_attente||0)>0?"#f87171":"#4ade80"],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:13,color:"#94a3b8"}}>{label}</span>
+                <span style={{fontSize:18,fontWeight:900,color}}>{val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Canaux */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>📡 Canaux d'envoi (30j)</div>
+            {[
+              ["📱 QR Code",  ph.canal_qr_pct||0,    "#4ade80"],
+              ["✉️ Email",    ph.canal_email_pct||0,  "#60a5fa"],
+              ["⬇️ Upload",   100-(ph.canal_qr_pct||0)-(ph.canal_email_pct||0), "#a78bfa"],
+            ].map(([label, pct, color]) => (
+              <div key={label} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
+                  <span style={{fontSize:12,fontWeight:700,color}}>{Math.max(0,pct)}%</span>
+                </div>
+                <div style={{height:6,background:"#1e293b",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.max(0,pct)}%`,background:color,borderRadius:3,transition:"width 0.5s"}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Colonne droite ── */}
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+          {/* Performance */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>⚡ Performance</div>
+            {[
+              ["Taux de traitement", `${ph.taux_traitement||0}%`,  (ph.taux_traitement||0)>=80?"#4ade80":"#f87171"],
+              ["Ordos en attente +24h", ph.ordos_attente||0,       (ph.ordos_attente||0)===0?"#4ade80":"#f87171"],
+              ["Postes actifs",     `${ph.postesActifs||0}/${planInfo.maxPostes||"∞"}`, "#60a5fa"],
+              ["PINs configurés",   ph.pins_configures||0,          "#a78bfa"],
+              ["Offres stories actives", ph.offres_actives||0,      "#fbbf24"],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
+                <span style={{fontSize:15,fontWeight:900,color}}>{val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Commercial */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>💰 Commercial</div>
+            {[
+              ["Plan actuel",  `${planInfo.label||ph.plan} · ${planInfo.prix||0}€/mois`, "#fff"],
+              ["MRR client",   `${planInfo.prix||0}€`,   "#4ade80"],
+              ["ARR client",   `${(planInfo.prix||0)*12}€`, "#60a5fa"],
+              ["Membre depuis", new Date(ph.created_at||Date.now()).toLocaleDateString("fr-FR"), "#94a3b8"],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
+                <span style={{fontSize:13,fontWeight:700,color}}>{val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Alertes & opportunités */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>🎯 Alertes & Opportunités</div>
+            {(ph.ordos_attente||0) > 2 && (
+              <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid #f8717133",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fca5a5"}}>
+                ⚠️ {ph.ordos_attente} ordonnances non traitées depuis +24h
+              </div>
+            )}
+            {ph.plan==="starter" && (ph.ordos_mois||0)>150 && (
+              <div style={{background:"rgba(251,191,36,0.1)",border:"1px solid #fbbf2433",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fde68a"}}>
+                🚀 Volume élevé — opportunité d'upgrade Standard
+              </div>
+            )}
+            {(ph.score_activite||0) < 30 && (
+              <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid #f8717133",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fca5a5"}}>
+                🔴 Faible activité — risque de churn
+              </div>
+            )}
+            {(ph.pins_configures||0) === 0 && (ph.postesActifs||0) > 0 && (
+              <div style={{background:"rgba(96,165,250,0.1)",border:"1px solid #60a5fa33",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#93c5fd"}}>
+                💡 Aucun PIN configuré — proposer la formation vendeur
+              </div>
+            )}
+            {(ph.offres_actives||0) === 0 && (
+              <div style={{background:"rgba(167,139,250,0.1)",border:"1px solid #a78bfa33",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#c4b5fd"}}>
+                🎯 Aucune offre stories créée — potentiel engagement patient
+              </div>
+            )}
+            {(ph.ordos_attente||0)===0 && (ph.score_activite||0)>=70 && (
+              <div style={{background:"rgba(74,222,128,0.1)",border:"1px solid #4ade8033",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#86efac"}}>
+                ✅ Client sain — aucune action requise
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg }) {
   const [plan,        setPlan]        = useState(pharmacie.plan || "starter");
   const [postesActifs, setPostesActifs] = useState(pharmacie.postesActifs || 1);
