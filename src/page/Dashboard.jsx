@@ -8,7 +8,7 @@ import {
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
-import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.js";
+import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsxx";
 import { OrdoCard, OrdoRow, AttachmentThumb } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
@@ -1401,5 +1401,5 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
 }
 
 
-export { QRNFCTab, BottomNav, PharmacieDashboard };
+export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, AbonnementSection, CompteSection, ParametresTab };
 export default PharmacieDashboard;

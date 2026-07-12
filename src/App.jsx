@@ -25,7 +25,7 @@ import {
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, getPrevPlan, computeImpact, canAddPoste } from "./lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "./lib/utils.js";
 import { getTesseractWorker, extractFromFile, prewarmTesseract } from "./lib/ocr.js";
-import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/print.js";
+import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/print.jsx";
 
 // ── Pages ────────────────────────────────────────────────────────────────────
 import { LandingPage, PersistentNav } from "./pages/LandingPage.jsx";
