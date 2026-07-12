@@ -97,7 +97,6 @@ function MiniDashboard() {
   );
 }
 
-// ─── Section features ─────────────────────────────────────────────────────────
 function FeaturesSection() {
   const ref = useRef(); const visible = useFadeIn(ref);
   const features = [
@@ -132,7 +131,6 @@ function FeaturesSection() {
   );
 }
 
-// ─── Section Workflow ─────────────────────────────────────────────────────────
 function WorkflowSection() {
   const ref = useRef(); const visible = useFadeIn(ref);
   const steps = [
@@ -169,7 +167,6 @@ function WorkflowSection() {
   );
 }
 
-// ─── Section Sécurité / HDS ───────────────────────────────────────────────────
 function SecuritySection() {
   const ref = useRef(); const visible = useFadeIn(ref);
   return (
@@ -204,7 +201,6 @@ function SecuritySection() {
   );
 }
 
-// ─── Section Pricing (inline) ─────────────────────────────────────────────────
 function PricingSection({ onGoToPricing }) {
   const ref = useRef(); const visible = useFadeIn(ref);
   const [billing, setBilling] = useState("monthly");
@@ -260,7 +256,6 @@ function PricingSection({ onGoToPricing }) {
   );
 }
 
-// ─── Section testimonials ─────────────────────────────────────────────────────
 function TestimonialsSection() {
   const ref = useRef(); const visible = useFadeIn(ref);
   const quotes = [
@@ -292,7 +287,6 @@ function TestimonialsSection() {
   );
 }
 
-// ─── CTA final ────────────────────────────────────────────────────────────────
 function CTASection({ onCTA }) {
   const ref = useRef(); const visible = useFadeIn(ref);
   return (
@@ -320,7 +314,6 @@ function CTASection({ onCTA }) {
   );
 }
 
-// ─── Footer ───────────────────────────────────────────────────────────────────
 function Footer({ onNav }) {
   return (
     <footer style={{ background:C.ink, padding:"44px 24px 28px", fontFamily:"'Inter', system-ui, sans-serif" }}>
@@ -365,9 +358,6 @@ function Footer({ onNav }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// LANDING PAGE PRINCIPALE
-// ═══════════════════════════════════════════════════════════════════════════════
 function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -479,7 +469,6 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin }) 
   );
 }
 
-// ─── Nav persistante ─────────────────────────────────────────────────────────
 function PersistentNav({ onBack, currentPage, secure }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -507,7 +496,6 @@ function PersistentNav({ onBack, currentPage, secure }) {
     </nav>
   );
 }
-
 
 export { LandingPage, PersistentNav };
 export default LandingPage;

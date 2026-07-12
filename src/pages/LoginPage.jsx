@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession, getSupabaseClient, isDemoMode } from "../supabase.js";
+import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
+  getSupabaseClient, isDemoMode } from "../supabase.js";
 import { PLAN_LIMITS } from "../lib/plans.js";
 
 function BoutonProSanteConnect({ onClick, loading }) {
@@ -422,7 +423,6 @@ function ResetPasswordPage({ onDone }) {
     </div>
   );
 }
-
 
 export { BoutonProSanteConnect, LoginTabContent, LoginPage, AppLogin, ResetPasswordPage };
 export default AppLogin;

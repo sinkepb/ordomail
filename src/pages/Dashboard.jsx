@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
+import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
   updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
   exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
   isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
@@ -8,7 +7,7 @@ import {
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
-import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsxx";
+import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsx";
 import { OrdoCard, OrdoRow, AttachmentThumb } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
@@ -51,43 +50,6 @@ function LogsPanel({ pharmacieId, onClose }) {
   );
 }
 
-
-function isSameDay(d1, d2) {
-  const a = new Date(d1), b = new Date(d2);
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-function toDateKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-function formatDateLabel(dateKey) {
-  const today = toDateKey(new Date());
-  const yesterday = toDateKey(new Date(Date.now() - 86400000));
-  if (dateKey === today) return "Aujourd'hui";
-  if (dateKey === yesterday) return "Hier";
-  const [y, m, d] = dateKey.split('-');
-  return new Date(y, m-1, d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-function timeAgo(date) {
-  const m = Math.floor((Date.now() - new Date(date)) / 60000);
-  if (m < 1) return "à l'instant";
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h}h`;
-  return new Date(date).toLocaleDateString("fr-FR");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// OCR TESSERACT.JS — 100% local, aucun réseau, conformité HDS native
-// Chargé dynamiquement depuis CDN au premier usage (~2 MB, mis en cache)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-let _tesseractWorker = null;
-let _tesseractLoading = false;
-let _tesseractReady = false;
-
-async function getTesseractWorker() {
 function OffresSection({ pharmacie, planInfo }) {
   const isPremium = planInfo?.offresStories === true;
   const [offres, setOffres]     = useState([]);
@@ -1399,7 +1361,6 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
     </div>
   );
 }
-
 
 export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, AbonnementSection, CompteSection, ParametresTab };
 export default PharmacieDashboard;

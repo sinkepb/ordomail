@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, changePlan, snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, changePlan,
+  snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 
 function BackofficeAdmin({ onBack }) {
@@ -77,9 +78,6 @@ function BackofficeAdmin({ onBack }) {
   );
 }
 
-// ─── Dashboard admin live (données Supabase) ──────────────────────────────────
-
-// ─── Admin : Gestion du contenu stories santé ────────────────────────────────
 function StoriesContentAdmin() {
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -314,6 +312,143 @@ function StoriesContentAdmin() {
   );
 }
 
+function HistoriqueSparkline({ pharmacieId }) {
+  const [data,   setData]   = useState([]);
+  const [metric, setMetric] = useState("ordos_jour");
+  const [period, setPeriod] = useState(30);
+  const [loading, setLoading] = useState(true);
+
+  const METRICS = [
+    { id:"ordos_jour",       label:"Ordos/jour",      color:"#60a5fa" },
+    { id:"taux_traitement",  label:"Taux traitement",  color:"#4ade80" },
+    { id:"score_activite",   label:"Score activité",   color:"#a78bfa" },
+    { id:"canal_qr_pct",     label:"% QR code",        color:"#fbbf24" },
+  ];
+
+  useEffect(() => {
+    setLoading(true);
+    fetchHistoriqueMetriques(pharmacieId, period).then(d => {
+      setData(d);
+      setLoading(false);
+    });
+  }, [pharmacieId, period]);
+
+  const currentMetric = METRICS.find(m => m.id === metric);
+  const values = data.map(d => d[metric] || 0);
+  const maxVal  = Math.max(...values, 1);
+  const minVal  = Math.min(...values, 0);
+  const range   = maxVal - minVal || 1;
+  const avg     = values.length ? Math.round(values.reduce((a,b)=>a+b,0)/values.length) : 0;
+  const last    = values[values.length-1] || 0;
+  const trend   = values.length > 1 ? last - values[values.length-2] : 0;
+
+  // SVG sparkline
+  const W = 600, H = 80;
+  const pts = values.map((v,i) => {
+    const x = values.length > 1 ? (i/(values.length-1))*W : W/2;
+    const y = H - ((v-minVal)/range)*(H-8) - 4;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <div style={{padding:"0 24px 20px"}}>
+      <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase"}}>
+            📈 Historique {period} jours
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            {[7,14,30,90].map(p => (
+              <button key={p} onClick={()=>setPeriod(p)}
+                style={{padding:"3px 10px",border:`1px solid ${period===p?"#60a5fa":"#334155"}`,borderRadius:20,
+                  background:period===p?"#1e40af":"transparent",color:period===p?"#fff":"#64748b",
+                  fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                {p}j
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sélecteur métrique */}
+        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+          {METRICS.map(m => (
+            <button key={m.id} onClick={()=>setMetric(m.id)}
+              style={{padding:"4px 12px",border:`1px solid ${metric===m.id?m.color:"#334155"}`,borderRadius:20,
+                background:metric===m.id?m.color+"22":"transparent",
+                color:metric===m.id?m.color:"#64748b",
+                fontSize:11,fontWeight:metric===m.id?700:400,cursor:"pointer",fontFamily:"inherit"}}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Stats rapides */}
+        <div style={{display:"flex",gap:20,marginBottom:14}}>
+          {[
+            { label:"Dernière valeur", value:last, suffix:currentMetric?.id.includes("pct")||currentMetric?.id.includes("taux")?"%" :currentMetric?.id==="score_activite"?"/100":"" },
+            { label:"Moyenne",         value:avg,  suffix:"" },
+            { label:"Tendance",        value:trend>=0?`+${trend}`:trend, suffix:"", color:trend>=0?"#4ade80":"#f87171" },
+            { label:"Max",             value:maxVal, suffix:"" },
+          ].map(s => (
+            <div key={s.label}>
+              <div style={{fontSize:20,fontWeight:900,color:s.color||currentMetric?.color||"#60a5fa"}}>{s.value}{s.suffix}</div>
+              <div style={{fontSize:10,color:"#475569"}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Graphique SVG */}
+        {loading ? (
+          <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:12}}>Chargement…</div>
+        ) : data.length === 0 ? (
+          <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:12}}>
+            Aucune donnée — cliquez sur 📸 Snapshot pour initialiser
+          </div>
+        ) : (
+          <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block",height:80}}>
+            {/* Grille */}
+            {[0,25,50,75,100].map(pct => (
+              <line key={pct} x1={0} y1={H-(pct/100)*H} x2={W} y2={H-(pct/100)*H} stroke="#1e293b" strokeWidth={1}/>
+            ))}
+            {/* Zone remplie */}
+            <defs>
+              <linearGradient id={`grad-${metric}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={currentMetric?.color||"#60a5fa"} stopOpacity="0.3"/>
+                <stop offset="100%" stopColor={currentMetric?.color||"#60a5fa"} stopOpacity="0"/>
+              </linearGradient>
+            </defs>
+            <polygon
+              points={`0,${H} ${pts} ${W},${H}`}
+              fill={`url(#grad-${metric})`}/>
+            {/* Ligne */}
+            <polyline
+              points={pts}
+              fill="none"
+              stroke={currentMetric?.color||"#60a5fa"}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"/>
+            {/* Points */}
+            {values.map((v,i) => {
+              const x = values.length>1 ? (i/(values.length-1))*W : W/2;
+              const y = H - ((v-minVal)/range)*(H-8) - 4;
+              return <circle key={i} cx={x} cy={y} r={3} fill={currentMetric?.color||"#60a5fa"}/>;
+            })}
+          </svg>
+        )}
+
+        {/* Labels dates */}
+        {data.length > 0 && (
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+            <span style={{fontSize:10,color:"#334155"}}>{data[0]?.date}</span>
+            <span style={{fontSize:10,color:"#334155"}}>{data[data.length-1]?.date}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AdminDashboardLive() {
   const [tab,      setTab]      = useState("clients");
@@ -608,7 +743,6 @@ function AdminDashboardLive() {
   );
 }
 
-// ─── Détail client avec toutes les métriques ──────────────────────────────────
 function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
   const planInfo = plans[ph.plan] || {};
   const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
@@ -763,7 +897,6 @@ function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
   );
 }
 
-
 function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg }) {
   const [plan,        setPlan]        = useState(pharmacie.plan || "starter");
   const [postesActifs, setPostesActifs] = useState(pharmacie.postesActifs || 1);
@@ -868,6 +1001,383 @@ function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClear
   );
 }
 
+function BillingAdmin() {
+  const [tab,setTab]=useState("dashboard");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const activeCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").length;
+  const trialCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="trialing").length;
+  const mrr=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").reduce((s,sub)=>s+sub.mrr,0);
 
-export { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin, HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin };
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
+      <div style={{display:"flex",gap:6,marginBottom:24,flexWrap:"wrap"}}>
+        {[["dashboard","📊 Dashboard"],["subscriptions","📋 Abonnements"],["invoices","🧾 Factures"],["pricing","🏷️ Pricing"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#3b82f6":"#1e293b",color:tab===k?"#fff":"#64748b"}}>{l}</button>
+        ))}
+      </div>
+
+      {tab==="dashboard"&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:14,marginBottom:24}}>
+            {[["MRR",`${mrr} €`,"#3b82f6"],["ARR",`${mrr*12} €`,"#10b981"],["Clients actifs",activeCount,"#6366f1"],["En essai",trialCount,"#f59e0b"]].map(([l,v,color])=>(
+              <div key={l} style={{background:"#1e293b",borderRadius:12,padding:20,border:`1px solid #334155`}}>
+                <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{l}</div>
+                <div style={{fontWeight:900,fontSize:26,color}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+            <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>Derniers abonnements</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+              <tbody>{MOCK_SUBSCRIPTIONS.slice(0,5).map(s=>(
+                <tr key={s.id} style={{borderBottom:"1px solid #1e293b"}}>
+                  <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:11,fontWeight:700,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
+                  <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":"#dc2626"}}>{s.status}</span></td>
+                  <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab==="subscriptions"&&(
+        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+            {[["all","Tous"],["active","Actifs"],["trialing","Essai"],["past_due","Impayés"],["canceled","Annulés"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setFilterStatus(k)} style={{padding:"5px 12px",border:`1px solid ${filterStatus===k?"#3b82f6":"#334155"}`,borderRadius:7,background:filterStatus===k?"#3b82f6":"transparent",color:filterStatus===k?"#fff":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+            ))}
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","Facturation","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{MOCK_SUBSCRIPTIONS.filter(s=>filterStatus==="all"||s.status===filterStatus).map(s=>(
+              <tr key={s.id} style={{borderBottom:"1px solid #0f172a"}}>
+                <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
+                <td style={{padding:"9px 10px"}}><span style={{fontSize:11,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
+                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12,textTransform:"capitalize"}}>{s.billing}</td>
+                <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
+                <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":s.status==="past_due"?"#fef9c3":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":s.status==="past_due"?"#92400e":"#dc2626"}}>{s.status}</span></td>
+                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {tab==="invoices"&&(
+        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+          <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>🧾 Factures</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["N°","Date","Description","Montant","Statut",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{MOCK_INVOICES.map(inv=>{
+              const sub=MOCK_SUBSCRIPTIONS.find(s=>s.id===inv.subId);
+              return (
+                <tr key={inv.id} style={{borderBottom:"1px solid #0f172a"}}>
+                  <td style={{padding:"9px 10px",fontFamily:"monospace",fontSize:11,color:"#64748b"}}>{inv.id}</td>
+                  <td style={{padding:"9px 10px",color:"#94a3b8"}}>{inv.date}</td>
+                  <td style={{padding:"9px 10px",color:"#e2e8f0"}}>{inv.desc}</td>
+                  <td style={{padding:"9px 10px",fontWeight:800,color:"#fff"}}>{inv.amount} €</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
+                  <td style={{padding:"9px 10px",textAlign:"right"}}>
+                    <button onClick={()=>openInvoicePDF({...inv,desc:inv.desc},{nom:sub?.pharmacie,email:sub?.email},sub?.plan||"starter")} style={{fontSize:12,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button>
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      )}
+
+      {tab==="pricing"&&<PricingEditor/>}
+    </div>
+  );
+}
+
+function BillingModule({ initialView, planId, billing, onBack }) {
+  const [view, setView] = useState(initialView||"pricing");
+  const [step, setStep] = useState("details");
+  const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
+  const [checkoutBilling, setCheckoutBilling] = useState(billing||"monthly");
+  const [billingTab, setBillingTab] = useState("monthly");
+  const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:""});
+  const [cardData, setCardData] = useState({number:"",expiry:"",cvc:"",name:""});
+  const [errors, setErrors] = useState({});
+  const [createError, setCreateError] = useState("");
+  const [createdEmail, setCreatedEmail] = useState("");
+  const [createdEmailReception, setCreatedEmailReception] = useState("");
+  const [createdPlan, setCreatedPlan] = useState("");
+
+  const plan = PLAN_LIMITS[checkoutPlan]||PLAN_LIMITS.standard;
+  const price = checkoutBilling==="annual"?plan.priceAnnual:plan.price;
+
+  if (view==="creating") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontSize:48,marginBottom:20,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+        <div style={{fontWeight:900,fontSize:22,color:"#0f172a",marginBottom:8}}>Création en cours…</div>
+        <div style={{fontSize:14,color:"#64748b"}}>Votre espace est en cours de configuration</div>
+      </div>
+    </div>
+  );
+
+  if (view==="success") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontSize:64,marginBottom:16}}>🎉</div>
+        <h2 style={{fontWeight:900,fontSize:24,color:"#0f172a",marginBottom:8}}>Compte créé !</h2>
+        <p style={{color:"#64748b",fontSize:14,marginBottom:16,lineHeight:1.7}}>
+          Essai gratuit 30 jours démarré.<br/>
+          Un email de confirmation a été envoyé à<br/>
+          <strong style={{color:"#1a3a6e"}}>{createdEmail}</strong>
+        </p>
+        {createdEmailReception && (
+          <div style={{background:"#f0f7ff",border:"1px solid #dbeafe",borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",fontSize:13}}>
+            <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:6}}>📋 Vos informations</div>
+            <div style={{color:"#475569",marginBottom:4}}>✉️ Adresse ordonnances :<br/><strong style={{fontFamily:"monospace",fontSize:12}}>{createdEmailReception}</strong></div>
+            <div style={{color:"#475569"}}>💳 Plan : <strong>{createdPlan}</strong> — 30 jours gratuits</div>
+          </div>
+        )}
+        <div style={{background:"#fef9c3",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e",marginBottom:16,textAlign:"left"}}>
+          ⚠️ Cliquez le lien dans l'email pour activer votre compte avant de vous connecter.
+        </div>
+        <button onClick={onBack} style={{width:"100%",padding:14,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>Aller à la connexion →</button>
+      </div>
+    </div>
+  );
+
+  if (view==="checkout") return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <PersistentNav onBack={onBack} currentPage="checkout" secure/>
+      <div style={{maxWidth:840,margin:"0 auto",padding:"24px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:18}}>
+        <div style={{background:"#fff",borderRadius:16,padding:28,boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+          {step==="details"&&(
+            <>
+              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse","text","12 rue..."]].map(([k,l,t,ph])=>(
+                <div key={k} style={{marginBottom:14}}>
+                  <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
+                  <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
+                    style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors[k]?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
+                </div>
+              ))}
+              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
+                style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
+            </>
+          )}
+          {step==="card"&&(
+            <>
+              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:6,marginTop:0}}>Paiement</h3>
+              <p style={{fontSize:13,color:"#94a3b8",marginBottom:18}}>Débitée uniquement après les 30 jours.</p>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Numéro de carte</label>
+                <input placeholder="1234 5678 9012 3456" value={cardData.number} onChange={e=>setCardData(c=>({...c,number:e.target.value.replace(/\s/g,"").replace(/(.{4})/g,"$1 ").trim().slice(0,19)}))}
+                  style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                {[["expiry","MM/AA"],["cvc","CVC"]].map(([k,ph])=>(
+                  <div key={k}><input placeholder={ph} value={cardData[k]} onChange={e=>setCardData(c=>({...c,[k]:e.target.value}))}
+                    style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/></div>
+                ))}
+              </div>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:9,padding:"9px 12px",marginBottom:16,fontSize:12,color:"#166534"}}>🔒 Données chiffrées par Stripe</div>
+              {createError && (
+                <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
+              )}
+              <button onClick={async ()=>{
+                const e={};
+                if(!form.nom) e.nom="Requis";
+                if(!form.email||!form.email.includes("@")) e.email="Email invalide";
+                if(!form.password||form.password.length<8) e.password="8 caractères minimum";
+                if(!form.pharmacie) e.pharmacie="Requis";
+                if(Object.keys(e).length){setErrors(e);return;}
+                setView("creating");
+                try {
+                  const sb = getSupabaseClient();
+                  // 1. Créer le compte Supabase Auth
+                  const { data: authData, error: authErr } = await sb.auth.signUp({
+                    email: form.email,
+                    password: form.password,
+                    options: { emailRedirectTo: window.location.origin }
+                  });
+                  if (authErr) throw authErr;
+
+                  // 2. Générer slug email réception
+                  const slug = form.pharmacie.toLowerCase()
+                    .normalize("NFD").replace(/[̀-ͯ]/g,"")
+                    .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
+                  const emailReception = slug + "@in.ordomail.fr";
+                  // Code vendeur 6 chiffres unique
+                  const codeVendeur = String(Math.floor(100000 + Math.random() * 900000));
+
+                  // 3. Créer la pharmacie via Edge Function (service_role)
+                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                  const session = authData?.session;
+                  const token = session?.access_token || "";
+
+                  const regRes = await fetch(`${supabaseUrl}/functions/v1/register-pharmacie`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({
+                      nom: form.nom,
+                      pharmacie: form.pharmacie,
+                      adresse: form.adresse || "",
+                      email: form.email,
+                      plan: checkoutPlan,
+                      emailReception,
+                    }),
+                  });
+
+                  const regData = await regRes.json();
+                  if (!regRes.ok && regRes.status !== 409) {
+                    // 409 = pharmacie déjà créée (email confirmation pending) = OK
+                    throw new Error(regData.error || "Erreur création pharmacie");
+                  }
+
+                  setCreatedEmail(form.email);
+                  setCreatedEmailReception(emailReception);
+                  setCreatedPlan(checkoutPlan);
+                  setView("success");
+                } catch(err) {
+                  setCreateError(err.message || "Erreur lors de la création");
+                  setView("checkout");
+                }
+              }} style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+                Créer mon compte — essai gratuit 30j →
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{background:"#fff",borderRadius:16,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",alignSelf:"start"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,marginBottom:12}}>RÉCAPITULATIF</div>
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #f1f5f9"}}>
+            <div style={{width:36,height:36,borderRadius:9,background:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{plan.icon}</div>
+            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (−20%)":"Mensuel"}</div></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <PersistentNav onBack={onBack} currentPage="pricing"/>
+      <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
+          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
+          <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
+            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:14,marginBottom:32}}>
+          {PLAN_ORDER.map(pid=>{
+            const p=PLAN_LIMITS[pid]; const pr=billingTab==="annual"?p.priceAnnual:p.price; const isPopular=pid==="standard";
+            return (
+              <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
+                {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>LE PLUS CHOISI</div>}
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:20}}>{p.icon}</span><span style={{fontWeight:800,fontSize:17,color:"#0f172a"}}>{p.label}</span></div>
+                <div style={{marginBottom:14}}><span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span></div>
+                <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep("details");setView("checkout");}}
+                  style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+                  Commencer gratuitement</button>
+                <div style={{fontSize:12,color:"#475569"}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PricingEditor() {
+  const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
+  const [saved,setSaved]=useState(false);
+  function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
+  function save(){plans.forEach(p=>{PLAN_LIMITS[p.id]={...p};});setSaved(true);setTimeout(()=>setSaved(false),3000);}
+  return (
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>Modifications en temps réel</div></div>
+        <button onClick={save} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{saved?"✅ Sauvegardé":"💾 Sauvegarder"}</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:24}}>
+        {plans.map(plan=>(
+          <div key={plan.id} style={{background:"#1e293b",borderRadius:14,padding:20,border:`2px solid #334155`}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
+              <input value={plan.icon} onChange={e=>update(plan.id,"icon",e.target.value)} style={{width:34,textAlign:"center",background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:18,padding:"3px 4px",color:"#fff"}}/>
+              <input value={plan.label} onChange={e=>update(plan.id,"label",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:15,fontWeight:700,padding:"5px 10px",color:"#fff",fontFamily:"inherit"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {[["price","Mensuel €"],["priceAnnual","Annuel €"]].map(([field,lbl])=>(
+                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
+                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:plan.color,fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/></div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {[["maxPostes","Postes"],["maxOrdos","Ordo/mois"]].map(([field,lbl])=>(
+                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
+                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:700,fontSize:13,fontFamily:"monospace",outline:"none"}}/></div>
+              ))}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="color" value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{width:30,height:30,border:"none",cursor:"pointer",borderRadius:5}}/>
+              <input value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:plan.color,fontWeight:700,fontSize:12,fontFamily:"monospace",outline:"none"}}/>
+              <div style={{width:26,height:26,borderRadius:7,background:plan.color}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,marginBottom:14}}>APERÇU TEMPS RÉEL</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:12}}>
+          {plans.map(plan=>(
+            <div key={plan.id} style={{background:"#fff",borderRadius:10,padding:"14px 12px",border:`2px solid ${plan.color}33`}}>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}><span style={{fontSize:16}}>{plan.icon}</span><span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>{plan.label}</span></div>
+              <div style={{fontWeight:900,fontSize:22,color:plan.color}}>{plan.price}<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> €/mois</span></div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{plan.maxPostes===999?"Illimité":`${plan.maxPostes} postes`}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ onLogout }) {
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f0f2f8"}}>
+      <header style={{background:"#0f172a",color:"#fff",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span>💊</span><span style={{fontWeight:800}}>OrdoMail Admin</span></div>
+        <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.3)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Déconnexion</button>
+      </header>
+      <div style={{padding:24}}>
+        <div style={{fontWeight:800,fontSize:18,color:"#1a3a6e",marginBottom:16}}>Pharmacies</div>
+        {DB.pharmacies.map(ph=>(
+          <div key={ph.id} style={{background:"#fff",borderRadius:12,padding:"14px 18px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>{ph.nom}</div>
+              <div style={{fontSize:12,color:"#94a3b8"}}>{ph.email} · Plan {ph.plan}</div>
+            </div>
+            <div style={{fontSize:12,color:"#64748b"}}>{(ph.ordonnances||[]).length} ordonnances</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin,
+  HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin };
 export default AdminDashboardLive;
