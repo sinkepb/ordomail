@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, changePlan,
   snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
+import { PersistentNav } from "../pages/LandingPage.jsx";
 
 function BackofficeAdmin({ onBack }) {
   const [authed,    setAuthed]    = useState(false);
@@ -631,7 +632,8 @@ function AdminDashboardLive() {
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
                 background:tab===k?"#3b82f6":"#1e293b",
-                color:tab===k?"#fff":"#94a3b8"}}>
+                color:tab===k?"#fff":"#94a3b8",
+                border:`1px solid ${tab===k?"#3b82f6":"#334155"}`}}>
               {l}
             </button>
           ))}

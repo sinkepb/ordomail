@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
+import { Input } from "../components/ui.jsx";
 
 const HEALTH_STORIES = [
   {

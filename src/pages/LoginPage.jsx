@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
   getSupabaseClient, isDemoMode } from "../supabase.js";
 import { PLAN_LIMITS } from "../lib/plans.js";
+import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { PharmacieDashboard } from "../pages/Dashboard.jsx";
+import { AdminDashboardLive } from "../pages/AdminPage.jsx";
+import PatientPage from "../pages/PatientPage.jsx";
+import AdminDashboard from "../pages/AdminPage.jsx";
 
 function BoutonProSanteConnect({ onClick, loading }) {
   return (
