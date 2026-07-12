@@ -41,6 +41,30 @@ import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "./components/Upgr
 import { CVBadge, Btn, Input } from "./components/ui.jsx";
 
 // ── Données démo (mock) ───────────────────────────────────────────────────────
+
+function makeOrdos(days=3, perDay=15) {
+  const items = [];
+  const meds = [["Doliprane 1000mg","Amoxicilline 500mg","Ibuprofène 400mg"],["Metformine 850mg","Paracétamol 500mg"],["Levothyrox 50µg","Oméprazole 20mg","Vitamine D3"],["Aspirine 100mg","Lisinopril 5mg"]];
+  const names = [["MARTIN","Pierre","1 75 04 75 118 042 18","email"],["DUBOIS","Sophie","2 82 11 75 063 014 22","qrcode"],["LEFEBVRE","Jean","1 60 03 75 042 118 08","email"],["ROUX","Anne","2 91 03 69 215 088 45","qrcode"],["THOMAS","Isabelle","2 77 06 13 042 118 31","email"],["BERNARD","Paul","1 55 08 31 042 118 09","email"],["MOREAU","Claire","2 68 05 75 042 118 44","qrcode"],["RICHARD","Lucas","1 88 12 93 042 118 77","email"],["PETIT","Emma","2 95 03 75 042 118 55","email"],["SIMON","Marc","1 72 07 69 042 118 33","qrcode"],["LEROY","Julie","2 85 09 75 042 118 66","email"],["DURAND","Pierre","1 63 01 13 042 118 22","email"],["GARCIA","Marie","2 78 04 75 042 118 88","qrcode"],["MARTINEZ","Thomas","1 91 06 75 042 118 11","email"],["FOURNIER","Alice","2 87 11 75 042 118 99","email"]];
+  const docs = ["Dr Bernard","Dr Leclerc","Dr Moreau","Dr Petit","Dr Gautier","Dr Lambert"];
+  for (let d=0;d<days;d++) {
+    const date = new Date(); date.setDate(date.getDate()-d);
+    for (let i=0;i<(d===0?perDay:10);i++) {
+      const n = names[i%names.length];
+      const mins = Math.floor(Math.random()*120)+1;
+      const recv = new Date(date); recv.setHours(8+Math.floor(i/2),mins%60,0,0);
+      items.push({
+        id:`ordo-${d}-${i}`, fromName:`${n[0]} ${n[1]}`, source:n[3],
+        status: d===0?"nouveau":"imprime", receivedAt:recv.toISOString(),
+        attachments:[], extracted:{ nom:`${n[0]} ${n[1]}`, carteVitale:n[2],
+          medecin:docs[i%docs.length], date:date.toLocaleDateString("fr-FR"),
+          medicaments:meds[i%meds.length] }
+      });
+    }
+  }
+  return items;
+}
+
 const DB = {
   pharmacies: [
     {
