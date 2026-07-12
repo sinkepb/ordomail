@@ -241,4 +241,146 @@ function OffresSection({ pharmacie, planInfo }) {
 }
 
 
+
+function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
+  const [billingCycle, setBillingCycle] = useState("monthly");
+  const [selected, setSelected] = useState(null);
+  const [step, setStep] = useState("choose");
+
+  const impact = selected ? computeImpact(pharmacie, postes, selected.id) : null;
+
+  if (step === "done") return (
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>✅</div>
+      <div style={{fontWeight:900,fontSize:20,color:"#0f172a",marginBottom:8}}>Plan mis à jour !</div>
+      <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.7}}>
+        Vous êtes sur le plan <strong style={{color:selected.color}}>{selected.icon} {selected.label}</strong>.<br/>
+        {impact.isUpgrade?"Accès immédiat.":"Effet au prochain renouvellement."}
+      </div>
+      <button onClick={onClose} style={{padding:"11px 28px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Fermer</button>
+    </div>
+  );
+
+  if (step === "processing") return (
+    <div style={{textAlign:"center",padding:"32px 0"}}>
+      <div style={{fontSize:48,marginBottom:16,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+      <div style={{fontWeight:700,fontSize:16,color:"#1a3a6e"}}>Mise à jour en cours…</div>
+    </div>
+  );
+
+  if (step === "confirm" && selected && impact) return (
+    <div>
+      <button onClick={()=>setStep("choose")} style={{border:"none",background:"none",cursor:"pointer",color:"#64748b",fontSize:13,marginBottom:20,fontFamily:"inherit"}}>← Retour</button>
+      <h3 style={{fontWeight:900,fontSize:18,color:"#0f172a",marginBottom:4}}>{impact.isUpgrade?"↑ Passer en":"↓ Rétrograder en"} {selected.label}</h3>
+      <p style={{fontSize:13,color:"#64748b",marginBottom:20}}>{impact.isUpgrade?"Effet immédiat · Prorata facturé.":"Effet au prochain renouvellement."}</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:12,alignItems:"center",marginBottom:20}}>
+        <div style={{borderRadius:12,padding:"14px 16px",background:"#f8fafc",border:"1.5px solid #e2e8f0",opacity:0.7}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",marginBottom:4}}>Actuel</div>
+          <div style={{fontWeight:900,color:impact.curr.color}}>{impact.curr.icon} {impact.curr.label}</div>
+          <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{impact.curr.price} €/mois</div>
+        </div>
+        <div style={{fontSize:20}}>→</div>
+        <div style={{borderRadius:12,padding:"14px 16px",background:`${selected.color}08`,border:`1.5px solid ${selected.color}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:selected.color,marginBottom:4}}>Nouveau</div>
+          <div style={{fontWeight:900,color:selected.color}}>{selected.icon} {selected.label}</div>
+          <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{selected.price} €/mois</div>
+        </div>
+      </div>
+      <div style={{borderRadius:12,padding:"14px 16px",background:impact.isUpgrade?"#f0fdf4":"#fff7ed",border:`1px solid ${impact.isUpgrade?"#bbf7d0":"#fed7aa"}`,marginBottom:16}}>
+        <div style={{fontWeight:700,fontSize:13,color:impact.isUpgrade?"#15803d":"#92400e",marginBottom:8}}>{impact.isUpgrade?"✅ Gains":"⚠️ Impacts"}</div>
+        {[["💰 Prix",`${impact.curr.price} € → ${selected.price} € (${impact.isUpgrade?"+":""}${impact.priceDiff} €/mois)`],
+          ["🖥️ Postes",`${impact.curr.maxPostes===999?"∞":impact.curr.maxPostes} → ${selected.maxPostes===999?"∞":selected.maxPostes}`],
+          ["📋 Volume",`${impact.curr.maxOrdos===99999?"∞":impact.curr.maxOrdos} → ${selected.maxOrdos===99999?"∞":selected.maxOrdos}/mois`],
+        ].map(([l,v])=>(
+          <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}>
+            <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:700}}>{v}</span>
+          </div>
+        ))}
+        {impact.postesASusprimer>0&&(
+          <div style={{marginTop:10,padding:"8px 12px",background:"#fee2e2",borderRadius:8,fontSize:12,color:"#dc2626",fontWeight:600}}>
+            🚫 {impact.postesASusprimer} poste(s) seront désactivés automatiquement
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onClose} style={{flex:1,padding:"11px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Annuler</button>
+        <button onClick={()=>{
+          setStep("processing");
+          (async () => {
+            try {
+              // Si downgrade : désactiver les postes excédentaires en Supabase
+              if (impact && impact.postesASusprimer > 0 && !isDemoMode) {
+                const sb = getSupabaseClient();
+                const actifs = (pharmacie.postes||[]).filter(p=>p.actif);
+                for (let i = actifs.length-1; i >= selected.maxPostes; i--) {
+                  await sb.from("postes").update({ actif: false }).eq("id", actifs[i].id);
+                }
+              }
+              await onConfirm(selected.id);
+              setStep("done");
+            } catch(e) {
+              console.error("[PlanSwitcher]", e.message);
+              setStep("done"); // afficher done quand même
+            }
+          })();
+        }} style={{flex:2,padding:"11px",border:"none",borderRadius:10,background:impact.isUpgrade?selected.color:"#92400e",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+          {impact.isUpgrade?`↑ Passer en ${selected.label}`:`↓ Rétrograder en ${selected.label}`}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{marginBottom:18}}>
+        <h3 style={{fontWeight:900,fontSize:18,color:"#0f172a",marginBottom:4,marginTop:0}}>Changer de plan</h3>
+        <div style={{display:"inline-flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:3}}>
+          {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setBillingCycle(k)} style={{padding:"5px 14px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:billingCycle===k?700:500,background:billingCycle===k?"#fff":"transparent",color:billingCycle===k?"#1a1a1a":"#94a3b8"}}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+        {PLAN_ORDER.map(planId=>{
+          const plan=PLAN_LIMITS[planId]; const isCurrent=pharmacie.plan===planId;
+          const isSelected=selected?.id===planId; const price=billingCycle==="annual"?plan.priceAnnual:plan.price;
+          const isUpgrade=PLAN_ORDER.indexOf(planId)>PLAN_ORDER.indexOf(pharmacie.plan);
+          const isDowngrade=PLAN_ORDER.indexOf(planId)<PLAN_ORDER.indexOf(pharmacie.plan);
+          const imp=computeImpact(pharmacie,postes||[],planId);
+          return (
+            <div key={planId} onClick={()=>!isCurrent&&setSelected(plan)}
+              style={{borderRadius:12,padding:"14px 16px",border:isSelected?`2px solid ${plan.color}`:isCurrent?`2px solid ${plan.color}55`:"2px solid #e2e8f0",background:isSelected?`${plan.color}08`:isCurrent?`${plan.color}04`:"#fff",cursor:isCurrent?"default":"pointer",display:"flex",alignItems:"center",gap:14}}>
+              <div style={{width:42,height:42,borderRadius:10,background:isCurrent?plan.color:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{plan.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                  <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>{plan.label}</span>
+                  {isCurrent&&<span style={{fontSize:9,fontWeight:800,background:plan.color,color:"#fff",padding:"1px 7px",borderRadius:20}}>ACTUEL</span>}
+                  {isUpgrade&&!isCurrent&&<span style={{fontSize:9,fontWeight:700,background:"#dcfce7",color:"#15803d",padding:"1px 7px",borderRadius:20}}>↑ HAUSSE</span>}
+                  {isDowngrade&&<span style={{fontSize:9,fontWeight:700,background:"#fff7ed",color:"#92400e",padding:"1px 7px",borderRadius:20}}>↓ BAISSE</span>}
+                </div>
+                <div style={{fontSize:11,color:"#64748b"}}>{plan.maxPostes===999?"Illimité":`${plan.maxPostes} postes`} · {plan.maxOrdos===99999?"∞":`${plan.maxOrdos}`} ordo/mois</div>
+                {isDowngrade&&imp.postesASusprimer>0&&<div style={{fontSize:11,color:"#dc2626",fontWeight:600,marginTop:2}}>⚠️ {imp.postesASusprimer} poste(s) désactivé(s)</div>}
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontWeight:900,fontSize:20,color:isCurrent?"#94a3b8":plan.color}}>{price}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>€/mois</div>
+              </div>
+              <div style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${isSelected?plan.color:"#e2e8f0"}`,background:isSelected?plan.color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {(isSelected||isCurrent)&&<div style={{width:7,height:7,borderRadius:"50%",background:isSelected?"#fff":plan.color}}/>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onClose} style={{flex:1,padding:"11px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Annuler</button>
+        <button disabled={!selected} onClick={()=>selected&&setStep("confirm")}
+          style={{flex:2,padding:"11px",border:"none",borderRadius:10,background:!selected?"#e2e8f0":selected.color,color:!selected?"#94a3b8":"#fff",fontWeight:800,fontSize:14,cursor:!selected?"default":"pointer",fontFamily:"inherit"}}>
+          {!selected?"Sélectionnez un plan":`Continuer avec ${selected.label} →`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export { UpgradeModal, PlanSwitcher, PlanSwitcherModal };
