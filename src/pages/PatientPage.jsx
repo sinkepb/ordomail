@@ -2,27 +2,16 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 
-    explanation: "Les pharmacies collectent gratuitement vos médicaments non utilisés via le programme Cyclamed.",
-  },
+const HEALTH_STORIES = [
   {
-    id: 4,
-    emoji: "💬",
-    bg: ["#92400e", "#b45309"],
-    title: "À demander au pharmacien",
-    text: "Puis-je prendre ce médicament avec mon traitement habituel ? Y a-t-il un générique disponible ?",
+    id: 1,
+    emoji: "✅",
+    bg: ["#1a6e3a", "#15803d"],
+    title: "Ordonnance reçue !",
+    text: "Votre pharmacien prépare votre commande. Restez dans la file — nous vous appelons quand c'est prêt.",
     type: "info",
   },
   {
-    id: 5,
-    emoji: "🎁",
-    bg: ["#065f46", "#047857"],
-    title: "Le saviez-vous ?",
-    text: "Votre pharmacie propose souvent la vaccination sans RDV, des bilans de médication gratuits et la livraison à domicile.",
-    type: "info",
-  },
-];
-
-function PatientStories({ pharmacie, nom, onRestart }) {
 
 function PatientStories({ pharmacie, nom, onRestart }) {
   const [current, setCurrent] = useState(0);
@@ -534,7 +523,6 @@ function PatientPage({ pharmacie, onBack }) {
     </div>
   );
 }
-
 
 export { PatientStories, PatientPage };
 export default PatientPage;
