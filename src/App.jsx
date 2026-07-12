@@ -4,9 +4,18 @@
 // Architecture modulaire : pages/ + components/ + lib/
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 12/07/2026 18:10";
+
+const APP_VERSION = "v6.0 · 12/07/2026 18:40";
+
+// ── Diagnostic démarrage ─────────────────────────────────────────────────────
+console.log("=== ORDOMAIL DÉMARRAGE ===");
+console.log("APP_VERSION:", "v6.0 · 12/07/2026 18:40");
+console.log("VITE_SUPABASE_URL:", import.meta.env.VITE_SUPABASE_URL || "❌ UNDEFINED");
+console.log("VITE_DEMO_MODE:", import.meta.env.VITE_DEMO_MODE || "❌ UNDEFINED");
+console.log("isDemoMode:", typeof isDemoMode !== "undefined" ? isDemoMode : "❌ UNDEFINED");
+
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 import {
@@ -39,6 +48,73 @@ import { OrdoCard, OrdoRow, AttachmentThumb } from "./components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "./components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "./components/UpgradeModal.jsx";
 import { CVBadge, Btn, Input } from "./components/ui.jsx";
+
+
+// ── Error Boundary — affiche l'erreur au lieu d'une page blanche ─────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, info: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("[ErrorBoundary]", error, info);
+    this.setState({ info });
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#0f172a",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: 32, fontFamily: "monospace"
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>💥</div>
+          <div style={{ color: "#f87171", fontWeight: 900, fontSize: 20, marginBottom: 12 }}>
+            Erreur OrdoMail
+          </div>
+          <div style={{
+            background: "#1e293b", border: "1px solid #f87171",
+            borderRadius: 12, padding: 20, maxWidth: 700, width: "100%",
+            marginBottom: 16
+          }}>
+            <div style={{ color: "#fca5a5", fontSize: 14, marginBottom: 8, fontWeight: 700 }}>
+              {this.state.error?.name}: {this.state.error?.message}
+            </div>
+            <pre style={{ color: "#94a3b8", fontSize: 11, whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 300 }}>
+              {this.state.error?.stack}
+            </pre>
+          </div>
+          {this.state.info && (
+            <div style={{
+              background: "#1e293b", border: "1px solid #334155",
+              borderRadius: 12, padding: 20, maxWidth: 700, width: "100%",
+              marginBottom: 16
+            }}>
+              <div style={{ color: "#64748b", fontSize: 12, marginBottom: 8 }}>Component Stack:</div>
+              <pre style={{ color: "#94a3b8", fontSize: 11, whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 200 }}>
+                {this.state.info.componentStack}
+              </pre>
+            </div>
+          )}
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: "#3b82f6", color: "#fff", border: "none",
+              borderRadius: 8, padding: "10px 24px", fontSize: 14,
+              fontWeight: 700, cursor: "pointer", fontFamily: "monospace"
+            }}>
+            🔄 Recharger
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Données démo (mock) ───────────────────────────────────────────────────────
 
@@ -166,7 +242,7 @@ function LogsPanel({ pharmacieId, onClose }) {
 
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
-export default function App() {
+function AppInner() {
   const hashParams  = new URLSearchParams(window.location.hash.replace("#",""));
   const urlParams   = new URLSearchParams(window.location.search);
   const hashType    = hashParams.get("type");
@@ -262,3 +338,12 @@ export default function App() {
   );
 }
 
+function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
+  );
+}
+
+export default App;
