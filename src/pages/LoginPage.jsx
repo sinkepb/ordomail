@@ -3,10 +3,7 @@ import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
   getSupabaseClient, isDemoMode } from "../supabase.js";
 import { PLAN_LIMITS } from "../lib/plans.js";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
-import { PharmacieDashboard } from "../pages/Dashboard.jsx";
-import { AdminDashboardLive } from "../pages/AdminPage.jsx";
-import PatientPage from "../pages/PatientPage.jsx";
-import AdminDashboard from "../pages/AdminPage.jsx";
+
 
 function BoutonProSanteConnect({ onClick, loading }) {
   return (
@@ -299,13 +296,13 @@ function LoginPage({ onLogin, onBack }) {
   );
 }
 
-function AppLogin({ onBack, onLogout, onGoToPricing }) {
+function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, AdminComponent, PatientComponent }) {
   // Récupérer la session restaurée depuis le refresh
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
   const [patientPharmacie, setPatientPharmacie] = useState(null);
 
-  if (patientPharmacie) return <PatientPage pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
+  if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
   if (session) {
     if (session.role==="admin") return (
@@ -318,7 +315,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing }) {
             <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
           </div>
         </div>
-        <AdminDashboard onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }}/>
+        <AdminComponent onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }}/>
       </div>
     );
     return (
@@ -334,7 +331,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing }) {
             <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
           </div>
         </div>
-        <PharmacieDashboard pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <DashboardComponent pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }

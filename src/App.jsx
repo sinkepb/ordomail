@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const APP_VERSION = "v6.0 · 12/07/2026 14:51";
+const APP_VERSION = "v6.0 · 12/07/2026 18:10";
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 import {
@@ -250,7 +250,14 @@ export default function App() {
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
       {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}
-      {(route==="dashboard"||route==="admin")&&<AppLogin onBack={()=>setRoute("landing")} onLogout={()=>setRoute("landing")} onGoToPricing={()=>setRoute("pricing")}/>}
+      {(route==="dashboard"||route==="admin")&&<AppLogin
+          onBack={()=>setRoute("landing")}
+          onLogout={()=>setRoute("landing")}
+          onGoToPricing={()=>setRoute("pricing")}
+          DashboardComponent={PharmacieDashboard}
+          AdminComponent={AdminDashboard}
+          PatientComponent={PatientPage}
+        />}
     </>
   );
 }
