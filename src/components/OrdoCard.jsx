@@ -295,4 +295,125 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 }
 
 
-export { AttachmentThumb, OrdoCard, OrdoRow };
+
+// ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
+function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId }) {
+  const [expanded, setExpanded] = useState(false);
+  const isNew  = group.ordonnances.some(o => o.status === "nouveau");
+  const nom    = group.extracted?.nom || group.fromName || "Patient";
+  const accent = getOrdoAccent(group.id);
+  const count  = group.ordonnances.length;
+
+  return (
+    <div style={{
+      background: "#fff", borderRadius: 16, overflow: "hidden",
+      boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
+      border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
+    }}>
+      {/* Bandeau avec code en grand */}
+      <div style={{
+        background: isNew ? accent.bandeau : accent.bg,
+        padding: "10px 16px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
+            {isNew ? "🔔 À TRAITER" : "✓ IMPRIMÉE"}
+          </span>
+          <span style={{ fontSize: 13 }}>📱</span>
+          {/* Badge code patient — mis en avant */}
+          <div style={{
+            fontSize: 20, fontWeight: 900, padding: "3px 12px",
+            borderRadius: 8, background: "rgba(255,255,255,0.25)",
+            color: "#fff", fontFamily: "monospace", letterSpacing: 4,
+            border: "1.5px solid rgba(255,255,255,0.5)",
+          }}>
+            {group.code_patient}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Badge nombre d'ordonnances */}
+          <div style={{
+            fontSize: 11, fontWeight: 800, padding: "2px 8px",
+            borderRadius: 20, background: "rgba(255,255,255,0.2)",
+            color: "#fff",
+          }}>
+            {count} ordonnance{count > 1 ? "s" : ""}
+          </div>
+          <span style={{ fontSize: 10, color: isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
+            {timeAgo(group.receivedAt)}
+          </span>
+        </div>
+      </div>
+
+      {/* Corps */}
+      <div style={{ padding: "12px 14px 10px" }}>
+        {/* Avatar + Nom */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: "50%",
+            background: isNew ? accent.bandeau : accent.bg,
+            border: `2px solid ${accent.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 18, color: isNew ? "#fff" : accent.avatar, fontWeight: 900, flexShrink: 0,
+          }}>{nom?.charAt(0)?.toUpperCase() || "?"}</div>
+          <div>
+            <div style={{ fontSize: 10, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Patient</div>
+            <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a" }}>{nom}</div>
+          </div>
+        </div>
+
+        {/* Liste des ordonnances du groupe */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {group.ordonnances.map((o, idx) => (
+            <div key={o.id} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              background: "#f8fafc", borderRadius: 8, padding: "7px 10px",
+              border: "1px solid #e2e8f0",
+            }}>
+              <div style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>
+                📎 Ordonnance {idx + 1}
+                {o.attachments?.[0]?.name && (
+                  <span style={{ color: "#94a3b8", fontWeight: 400, marginLeft: 4 }}>
+                    — {o.attachments[0].name}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 5 }}>
+                {o.attachments?.[0]?.dataUrl && (
+                  <button onClick={() => onView(o)}
+                    style={{ padding: "4px 8px", border: "1px solid #c7d2fe", borderRadius: 6,
+                      background: "#f0f4ff", color: "#4338ca", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                    👁
+                  </button>
+                )}
+                <button onClick={() => onPrint(o)}
+                  style={{ padding: "4px 8px", border: "none", borderRadius: 6,
+                    background: accent.bandeau, color: "#fff", fontSize: 11,
+                    cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                  🖨️
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Actions globales */}
+      <div style={{ padding: "0 14px 14px" }}>
+        <button
+          onClick={() => group.ordonnances.forEach(o => onPrint(o))}
+          style={{
+            width: "100%", padding: "12px", border: "none", borderRadius: 9,
+            background: isNew ? accent.bandeau : "#475569", color: "#fff",
+            fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
+          }}>
+          🖨️ Imprimer toutes ({count})
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export { AttachmentThumb, OrdoCard, OrdoRow, OrdoGroup };

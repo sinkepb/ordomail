@@ -3,7 +3,7 @@ import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, C } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
 import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsx";
-import { OrdoCard, OrdoRow, AttachmentThumb } from "../components/OrdoCard.jsx";
+import { OrdoCard, OrdoRow, AttachmentThumb, OrdoGroup } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
@@ -13,7 +13,7 @@ import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
   isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
 } from "../supabase.js";
 
-const APP_VERSION = "v6.1 · 13/07/2026 12:21";
+const APP_VERSION = "v6.1 · 13/07/2026 15:52";
 
 const MOCK_INVOICES = [
   { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
@@ -1305,6 +1305,29 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const filteredOrdos = filterStatus === "tous" ? filteredBySearch
     : filteredBySearch.filter(o => o.status === filterStatus);
 
+  // ── Groupement par code_patient ──────────────────────────────────────────
+  // Les ordonnances sans code ou avec code unique restent telles quelles
+  // Les ordonnances avec le même code sont fusionnées en un groupe
+  const groupedOrdos = (() => {
+    const groups = {};
+    const result = [];
+    for (const o of filteredOrdos) {
+      if (o.code_patient) {
+        const key = `${o.code_patient}-${toDateKey(o.receivedAt)}`;
+        if (groups[key]) {
+          groups[key].ordonnances.push(o);
+        } else {
+          const group = { ...o, _isGroup: true, ordonnances: [o] };
+          groups[key] = group;
+          result.push(group);
+        }
+      } else {
+        result.push({ ...o, _isGroup: false, ordonnances: [o] });
+      }
+    }
+    return result;
+  })();
+
   const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
   const couleur = pharmacie?.couleur || "#1a3a6e";
   // URL QR code : utilise VITE_APP_URL si défini, sinon l'origine courante
@@ -1414,8 +1437,23 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
               </div>
             ):viewMode==="grid"?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:12}}>
-                {filteredOrdos.map(o=>{
+                {groupedOrdos.map(o=>{
                   const accent=getOrdoAccent(o.id);
+                  if (o._isGroup && o.ordonnances.length > 1) {
+                    return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)}
+                      group={o} couleur={couleur}
+                      onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
+                      onView={async (ordo)=>{
+                        handleViewOrdo(ordo.id);
+                        const a = ordo.attachments?.[0];
+                        if (!a) return;
+                        if (a.dataUrl) { setViewerAtt(a); return; }
+                        if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
+                      }}
+                      onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});}}
+                      onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
+                      loadingId={loadingId}/>;
+                  }
                   return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
                     onView={()=>{handleViewOrdo(o.id);(async () => {
@@ -1434,8 +1472,49 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {filteredOrdos.map(o=>{
+                {groupedOrdos.map(o=>{
                   const accent=getOrdoAccent(o.id);
+                  if (o._isGroup && o.ordonnances.length > 1) {
+                    return (
+                      <div key={o.code_patient+'-list-'+toDateKey(o.receivedAt)} style={{
+                        background:"#fff",borderRadius:12,marginBottom:6,padding:"12px 18px",
+                        border:`2px solid ${accent.border}`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
+                      }}>
+                        {/* En-tête groupe */}
+                        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+                          <div style={{
+                            fontSize:22,fontWeight:900,padding:"4px 14px",borderRadius:10,
+                            background:"#1a3a6e",color:"#fff",fontFamily:"monospace",letterSpacing:4,flexShrink:0,
+                          }}>{o.code_patient}</div>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:800,fontSize:15,color:"#1a1a1a"}}>{o.extracted?.nom||o.fromName||"Patient"}</div>
+                            <div style={{fontSize:11,color:"#64748b"}}>{o.ordonnances.length} ordonnances · {timeAgo(o.receivedAt)}</div>
+                          </div>
+                          <button onClick={()=>o.ordonnances.forEach(ord=>{handlePrintOrdo(ord.id);setPrintModal(ord);})}
+                            style={{padding:"8px 14px",border:"none",borderRadius:9,background:accent.bandeau,
+                              color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                            🖨️ Tout imprimer
+                          </button>
+                        </div>
+                        {/* Lignes individuelles */}
+                        {o.ordonnances.map((ord,idx)=>(
+                          <div key={ord.id} style={{display:"flex",alignItems:"center",gap:8,
+                            padding:"6px 10px",background:"#f8fafc",borderRadius:8,marginBottom:4,
+                            border:"1px solid #e2e8f0"}}>
+                            <span style={{fontSize:12,color:"#475569",fontWeight:600,flex:1}}>
+                              📎 Ordonnance {idx+1}
+                              {ord.attachments?.[0]?.name && <span style={{color:"#94a3b8",fontWeight:400}}> — {ord.attachments[0].name}</span>}
+                            </span>
+                            <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
+                              style={{padding:"4px 10px",border:"none",borderRadius:6,
+                                background:accent.bandeau,color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                              🖨️
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
                   return <OrdoRow key={o.id} ordo={o} couleur={couleur} accent={accent}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
                     onView={()=>(async () => {
