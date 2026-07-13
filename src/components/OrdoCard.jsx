@@ -111,17 +111,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
             {ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️"}
           </span>
-          {/* Badge code patient */}
-          {ordo.code_patient && (
-            <span style={{
-              fontSize: 15, fontWeight: 900, padding: "2px 10px",
-              borderRadius: 8, background: "rgba(255,255,255,0.25)",
-              color: "#fff", fontFamily: "monospace", letterSpacing: 3,
-              border: "1.5px solid rgba(255,255,255,0.4)",
-            }}>
-              {ordo.code_patient}
-            </span>
-          )}
+
         </div>
         <span style={{ fontSize: 11, color: isNew ? "rgba(255,255,255,0.8)" : accent.avatar + "99" }}>{timeAgo(ordo.receivedAt)}</span>
       </div>
@@ -131,14 +121,21 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
 
         {/* Avatar + Nom */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: "50%",
-            background: isNew ? accent.bandeau : accent.bg,
-            border: `2px solid ${accent.border}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 18, color: isNew ? "#fff" : accent.avatar, fontWeight: 900, flexShrink: 0,
-          }}>{initiale}</div>
-          <div>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: "50%",
+              background: isNew ? accent.bandeau : accent.bg,
+              border: `2px solid ${accent.border}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
+            }}>
+            {ordo.code_patient
+              ? <span style={{fontSize:12,fontWeight:900,fontFamily:"monospace",letterSpacing:2,lineHeight:1}}>{ordo.code_patient}</span>
+              : initiale}
+          </div>
+
+          </div>
+          <div style={{ marginTop: ordo.code_patient ? 6 : 0 }}>
             <div style={{ fontSize: 10, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Patient</div>
             <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a", lineHeight: 1.15, wordBreak: "break-word" }}>{nom}</div>
           </div>
@@ -230,34 +227,37 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
       border: `1.5px solid ${accent.border}`,
       boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
     }}>
-      {/* Avatar */}
-      <div style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+      {/* Avatar avec code patient */}
+      <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
         background: isNew ? accent.bandeau : accent.bg,
         border: `2px solid ${accent.border}`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: isNew ? "#fff" : accent.avatar, fontWeight: 900, fontSize: 17 }}>
-        {nom?.charAt(0)?.toUpperCase() || "?"}
+        color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
+        fontSize: ordo.code_patient ? 13 : 17,
+        fontFamily: ordo.code_patient ? "monospace" : "inherit",
+        letterSpacing: ordo.code_patient ? 1 : 0,
+      }}>
+        {ordo.code_patient || nom?.charAt(0)?.toUpperCase() || "?"}
       </div>
 
       {/* Nom + email */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {ordo.code_patient && (
+            <span style={{
+              background: "#1a3a6e", color: "#fff", fontFamily: "monospace",
+              fontSize: 13, fontWeight: 900, letterSpacing: 2,
+              padding: "2px 8px", borderRadius: 6, flexShrink: 0,
+            }}>
+              {ordo.code_patient}
+            </span>
+          )}
+          <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+          </div>
+        </div>
         {email && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email}</div>}
         <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{timeAgo(ordo.receivedAt)}</div>
       </div>
-
-      {/* Code patient — badge prioritaire */}
-      {ordo.code_patient && (
-        <div style={{
-          fontSize: 18, fontWeight: 900, padding: "4px 12px",
-          borderRadius: 10, background: "#1a3a6e", color: "#fff",
-          fontFamily: "monospace", letterSpacing: 3, flexShrink: 0,
-          boxShadow: "0 2px 8px rgba(26,58,110,0.35)",
-          minWidth: 52, textAlign: "center",
-        }}>
-          {ordo.code_patient}
-        </div>
-      )}
 
       {/* Source + statut */}
       <span style={{ fontSize: 14, flexShrink: 0 }} title={ordo.source}>{srcIcon}</span>
@@ -299,7 +299,10 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
 function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [] }) {
   const [expanded, setExpanded] = useState(false);
+  // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew  = group.ordonnances.some(o => o.status === "nouveau");
+  // Statuts individuels pour chaque ordonnance
+  const getOrdoIsNew = (o) => o.status === "nouveau";
   const nom    = group.extracted?.nom || group.fromName || "Patient";
   const accent = getOrdoAccent(group.id);
   const count  = group.ordonnances.length;
@@ -340,6 +343,16 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
           }}>
             {count} ordonnance{count > 1 ? "s" : ""}
           </div>
+          {/* Badge intérêts */}
+          {interets.length > 0 && (
+            <div style={{
+              fontSize: 11, fontWeight: 800, padding: "2px 8px",
+              borderRadius: 20, background: "rgba(255,220,0,0.3)",
+              color: "#fff", border: "1px solid rgba(255,220,0,0.5)",
+            }}>
+              🎯 {interets.length} intérêt{interets.length > 1 ? "s" : ""}
+            </div>
+          )}
           <span style={{ fontSize: 10, color: isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
             {timeAgo(group.receivedAt)}
           </span>
@@ -426,14 +439,22 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       {/* Actions globales */}
       <div style={{ padding: "0 14px 14px" }}>
         <button
-          onClick={() => group.ordonnances.forEach(o => onPrint(o))}
+          onClick={() => group.ordonnances.filter(o => o.status === 'nouveau').forEach(o => onPrint(o))}
           style={{
             width: "100%", padding: "12px", border: "none", borderRadius: 9,
-            background: isNew ? accent.bandeau : "#475569", color: "#fff",
-            fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+            background: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
+              ? accent.bandeau : "#e2e8f0",
+            color: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
+              ? "#fff" : "#94a3b8",
+            fontWeight: 800, fontSize: 14,
+            cursor: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
+              ? "pointer" : "default",
+            fontFamily: "inherit",
             boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
           }}>
-          🖨️ Imprimer toutes ({count})
+          {group.ordonnances.filter(o=>o.status==="nouveau").length > 0
+                ? `🖨️ Imprimer non traitées (${group.ordonnances.filter(o=>o.status==="nouveau").length})`
+                : "✓ Toutes imprimées"}
         </button>
       </div>
     </div>

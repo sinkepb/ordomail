@@ -99,6 +99,26 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
     let base = [...HEALTH_STORIES];
 
     async function loadDynamic() {
+      // Mode démo : utiliser des offres fictives pour tester
+      if (isDemoMode) {
+        const demoOffres = [
+          {
+            id: "offre-demo-1", offreId: "demo-1", offreType: "promo",
+            emoji: "🏷️", bg: ["#dc2626", "#b91c1c"],
+            title: "-20% sur Doliprane", text: "Valable jusqu'à la fin du mois.",
+            type: "offre", badge: "-20%",
+          },
+          {
+            id: "offre-demo-2", offreId: "demo-2", offreType: "service",
+            emoji: "💉", bg: ["#1a6e3a", "#15803d"],
+            title: "Vaccination grippe", text: "Sans rendez-vous, tous les jours de 9h à 18h.",
+            type: "offre", badge: null,
+          },
+        ];
+        base = [base[0], ...demoOffres, ...base.slice(1)];
+        setAllStories(base);
+        return;
+      }
       if (!sb) return;
 
       // Charger contenu santé aléatoire depuis la table stories_content
@@ -128,9 +148,12 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
           // Remplacer les stories statiques par les dynamiques (garder story 1 confirmation)
           base = [base[0], ...dynamicStories];
         }
-      } catch(e) { console.warn("[stories_content]", e.message); }
+      } catch(e) {
+        console.warn("[stories_content] Erreur:", e.message, "→ utilisation stories statiques");
+        // base reste HEALTH_STORIES par défaut
+      }
 
-      // Charger offres pharmacie
+      // Charger offres pharmacie — toujours essayer même si stories_content a échoué
       if (pharmacie?.id) {
         try {
           const { data: offres } = await sb
@@ -143,6 +166,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
               .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
               .map(o => ({
                 id: `offre-${o.id}`,
+                offreId: o.id,
+                offreType: o.type || "promo",
                 emoji: o.emoji || "🎁",
                 bg: [o.couleur || "#1a3a6e", (o.couleur || "#1a3a6e") + "99"],
                 title: o.titre,
@@ -153,14 +178,17 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
             // Insérer les offres en 2ème position
             base.splice(1, 0, ...offreStories);
           }
-        } catch(e) { console.warn("[offres_stories]", e.message); }
+        } catch(e) { console.warn("[offres_stories] Erreur:", e.message, "→ pas d'offres affichées"); }
       }
 
+      console.log("[PatientStories] stories chargées:", base.length);
+      console.log("[PatientStories] types:", base.map(s=>s.type).join(", "));
+      console.log("[PatientStories] pharmacie.id:", pharmacie?.id);
       setAllStories(base);
     }
 
     loadDynamic();
-  }, [pharmacie?.id]);
+  }, [pharmacie?.id, isDemoMode]);
 
   const story = allStories[current];
   const totalStories = allStories.length;
