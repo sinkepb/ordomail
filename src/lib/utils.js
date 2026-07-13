@@ -1,5 +1,6 @@
-// ─── Utilitaires généraux OrdoMail ───────────────────────────────────────────
+import { useState, useEffect, useRef } from "react";
 
+// ─── Utilitaires temporels ────────────────────────────────────────────────────
 export function timeAgo(date) {
   if (!date) return "";
   const d = date instanceof Date ? date : new Date(date);
@@ -26,6 +27,7 @@ export function formatDateLabel(key) {
   return d.toLocaleDateString("fr-FR", { weekday:"short", day:"numeric", month:"short" });
 }
 
+// ─── Couleurs ordonnances ─────────────────────────────────────────────────────
 export const ORDO_ACCENTS = [
   { bg:"#e8f5e9", border:"#a5d6a7", bandeau:"#2e7d32", avatar:"#1b5e20" },
   { bg:"#e3f2fd", border:"#90caf9", bandeau:"#1565c0", avatar:"#0d47a1" },
@@ -41,6 +43,7 @@ export function getOrdoAccent(id) {
   return ORDO_ACCENTS[hash % ORDO_ACCENTS.length];
 }
 
+// ─── Thème couleurs landing ───────────────────────────────────────────────────
 export const C = {
   navy:    "#1a3a6e",
   navyD:   "#0f2347",
@@ -55,3 +58,25 @@ export const C = {
   surface: "#f8fafc",
   amber:   "#e6a817",
 };
+
+// ─── Hook animation fade-in ───────────────────────────────────────────────────
+const useFadeIn = (ref) => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.15 });
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  return visible;
+};
+
+export { useFadeIn };
+
+// ─── Plans landing ────────────────────────────────────────────────────────────
+const PLANS = [
+  { id: "starter",  name: "Starter",  price: 19, icon: "🌱", color: "#0369a1", features: ["2 postes", "200 ordonnances/mois", "QR Code + Email", "Logs & export CSV"] },
+  { id: "standard", name: "Standard", price: 39, icon: "⭐", color: C.navy,    features: ["5 postes", "1 000 ordonnances/mois", "SMTP personnalisé", "Support prioritaire"], popular: true },
+  { id: "pro",      name: "Pro",      price: 79, icon: "🏥", color: "#4c1d95", features: ["Postes illimités", "Volume illimité", "Intégration LGO", "SLA 99,9 %"] },
+];
+
+export { PLANS };

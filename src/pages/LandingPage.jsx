@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import { PLAN_LIMITS } from "../lib/plans.js";
-import { C } from "../lib/utils.js";
+import { C, useFadeIn, PLANS } from "../lib/utils.js";
 
 const APP_VERSION = "v6.0 · 13/07/2026 11:32";
 
