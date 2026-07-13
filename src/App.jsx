@@ -1,24 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-
-// ── Capture d'erreur globale ──────────────────────────────────────────────────
-window.addEventListener('error', function(e) {
-  console.error('[GLOBAL ERROR]', e.message, e.filename, e.lineno, e.colno);
-  console.error('[ERROR OBJ]', e.error?.stack);
-  // Afficher sur la page
-  const div = document.createElement('div');
-  div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#dc2626;color:#fff;padding:16px;z-index:99999;font-family:monospace;font-size:13px;';
-  div.innerHTML = '<b>ERREUR: ' + e.message + '</b><br>' + 
-    'Fichier: ' + e.filename + ':' + e.lineno + ':' + e.colno + '<br>' +
-    (e.error?.stack || '').replace(/\n/g,'<br>').slice(0, 500);
-  document.body.appendChild(div);
-});
-
-window.addEventListener('unhandledrejection', function(e) {
-  console.error('[UNHANDLED PROMISE]', e.reason);
-});
-
-
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
   fetchOrdonnances, updateOrdoStatus, updateOrdoExtracted, uploadOrdoFile,
@@ -257,6 +238,16 @@ function LogsPanel({ pharmacieId, onClose }) {
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
 function AppInner() {
+  // Capture erreurs globales pour debug
+  useEffect(() => {
+    const handler = (e) => {
+      console.error("[GLOBAL ERROR]", e.message, e.filename + ":" + e.lineno + ":" + e.colno);
+      console.error("[STACK]", e.error?.stack);
+    };
+    window.addEventListener("error", handler);
+    return () => window.removeEventListener("error", handler);
+  }, []);
+
   const hashParams  = new URLSearchParams(window.location.hash.replace("#",""));
   const urlParams   = new URLSearchParams(window.location.search);
   const hashType    = hashParams.get("type");
