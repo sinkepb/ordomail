@@ -383,6 +383,7 @@ function normOrdo(row) {
     id: row.id, source: row.source, status: row.status,
     fromName: row.from_name, fromEmail: row.from_email,
     receivedAt: row.received_at, printedAt: row.printed_at,
+    code_patient: row.code_patient || null,
     extracted: {
       nom:         row.patient_nom   || null,
       carteVitale: null,
