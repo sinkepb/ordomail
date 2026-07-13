@@ -2,6 +2,75 @@ import { useState, useEffect, useRef } from "react";
 import { getSignedUrl, isDemoMode } from "../supabase.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
 
+
+function generateOrdoPDF(ordo) {
+  const nom = ordo.extracted?.nom || ordo.fromName || "Patient";
+  const cv  = ordo.extracted?.carteVitale || "Non disponible";
+  const med = ordo.extracted?.medecin || "Dr Inconnu";
+  const dat = ordo.extracted?.date || new Date().toLocaleDateString("fr-FR");
+  const meds = (ordo.extracted?.medicaments || []).join(", ") || "—";
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Ordonnance — ${nom}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #1a1a1a; padding: 32px 40px; background: #fff; }
+  @media print { body { padding: 16px; } .no-print { display: none; } }
+  .header { border-bottom: 2px solid #1a3a6e; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .ordo-title { font-size: 22px; font-weight: 900; color: #1a3a6e; }
+  .ordo-sub { font-size: 10px; color: #94a3b8; letter-spacing: 2px; margin-top: 2px; }
+  .patient-block { background: #eef4ff; border-left: 5px solid #1a3a6e; border-radius: 0 10px 10px 0; padding: 16px 20px; margin-bottom: 20px; }
+  .patient-name { font-size: 28px; font-weight: 900; color: #1a1a1a; margin-bottom: 8px; }
+  .cv-badge { display: inline-block; background: #15623a; color: #fff; font-family: monospace; font-size: 14px; font-weight: 700; padding: 5px 14px; border-radius: 7px; letter-spacing: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .info-card { background: #f8f9ff; border-radius: 9px; padding: 12px 14px; border: 1px solid #dde4f5; }
+  .info-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .info-val { font-size: 14px; font-weight: 700; }
+  .meds { margin-bottom: 24px; }
+  .meds-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+  .med-item { padding: 8px 12px; border-radius: 7px; background: #f0f7ff; margin-bottom: 6px; font-size: 14px; border-left: 3px solid #1a3a6e; }
+  .footer { border-top: 1px solid #e0e0e0; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
+  .print-btn { position: fixed; bottom: 20px; right: 20px; background: #1a3a6e; color: #fff; border: none; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer</button>
+<div class="header">
+  <div>
+    <div class="ordo-title">💊 OrdoMail</div>
+    <div class="ordo-sub">FICHE ORDONNANCE NUMÉRIQUE</div>
+  </div>
+  <div style="text-align:right;font-size:11px;color:#64748b">
+    Reçue le ${new Date(ordo.receivedAt).toLocaleDateString("fr-FR")}<br>
+    Source : ${ordo.source === "qrcode" ? "QR Code patient" : "Email"}<br>
+    ID : ${ordo.id}
+  </div>
+</div>
+<div class="patient-block">
+  <div style="font-size:10px;font-weight:700;color:#7a9cc8;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px">Patient</div>
+  <div class="patient-name">${nom}</div>
+  ${cv !== "Non disponible" ? `<div class="cv-badge">💳 ${cv}</div>` : '<div style="font-size:12px;color:#aaa;font-style:italic">Numéro SS non extrait</div>'}
+</div>
+<div class="grid">
+  <div class="info-card"><div class="info-label">Médecin prescripteur</div><div class="info-val">${med}</div></div>
+  <div class="info-card"><div class="info-label">Date prescription</div><div class="info-val">${dat}</div></div>
+</div>
+<div class="meds">
+  <div class="meds-label">Médicaments prescrits</div>
+  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${m}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
+</div>
+<div class="footer">
+  <span>Imprimé le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"})}</span>
+  <span>OrdoMail — Document à usage interne pharmacie</span>
+</div>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  return URL.createObjectURL(blob);
+}
+
 function AttachmentThumb({ att, style }) {
   const [src, setSrc] = useState(att?.dataUrl || null);
   useEffect(() => {
