@@ -373,11 +373,12 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
 }
 
 function PatientPage({ pharmacie, onBack }) {
-  const [step, setStep]       = useState("form");
-  const [nom, setNom]         = useState("");
-  const [files, setFiles]     = useState([]); // plusieurs ordonnances
-  const [copied, setCopied]   = useState(false);
-  const [sending, setSending] = useState(false);
+  const [step, setStep]           = useState("form");
+  const [nom, setNom]             = useState("");
+  const [files, setFiles]         = useState([]); // plusieurs ordonnances
+  const [copied, setCopied]       = useState(false);
+  const [sending, setSending]     = useState(false);
+  const [codePatient, setCodePatient] = useState(null);
   const inputRef              = useRef();
   const couleur               = pharmacie?.couleur || "#1a3a6e";
   const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
