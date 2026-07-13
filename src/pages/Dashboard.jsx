@@ -1,0 +1,1456 @@
+import { useState, useEffect, useRef } from "react";
+import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
+import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, C } from "../lib/utils.js";
+import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
+import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsx";
+import { OrdoCard, OrdoRow, AttachmentThumb } from "../components/OrdoCard.jsx";
+import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
+import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
+import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
+  updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
+  exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
+  isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
+} from "../supabase.js";
+
+const APP_VERSION = "v6.1 · 13/07/2026 12:21";
+
+const MOCK_INVOICES = [
+  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
+
+const MOCK_SUBSCRIPTIONS = [
+  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
+
+function makeOrdos(days=3, perDay=15) {
+  const items = [];
+  const meds = [["Doliprane 1000mg","Amoxicilline 500mg","Ibuprofène 400mg"],["Metformine 850mg","Paracétamol 500mg"],["Levothyrox 50µg","Oméprazole 20mg","Vitamine D3"],["Aspirine 100mg","Lisinopril 5mg"]];
+  const names = [["MARTIN","Pierre","1 75 04 75 118 042 18","email"],["DUBOIS","Sophie","2 82 11 75 063 014 22","qrcode"],["LEFEBVRE","Jean","1 60 03 75 042 118 08","email"],["ROUX","Anne","2 91 03 69 215 088 45","qrcode"],["THOMAS","Isabelle","2 77 06 13 042 118 31","email"],["BERNARD","Paul","1 55 08 31 042 118 09","email"],["MOREAU","Claire","2 68 05 75 042 118 44","qrcode"],["RICHARD","Lucas","1 88 12 93 042 118 77","email"],["PETIT","Emma","2 95 03 75 042 118 55","email"],["SIMON","Marc","1 72 07 69 042 118 33","qrcode"],["LEROY","Julie","2 85 09 75 042 118 66","email"],["DURAND","Pierre","1 63 01 13 042 118 22","email"],["GARCIA","Marie","2 78 04 75 042 118 88","qrcode"],["MARTINEZ","Thomas","1 91 06 75 042 118 11","email"],["FOURNIER","Alice","2 87 11 75 042 118 99","email"]];
+  const docs = ["Dr Bernard","Dr Leclerc","Dr Moreau","Dr Petit","Dr Gautier","Dr Lambert"];
+  for (let d=0;d<days;d++) {
+    const date = new Date(); date.setDate(date.getDate()-d);
+    for (let i=0;i<(d===0?perDay:10);i++) {
+      const n = names[i%names.length];
+      const mins = Math.floor(Math.random()*120)+1;
+      const recv = new Date(date); recv.setHours(8+Math.floor(i/2),mins%60,0,0);
+      items.push({
+        id:`ordo-${d}-${i}`, fromName:`${n[0]} ${n[1]}`, source:n[3],
+        status: d===0?"nouveau":"imprime", receivedAt:recv.toISOString(),
+        attachments:[], extracted:{ nom:`${n[0]} ${n[1]}`, carteVitale:n[2],
+          medecin:docs[i%docs.length], date:date.toLocaleDateString("fr-FR"),
+          medicaments:meds[i%meds.length] }
+      });
+    }
+  }
+  return items;
+}
+
+function LogsPanel({ pharmacieId, onClose }) {
+  const [logs, setLogs] = useState([]);
+  useEffect(() => { getAuditLogs(pharmacieId).then(setLogs); }, [pharmacieId]);
+  const actionLabel = { view:"Consultation", print:"Impression", upload:"Import", reopen:"Remise en file", login:"Connexion", logout:"Déconnexion" };
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:500,display:"flex",flexDirection:"column"}}>
+      <div style={{background:"#fff",flex:1,overflow:"auto",marginTop:52,padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{fontWeight:800,fontSize:16,color:"#1a3a6e"}}>🗒️ Journal d'activité</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>exportLogsCSV(pharmacieId).catch(()=>{})} style={{padding:"6px 14px",border:"1px solid #e2e8f0",borderRadius:8,background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⬇️ Export CSV</button>
+            <button onClick={onClose} style={{padding:"6px 14px",border:"none",borderRadius:8,background:"#1a3a6e",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕ Fermer</button>
+          </div>
+        </div>
+        {logs.length===0?(
+          <div style={{textAlign:"center",padding:"40px 0",color:"#bbb"}}><div style={{fontSize:32,marginBottom:8}}>📋</div><div>Aucune action enregistrée</div></div>
+        ):(
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
+              {["Heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{logs.map(l=>(
+              <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
+                <td style={{padding:"8px 10px",color:"#64748b"}}>{new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
+                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11}}>{l.userId}</td>
+                <td style={{padding:"8px 10px"}}><span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>{l.userRole}</span></td>
+                <td style={{padding:"8px 10px",fontWeight:600}}>{actionLabel[l.action]||l.action}</td>
+                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:"#94a3b8"}}>{l.ordonnanceId||"—"}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
+  const [dataUrl, setDataUrl] = useState(null);
+  const [error, setError]     = useState(false);
+
+  useEffect(() => {
+    if (!url) return;
+    setDataUrl(null); setError(false);
+
+    // qrcode via esm.sh — transforme le package npm en ESM navigateur natif
+    // toDataURL retourne une Promise avec le PNG en base64
+    import("https://esm.sh/qrcode@1.5.4")
+      .then(mod => {
+        const QR = mod.default || mod;
+        return QR.toDataURL(url, {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          width: size,
+          color: { dark: "#000000", light: "#ffffff" },
+          type: "image/png",
+        });
+      })
+      .then(dataURL => setDataUrl(dataURL))
+      .catch(err => {
+        console.error("[QRCode]", err);
+        setError(true);
+      });
+  }, [url, color, size]);
+
+  if (error) return (
+    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
+      ⚠️ Erreur génération QR
+    </div>
+  );
+
+  if (!dataUrl) return (
+    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc",borderRadius:8}}>
+      <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
+        <div style={{animation:"spin 1s linear infinite",fontSize:22,marginBottom:4}}>⏳</div>
+        Génération QR…
+      </div>
+    </div>
+  );
+
+  return (
+    <img
+      id={printId || undefined}
+      src={dataUrl}
+      width={size}
+      height={size}
+      style={{display:"block",borderRadius:4}}
+      alt="QR Code"
+    />
+  );
+}
+
+function OffresSection({ pharmacie, planInfo }) {
+  const isPremium = planInfo?.offresStories === true;
+  const [offres, setOffres]     = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+  const [saving, setSaving]     = useState(false);
+  const sb = getSupabaseClient();
+
+  // Types d'offres
+  const TYPES = [
+    { id:"promo",    label:"Promotion",   emoji:"🏷️", desc:"Réduction sur un produit" },
+    { id:"service",  label:"Service",     emoji:"🩺", desc:"Mise en avant d'un service" },
+    { id:"fidelite", label:"Fidélité",    emoji:"🎁", desc:"Offre de fidélité" },
+  ];
+
+  useEffect(() => {
+    if (!isPremium || !sb) return;
+    sb.from("offres_stories").select("*").eq("pharmacie_id", pharmacie.id).order("created_at", { ascending: false })
+      .then(({ data }) => { if (data) setOffres(data); });
+  }, [isPremium]);
+
+  async function saveOffre() {
+    if (!form.titre.trim()) return;
+    setSaving(true);
+    const payload = { ...form, pharmacie_id: pharmacie.id };
+    if (sb && !isDemoMode) {
+      const { data } = await sb.from("offres_stories").insert(payload).select().single();
+      if (data) setOffres(prev => [data, ...prev]);
+    } else {
+      setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
+    }
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+    setShowForm(false);
+    setSaving(false);
+  }
+
+  async function toggleOffre(id, actif) {
+    setOffres(prev => prev.map(o => o.id === id ? { ...o, actif: !actif } : o));
+    if (sb && !isDemoMode) await sb.from("offres_stories").update({ actif: !actif }).eq("id", id);
+  }
+
+  async function deleteOffre(id) {
+    setOffres(prev => prev.filter(o => o.id !== id));
+    if (sb && !isDemoMode) await sb.from("offres_stories").delete().eq("id", id);
+  }
+
+  // Paywall si pas premium
+  if (!isPremium) return (
+    <div style={{ background:"#fff", borderRadius:14, padding:28, boxShadow:"0 2px 10px rgba(0,0,0,0.07)", textAlign:"center" }}>
+      <div style={{ fontSize:48, marginBottom:12 }}>💎</div>
+      <div style={{ fontWeight:900, fontSize:18, color:"#1a1a1a", marginBottom:8 }}>Offres & Promotions en Stories</div>
+      <div style={{ fontSize:14, color:"#64748b", lineHeight:1.7, marginBottom:20, maxWidth:340, margin:"0 auto 20px" }}>
+        Diffusez vos promotions, services et offres de fidélité directement dans les stories vues par vos patients pendant leur attente.<br/><br/>
+        Fonctionnalité disponible avec le plan <strong>Premium</strong>.
+      </div>
+      <div style={{ background:"#fef9f0", border:"1.5px solid #f59e0b", borderRadius:12, padding:"16px 20px", marginBottom:20, display:"inline-block", textAlign:"left" }}>
+        <div style={{ fontWeight:800, fontSize:15, color:"#92400e", marginBottom:8 }}>💎 Plan Premium — 119€/mois</div>
+        {["Postes illimités","Offres & Promotions en Stories","Ordonnances illimitées","Support prioritaire"].map(f=>(
+          <div key={f} style={{ fontSize:13, color:"#78350f", marginBottom:4 }}>✅ {f}</div>
+        ))}
+      </div>
+      <br/>
+      <button style={{ padding:"12px 28px", border:"none", borderRadius:12, background:"#b45309", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>
+        Passer en Premium →
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ background:"#fff", borderRadius:14, padding:22, boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+        <div>
+          <div style={{ fontWeight:800, fontSize:15 }}>🎯 Offres & Promotions</div>
+          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>Affichées dans les stories de vos patients en attente</div>
+        </div>
+        <button onClick={()=>setShowForm(true)}
+          style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          + Nouvelle offre
+        </button>
+      </div>
+
+      {/* Formulaire création */}
+      {showForm && (
+        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18 }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>Créer une offre</div>
+
+          {/* Type */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            {TYPES.map(t=>(
+              <button key={t.id} onClick={()=>setForm(f=>({...f,type:t.id}))}
+                style={{ flex:1, padding:"8px 4px", border:`2px solid ${form.type===t.id?"#1a3a6e":"#e0e7ff"}`, borderRadius:10,
+                  background:form.type===t.id?"#1a3a6e":"#fff", color:form.type===t.id?"#fff":"#374151",
+                  fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit", textAlign:"center" }}>
+                <div style={{ fontSize:18, marginBottom:2 }}>{t.emoji}</div>
+                <div>{t.label}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Emoji + titre */}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+            <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
+              style={{ width:52, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px", fontSize:20, textAlign:"center", fontFamily:"inherit" }}/>
+            <input value={form.titre} onChange={e=>setForm(f=>({...f,titre:e.target.value}))}
+              placeholder="Titre de l'offre (ex: -20% sur Doliprane)"
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
+          </div>
+
+          {/* Description */}
+          <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}
+            placeholder="Description courte (1-2 lignes)"
+            rows={2}
+            style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
+
+          {/* Badge + couleur + date fin */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            <input value={form.badge} onChange={e=>setForm(f=>({...f,badge:e.target.value}))}
+              placeholder='Badge (ex: "-20%")'
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+            <input type="color" value={form.couleur} onChange={e=>setForm(f=>({...f,couleur:e.target.value}))}
+              style={{ width:44, height:38, border:"1.5px solid #e0e7ff", borderRadius:8, cursor:"pointer", padding:2 }}/>
+            <input type="date" value={form.date_fin} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
+              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
+          </div>
+
+          {/* Preview story */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
+            <div style={{ width:120, height:200, borderRadius:16, background:`linear-gradient(160deg,${form.couleur},${form.couleur}99)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
+              {form.badge && <div style={{ background:"rgba(255,255,255,0.25)", borderRadius:20, padding:"2px 8px", fontSize:11, fontWeight:900, color:"#fff", marginBottom:6 }}>{form.badge}</div>}
+              <div style={{ fontSize:28, marginBottom:6 }}>{form.emoji||"🎁"}</div>
+              <div style={{ fontSize:11, fontWeight:800, color:"#fff", lineHeight:1.3 }}>{form.titre||"Titre"}</div>
+              {form.description && <div style={{ fontSize:9, color:"rgba(255,255,255,0.8)", marginTop:4, lineHeight:1.4 }}>{form.description.slice(0,40)}</div>}
+            </div>
+          </div>
+
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={()=>setShowForm(false)}
+              style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              Annuler
+            </button>
+            <button onClick={saveOffre} disabled={!form.titre.trim()||saving}
+              style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              {saving ? "Enregistrement…" : "✅ Publier l'offre"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Liste des offres */}
+      {offres.length === 0 && !showForm && (
+        <div style={{ textAlign:"center", padding:"32px 0", color:"#94a3b8" }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>🎯</div>
+          <div style={{ fontSize:14, fontWeight:600 }}>Aucune offre créée</div>
+          <div style={{ fontSize:12, marginTop:4 }}>Créez votre première offre pour l'afficher dans les stories</div>
+        </div>
+      )}
+      {offres.map(offre => (
+        <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
+          <div style={{ width:44, height:44, borderRadius:10, background:`linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
+            {offre.emoji||"🎁"}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:offre.actif?"#1a1a1a":"#94a3b8", display:"flex", alignItems:"center", gap:6 }}>
+              {offre.titre}
+              {offre.badge && <span style={{ fontSize:10, background:"#fef3c7", color:"#92400e", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>{offre.badge}</span>}
+              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
+                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":"Fidélité"}
+              </span>
+            </div>
+            {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
+            {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
+          </div>
+          <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+            <button onClick={()=>toggleOffre(offre.id, offre.actif)}
+              style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#bbf7d0"}`, borderRadius:8, background:offre.actif?"#fff":"#f0fdf4", color:offre.actif?"#64748b":"#15803d", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              {offre.actif?"Pause":"▶ Activer"}
+            </button>
+            <button onClick={()=>deleteOffre(offre.id)}
+              style={{ padding:"5px 8px", border:"1.5px solid #fee2e2", borderRadius:8, background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+              ✕
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AbonnementSection({ pharmacie, onUpgrade }) {
+  const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
+  const plan = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
+  const postes = pharmacie.postes || [];
+  const postesActifs = postes.filter(p=>p.actif).length;
+  const ordos = (pharmacie.ordonnances||[]).length;
+  const invoices = [
+    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price,status:"paid"},
+    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price,status:"paid"},
+    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price,status:"paid"},
+  ];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",border:`2px solid ${plan.color}22`}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>💳 Abonnement actuel</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,border:`1px solid ${plan.color}33`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:42,height:42,borderRadius:11,background:plan.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{plan.icon}</div>
+            <div><div style={{fontWeight:900,fontSize:17,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#64748b"}}>Facturation mensuelle</div></div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontWeight:900,fontSize:24,color:plan.color}}>{plan.price} <span style={{fontSize:13,fontWeight:400,color:"#94a3b8"}}>€/mois</span></div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>Prochain : 15/07/2025</div>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          {[[`🖥️ Postes actifs`,postesActifs,plan.maxPostes===999?null:plan.maxPostes,plan.maxPostes===999?0.1:postesActifs/plan.maxPostes],
+            [`📋 Ordonnances`,ordos,plan.maxOrdos===99999?null:plan.maxOrdos,plan.maxOrdos===99999?0.1:ordos/plan.maxOrdos]
+          ].map(([label,used,max,ratio])=>(
+            <div key={label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:4}}>{label}</div>
+              <div style={{fontWeight:800,fontSize:18,color:ratio>0.8?"#ef4444":"#1a1a1a"}}>{used}{max?<span style={{fontSize:12,fontWeight:400,color:"#94a3b8"}}> / {max}</span>:<span style={{fontSize:12,fontWeight:400,color:"#94a3b8"}}> / ∞</span>}</div>
+              <div style={{marginTop:5,height:4,background:"#e2e8f0",borderRadius:4}}><div style={{width:`${Math.min(ratio*100,100)}%`,height:"100%",background:ratio>0.8?"#ef4444":plan.color,borderRadius:4}}/></div>
+            </div>
+          ))}
+        </div>
+        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"10px 18px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer de plan</button>
+          {plan.id!=="starter"&&<button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"8px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#94a3b8",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↓ Rétrograder</button>}
+        </div>
+      </div>
+      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🧾 Historique</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>
+            {["N°","Date","Description","Montant","",""].map(h=><th key={h} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{invoices.map(inv=>(
+            <tr key={inv.id} style={{borderBottom:"1px solid #f8fafc"}}>
+              <td style={{padding:"9px 0",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>{inv.id}</td>
+              <td style={{padding:"9px 0",color:"#475569"}}>{inv.date}</td>
+              <td style={{padding:"9px 0",color:"#1a1a1a",fontWeight:500}}>{inv.desc}</td>
+              <td style={{padding:"9px 0",fontWeight:800}}>{inv.amount} €</td>
+              <td style={{padding:"9px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
+              <td style={{padding:"9px 0",textAlign:"right"}}><button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={pharmacie.postes||[]} onConfirm={(newPlan)=>{onUpgrade(newPlan);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
+    </div>
+  );
+}
+
+function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
+  const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
+  const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
+  const plan=planInfo||PLAN_LIMITS[pharmacie.plan]||PLAN_LIMITS.starter;
+  const postesActifs=(postes||[]).filter(p=>p.actif).length;
+  const ordosTraitees=(pharmacie.ordonnances||[]).filter(o=>o.status==="imprime").length;
+  const invoices=[
+    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price},
+    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price},
+    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price},
+    {id:"INV-2025-003",date:"15/03/2025",desc:`OrdoMail ${plan.label} — Mars 2025`,amount:plan.price},
+    {id:"INV-2025-002",date:"15/02/2025",desc:`OrdoMail ${plan.label} — Fév. 2025`,amount:plan.price},
+    {id:"INV-2025-001",date:"15/01/2025",desc:`OrdoMail ${plan.label} — Jan. 2025`,amount:plan.price},
+  ];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Infos compte */}
+      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>👤 Informations du compte</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+          {[["Email",pharmacie.email],["Pharmacie",pharmacie.nom],["Membre depuis",new Date(pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
+            <div key={l} style={{background:"#f8f9ff",borderRadius:10,padding:"10px 13px"}}>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#1a1a1a"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>🔑 Mot de passe</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <Input label="Actuel" value={pwdOld} onChange={setPwdOld} type="password" placeholder="••••••••" icon="🔒"/>
+            <Input label="Nouveau" value={pwdNew} onChange={setPwdNew} type="password" placeholder="••••••••" icon="🔒"/>
+          </div>
+          <Btn variant="secondary" small onClick={()=>{
+            if(!pwdOld||!pwdNew){setPwdMsg({ok:false,text:"Remplissez les deux champs"});return;}
+            if(pwdNew.length<6){setPwdMsg({ok:false,text:"6 caractères minimum"});return;}
+            setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓"});setPwdOld("");setPwdNew("");setTimeout(()=>setPwdMsg(null),3000);
+          }}>Mettre à jour</Btn>
+          {pwdMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:pwdMsg.ok?"#15803d":"#dc2626",padding:"6px 10px",background:pwdMsg.ok?"#dcfce7":"#fee2e2",borderRadius:7}}>{pwdMsg.text}</div>}
+        </div>
+      </div>
+      {/* Abonnement */}
+      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",border:`2px solid ${plan.color}22`}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>💳 Abonnement</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div style={{width:40,height:40,borderRadius:10,background:plan.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{plan.icon}</div>
+            <div><div style={{fontWeight:900,fontSize:16}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#64748b"}}>{plan.price} €/mois</div></div>
+          </div>
+          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"9px 16px",border:"none",borderRadius:9,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[[`🖥️ Postes`,postesActifs,plan.maxPostes===999?null:plan.maxPostes],[`📋 Ordonnances`,ordosTraitees,plan.maxOrdos===99999?null:plan.maxOrdos]].map(([l,u,m])=>(
+            <div key={l} style={{background:"#f8fafc",borderRadius:9,padding:"10px 12px"}}>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>{l}</div>
+              <div style={{fontWeight:800,fontSize:17}}>{u}{m?<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> / {m}</span>:<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> / ∞</span>}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Factures */}
+      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🧾 Historique factures</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>{["N°","Date","Description","Montant","",""].map(h=><th key={h} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{invoices.map(inv=>(
+            <tr key={inv.id} style={{borderBottom:"1px solid #f8fafc"}}>
+              <td style={{padding:"8px 0",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>{inv.id}</td>
+              <td style={{padding:"8px 0",color:"#475569"}}>{inv.date}</td>
+              <td style={{padding:"8px 0",fontWeight:500}}>{inv.desc}</td>
+              <td style={{padding:"8px 0",fontWeight:800}}>{inv.amount} €</td>
+              <td style={{padding:"8px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓</span></td>
+              <td style={{padding:"8px 0",textAlign:"right"}}><button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄</button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+        <div style={{marginTop:12,padding:"8px 12px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#94a3b8",display:"flex",justifyContent:"space-between"}}>
+          <span>Total 2025</span><span style={{fontWeight:700,color:"#1a1a1a"}}>{invoices.reduce((s,i)=>s+i.amount,0)} €</span>
+        </div>
+      </div>
+      {/* Zone danger */}
+      <div style={{background:"#fff",borderRadius:14,padding:20,border:"1px solid #fee2e2"}}>
+        <div style={{fontWeight:700,fontSize:14,color:"#dc2626",marginBottom:10}}>⚠️ Zone de danger</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Les données sont conservées 90 jours.</div>
+        <Btn variant="danger" small>🗑 Supprimer mon compte</Btn>
+      </div>
+      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={(p)=>{onUpgrade(p);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
+    </div>
+  );
+}
+
+function ParametresTab({ pharmacie, onSave }) {
+  const [section, setSection] = useState("pharmacie");
+  const [showUpgrade, setShowUpgrade] = useState(null);
+  const [nom, setNom] = useState(pharmacie.nom||"");
+  const [adresse, setAdresse] = useState(pharmacie.adresse||"");
+  const [couleur, setCouleur] = useState(pharmacie.couleur||"#1a3a6e");
+  const [emailNotif, setEmailNotif] = useState(pharmacie.email||"");
+  const [smtpHost, setSmtpHost] = useState(pharmacie.smtp?.host||"");
+  const [postes, setPostes] = useState(pharmacie.postes||[]);
+  const [saved, setSaved] = useState(false);
+  const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
+
+  async function addPoste() {
+    // Utiliser le planInfo à jour (basé sur pharmacie.plan actuel)
+    const currentPlanInfo = PLAN_LIMITS[pharmacie.plan] || planInfo;
+    const actifs = postes.filter(p=>p.actif).length;
+    if (actifs >= currentPlanInfo.maxPostes) {
+      setShowUpgrade({reason:`Votre plan ${currentPlanInfo.label} est limité à ${currentPlanInfo.maxPostes} poste(s) actif(s). Passez au plan supérieur pour en ajouter davantage.`});
+      return;
+    }
+    const nom = `Poste ${postes.length + 1}`;
+    if (isDemoMode) {
+      const db = window._ordomailDB;
+      const ph = db?.pharmacies?.find(p => p.id === pharmacie.id);
+      const newPoste = { id:`p${Date.now()}`, nom, pin:null, actif:true };
+      if (ph) ph.postes = [...(ph.postes||[]), newPoste];
+      setPostes(prev => [...prev, newPoste]);
+    } else {
+      const sb = getSupabaseClient();
+      const { data, error } = await sb.from("postes")
+        .insert({ pharmacie_id: pharmacie.id, nom, actif: true })
+        .select().single();
+      if (!error && data) {
+        setPostes(prev => [...prev, data]);
+      }
+    }
+  }
+  function removePoste(id) {
+    if (postes.length <= 1) return;
+    setPostes(prev=>prev.filter(p=>p.id!==id));
+  }
+  async function handleSave() {
+    // Collecter les PINs modifiés (pour les hasher via Edge Function en prod)
+    const pinChanges = {};
+    postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
+    await Promise.all([
+      onSave({nom,adresse,couleur,email:emailNotif}),
+      savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
+    ]);
+    setSaved(true); setTimeout(()=>setSaved(false),2500);
+  }
+
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
+
+  return (
+    <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
+      <div style={{background:"#fff",borderBottom:"1px solid #e0e7ff",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {tabs.map(([k,icon,label])=>(
+            <button key={k} onClick={()=>setSection(k)} style={{padding:"6px 12px",border:`1.5px solid ${section===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:section===k?"#1a3a6e":"#fff",color:section===k?"#fff":"#64748b",fontWeight:section===k?700:500,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+              <span>{icon}</span><span className="hide-mobile">{label}</span>
+            </button>
+          ))}
+        </div>
+        <Btn onClick={handleSave} small style={{background:saved?"#15803d":"#1a3a6e",color:"#fff"}}>
+          {saved?"✅ Sauvegardé":"💾 Sauvegarder"}
+        </Btn>
+      </div>
+      <div style={{flex:1,overflow:"auto",padding:16}}>
+
+        {section==="pharmacie"&&(
+          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+            <Input label="Nom de la pharmacie" value={nom} onChange={setNom} placeholder="Pharmacie..." icon="🏥"/>
+            <Input label="Adresse" value={adresse} onChange={setAdresse} placeholder="12 rue..." icon="📍"/>
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Couleur de la pharmacie</label>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <input type="color" value={couleur} onChange={e=>setCouleur(e.target.value)} style={{width:40,height:40,border:"none",cursor:"pointer",borderRadius:8}}/>
+                <span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:couleur}}>{couleur}</span>
+                <div style={{width:32,height:32,borderRadius:8,background:couleur}}/>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {section==="postes"&&(
+          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+            <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🖥️ Gestion des postes</div>
+            {/* Code pharmacie pour connexion vendeurs */}
+            <div style={{background:"#f0fdf4",border:"1.5px solid #bbf7d0",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"#15803d",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Code de connexion vendeurs</div>
+                <div style={{fontSize:30,fontWeight:900,color:"#1a3a2a",fontFamily:"monospace",letterSpacing:6}}>{pharmacie.code_vendeur||pharmacie.codeVendeur||"------"}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Communiquez ce code à vos vendeurs — ils le saisissent avant leur code PIN</div>
+              </div>
+              <div style={{fontSize:40}}>🔑</div>
+            </div>
+            {postes.map((poste,i)=>(
+              <div key={poste.id} style={{background:"#f8faff",borderRadius:10,padding:"12px 14px",marginBottom:8,border:"1px solid #e0e7ff"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div style={{width:30,height:30,borderRadius:7,background:poste.actif?"#1a3a6e":"#ddd",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:12,flexShrink:0}}>{i+1}</div>
+                  <input value={poste.nom} onChange={e=>setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,nom:e.target.value}:p))}
+                    style={{flex:1,border:"none",background:"transparent",fontSize:14,fontWeight:600,outline:"none",fontFamily:"inherit"}}/>
+                  <div onClick={()=>setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,actif:!p.actif}:p))}
+                    style={{width:40,height:22,borderRadius:11,background:poste.actif?"#1a3a6e":"#ddd",cursor:"pointer",position:"relative",flexShrink:0}}>
+                    <div style={{position:"absolute",top:3,left:poste.actif?21:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
+                  </div>
+                  <button onClick={()=>removePoste(poste.id)} style={{background:"none",border:"none",color:"#e53e3e",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:8,borderTop:"1px solid #e0e7ff",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5}}>PIN vendeur</span>
+                  <input type="password" maxLength={4}
+                    value={poste.pin||""}
+                    onChange={e=>{
+                      const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+                      setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,pin:v,_pinSaved:false}:p));
+                    }}
+                    onBlur={async e=>{
+                      const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+                      if(v.length!==4) return;
+                      // Sauvegarder le PIN en Supabase via Edge Function update-pin
+                      try {
+                        const sb = getSupabaseClient();
+                        if(sb && !isDemoMode) {
+                          await sb.functions.invoke("update-pin", { body:{ posteId: poste.id, pin: v } });
+                        }
+                        setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,_pinSaved:true}:p));
+                      } catch(err) {
+                        console.error("[PIN save]", err.message);
+                      }
+                    }}
+                    placeholder="••••"
+                    style={{width:80,border:`1.5px solid ${poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none",transition:"border 0.2s"}}/>
+                  <span style={{fontSize:11,fontWeight:600,color:poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#94a3b8"}}>
+                    {poste._pinSaved?"✅ Enregistré":poste.pin&&poste.pin.length===4?"⏳ Saisissez pour enregistrer":"⚠️ PIN manquant"}
+                  </span>
+                  <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>Rôle : Vendeur</span>
+                </div>
+              </div>
+            ))}
+            <Btn variant="ghost" small onClick={addPoste} style={{width:"100%",justifyContent:"center",borderStyle:"dashed",marginTop:4}}>+ Ajouter un poste</Btn>
+            <div style={{marginTop:16,background:"#f0f7ff",borderRadius:12,padding:"14px 16px",border:"1px solid #dbeafe"}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#1a3a6e",marginBottom:8}}>Qui accède à quoi ?</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 10px",background:"#fff",borderRadius:8}}>
+                  <span style={{fontWeight:700,color:"#1a3a6e"}}>👑 Titulaire (PSC)</span>
+                  <span style={{color:"#15803d",fontWeight:600}}>Accès complet</span>
+                </div>
+                {postes.filter(p=>p.actif).map(p=>(
+                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 10px",background:"#fff",borderRadius:8}}>
+                    <span style={{fontWeight:600,color:"#475569"}}>🖥️ {p.nom} · PIN {p.pin?"•".repeat(p.pin.length):"—"}</span>
+                    <span style={{color:"#0369a1",fontWeight:600}}>Ordonnances + Impression</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:"#64748b",lineHeight:1.6}}>ℹ️ C'est le titulaire qui crée et modifie les codes PIN depuis cette page.</div>
+            </div>
+          </div>
+        )}
+
+        {section==="email"&&(
+          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+            <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>✉️ Configuration email</div>
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",marginBottom:14,border:"1px solid #dbeafe",fontSize:13}}>
+              <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
+              <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception||`${pharmacie.id}@in.ordomail.fr`}</code>
+              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
+            </div>
+            <Input label="Email de notification" value={emailNotif} onChange={setEmailNotif} type="email" placeholder="contact@pharmacie.fr" icon="✉️"/>
+            <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14,marginTop:4}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>SMTP personnalisé (optionnel)</div>
+              <Input label="Serveur SMTP" value={smtpHost} onChange={setSmtpHost} placeholder="smtp.gmail.com" icon="🌐"/>
+            </div>
+          </div>
+        )}
+
+        {section==="offres"&&(
+          <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
+        )}
+        {section==="abonnement"&&(
+          <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              // Recharger la pharmacie depuis Supabase pour avoir le bon plan
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) {
+                  setPharmacie(ph);
+                  setPostes(ph.postes || []);
+                }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
+            } catch(e) {
+              console.error("[changePlan]", e.message);
+            }
+          }}/>
+        )}
+
+        {section==="compte"&&(
+          <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
+            } catch(e) { console.error("[changePlan]", e.message); }
+          }}/>
+        )}
+
+      </div>
+
+      {showUpgrade&&(
+        <UpgradeModal currentPlan={pharmacie.plan} reason={showUpgrade.reason}
+          onConfirm={async (newPlan)=>{
+            try {
+              await changePlan(pharmacie.id, newPlan);
+              setShowUpgrade(null);
+              // Recharger depuis Supabase
+              const sb = getSupabaseClient();
+              if (sb) {
+                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
+                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
+              } else {
+                onSave({...pharmacie, plan: newPlan});
+              }
+              await addPoste();
+            } catch(e) {
+              console.error("[upgrade]", e.message);
+              setShowUpgrade(null);
+            }
+          }}
+          onClose={()=>setShowUpgrade(null)}/>
+      )}
+    </div>
+  );
+}
+
+function PricingEditor() {
+  const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
+  const [saved,setSaved]=useState(false);
+  function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
+  function save(){plans.forEach(p=>{PLAN_LIMITS[p.id]={...p};});setSaved(true);setTimeout(()=>setSaved(false),3000);}
+  return (
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>Modifications en temps réel</div></div>
+        <button onClick={save} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{saved?"✅ Sauvegardé":"💾 Sauvegarder"}</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:24}}>
+        {plans.map(plan=>(
+          <div key={plan.id} style={{background:"#1e293b",borderRadius:14,padding:20,border:`2px solid #334155`}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
+              <input value={plan.icon} onChange={e=>update(plan.id,"icon",e.target.value)} style={{width:34,textAlign:"center",background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:18,padding:"3px 4px",color:"#fff"}}/>
+              <input value={plan.label} onChange={e=>update(plan.id,"label",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:15,fontWeight:700,padding:"5px 10px",color:"#fff",fontFamily:"inherit"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {[["price","Mensuel €"],["priceAnnual","Annuel €"]].map(([field,lbl])=>(
+                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
+                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:plan.color,fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/></div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {[["maxPostes","Postes"],["maxOrdos","Ordo/mois"]].map(([field,lbl])=>(
+                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
+                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:700,fontSize:13,fontFamily:"monospace",outline:"none"}}/></div>
+              ))}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="color" value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{width:30,height:30,border:"none",cursor:"pointer",borderRadius:5}}/>
+              <input value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:plan.color,fontWeight:700,fontSize:12,fontFamily:"monospace",outline:"none"}}/>
+              <div style={{width:26,height:26,borderRadius:7,background:plan.color}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,marginBottom:14}}>APERÇU TEMPS RÉEL</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:12}}>
+          {plans.map(plan=>(
+            <div key={plan.id} style={{background:"#fff",borderRadius:10,padding:"14px 12px",border:`2px solid ${plan.color}33`}}>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}><span style={{fontSize:16}}>{plan.icon}</span><span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>{plan.label}</span></div>
+              <div style={{fontWeight:900,fontSize:22,color:plan.color}}>{plan.price}<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> €/mois</span></div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{plan.maxPostes===999?"Illimité":`${plan.maxPostes} postes`}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BillingAdmin() {
+  const [tab,setTab]=useState("dashboard");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const activeCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").length;
+  const trialCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="trialing").length;
+  const mrr=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").reduce((s,sub)=>s+sub.mrr,0);
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
+      <div style={{display:"flex",gap:6,marginBottom:24,flexWrap:"wrap"}}>
+        {[["dashboard","📊 Dashboard"],["subscriptions","📋 Abonnements"],["invoices","🧾 Factures"],["pricing","🏷️ Pricing"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#3b82f6":"#1e293b",color:tab===k?"#fff":"#64748b"}}>{l}</button>
+        ))}
+      </div>
+
+      {tab==="dashboard"&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:14,marginBottom:24}}>
+            {[["MRR",`${mrr} €`,"#3b82f6"],["ARR",`${mrr*12} €`,"#10b981"],["Clients actifs",activeCount,"#6366f1"],["En essai",trialCount,"#f59e0b"]].map(([l,v,color])=>(
+              <div key={l} style={{background:"#1e293b",borderRadius:12,padding:20,border:`1px solid #334155`}}>
+                <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{l}</div>
+                <div style={{fontWeight:900,fontSize:26,color}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+            <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>Derniers abonnements</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+              <tbody>{MOCK_SUBSCRIPTIONS.slice(0,5).map(s=>(
+                <tr key={s.id} style={{borderBottom:"1px solid #1e293b"}}>
+                  <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:11,fontWeight:700,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
+                  <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":"#dc2626"}}>{s.status}</span></td>
+                  <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab==="subscriptions"&&(
+        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+            {[["all","Tous"],["active","Actifs"],["trialing","Essai"],["past_due","Impayés"],["canceled","Annulés"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setFilterStatus(k)} style={{padding:"5px 12px",border:`1px solid ${filterStatus===k?"#3b82f6":"#334155"}`,borderRadius:7,background:filterStatus===k?"#3b82f6":"transparent",color:filterStatus===k?"#fff":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+            ))}
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","Facturation","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{MOCK_SUBSCRIPTIONS.filter(s=>filterStatus==="all"||s.status===filterStatus).map(s=>(
+              <tr key={s.id} style={{borderBottom:"1px solid #0f172a"}}>
+                <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
+                <td style={{padding:"9px 10px"}}><span style={{fontSize:11,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
+                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12,textTransform:"capitalize"}}>{s.billing}</td>
+                <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
+                <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":s.status==="past_due"?"#fef9c3":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":s.status==="past_due"?"#92400e":"#dc2626"}}>{s.status}</span></td>
+                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {tab==="invoices"&&(
+        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+          <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>🧾 Factures</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["N°","Date","Description","Montant","Statut",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{MOCK_INVOICES.map(inv=>{
+              const sub=MOCK_SUBSCRIPTIONS.find(s=>s.id===inv.subId);
+              return (
+                <tr key={inv.id} style={{borderBottom:"1px solid #0f172a"}}>
+                  <td style={{padding:"9px 10px",fontFamily:"monospace",fontSize:11,color:"#64748b"}}>{inv.id}</td>
+                  <td style={{padding:"9px 10px",color:"#94a3b8"}}>{inv.date}</td>
+                  <td style={{padding:"9px 10px",color:"#e2e8f0"}}>{inv.desc}</td>
+                  <td style={{padding:"9px 10px",fontWeight:800,color:"#fff"}}>{inv.amount} €</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
+                  <td style={{padding:"9px 10px",textAlign:"right"}}>
+                    <button onClick={()=>openInvoicePDF({...inv,desc:inv.desc},{nom:sub?.pharmacie,email:sub?.email},sub?.plan||"starter")} style={{fontSize:12,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button>
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      )}
+
+      {tab==="pricing"&&<PricingEditor/>}
+    </div>
+  );
+}
+
+function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
+  const [nfcStatus, setNfcStatus] = useState("idle");
+  const [activeSection, setActiveSection] = useState("qr");
+  const isLocal = typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+  async function handleNFCWrite() {
+    if (!("NDEFReader" in window)) { setNfcStatus("unsupported"); return; }
+    try {
+      setNfcStatus("writing");
+      const ndef = new window.NDEFReader();
+      await ndef.write({ records: [{ recordType: "url", data: qrUrl }] });
+      setNfcStatus("success");
+    } catch(e) { setNfcStatus("error"); }
+  }
+
+  async function handlePrint() {
+    // Récupérer le QR code déjà généré
+    const qrImg = document.querySelector("#qr-print-img");
+    let qrSrc = qrImg?.src || "";
+
+    // Générer si pas encore chargé
+    if (!qrSrc || !qrSrc.startsWith("data:")) {
+      try {
+        const mod = await import("https://esm.sh/qrcode@1.5.4");
+        const QR = mod.default || mod;
+        qrSrc = await QR.toDataURL(qrUrl, {
+          errorCorrectionLevel: "H",
+          margin: 1,
+          width: 600,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+      } catch(e) { qrSrc = ""; }
+    }
+
+    const nom = pharmacie?.nom?.toUpperCase() || "VOTRE PHARMACIE";
+    const bg  = "#d6e8e0"; // vert menthe clair comme sur le design
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>OrdoMail — ${nom}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&display=swap');
+@page { size: A4 portrait; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', Arial, sans-serif;
+  background: ${bg};
+  width: 210mm; height: 297mm;
+  display: flex; flex-direction: column;
+  align-items: center;
+  padding: 8mm 12mm 5mm;
+  overflow: hidden;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.logo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4mm; }
+.logo-pill { width: 26px; height: 26px; background: linear-gradient(135deg, #1a6e3a, #2d9d5e); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.logo-text { font-size: 20px; font-weight: 900; color: #1a1a1a; }
+.logo-text span { color: #1a6e3a; }
+.title-band { background: #1a4a35; width: 100%; border-radius: 10px 10px 0 0; padding: 7px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.cross { font-size: 18px; color: rgba(255,255,255,0.4); }
+.title-text { font-size: 21px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
+.pharma-band { background: #c8ddd5; width: 100%; padding: 6px 16px; text-align: center; margin-bottom: 3mm; border-radius: 0 0 6px 6px; }
+.pharma-name { font-size: 17px; font-weight: 900; color: #1a3a2a; letter-spacing: 1.5px; text-transform: uppercase; }
+
+/* QR — flex:1 pour prendre tout l'espace disponible */
+.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 3mm 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5mm; flex: 0; }
+.method-badge { background: #1a4a35; border-radius: 8px; padding: 6px 20px; font-size: 22px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3mm; width: 100%; text-align: center; }
+.qr-wrap { background: #fff; border-radius: 12px; padding: 4mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.qr-wrap img { width: 122mm; height: 122mm; display: block; }
+
+/* NFC card */
+.nfc-card { background: linear-gradient(135deg, #1a4a35 0%, #2d6e50 100%); border-radius: 14px; width: 100%; overflow: hidden; flex-shrink: 0; }
+.nfc-top { padding: 4mm 7mm; display: flex; align-items: center; gap: 5mm; }
+
+/* Logo NFC officiel : cercle blanc avec ondes + texte NFC */
+.nfc-logo-wrap {
+  width: 62px; height: 62px; flex-shrink: 0;
+  background: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.nfc-method-text { flex: 1; }
+
+/* Titre sur UNE seule ligne */
+.nfc-method-title { font-size: 22px; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+
+.nfc-bottom { background: #c8ddd5; padding: 4mm 7mm; text-align: center; }
+.nfc-instruction { font-size: 21px; font-weight: 800; color: #1a3a2a; line-height: 1.45; }
+
+@media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .no-print { display: none !important; } }
+</style></head>
+<body>
+
+<div class="logo-row">
+  <div class="logo-pill">&#128138;</div>
+  <div class="logo-text">Ordo<span>Mail</span></div>
+</div>
+
+<div class="title-band">
+  <span class="cross">&#10010;</span>
+  <span class="title-text">Envoyez votre ordonnance</span>
+  <span class="cross">&#10010;</span>
+</div>
+
+<div class="pharma-band">
+  <div class="pharma-name">${nom}</div>
+</div>
+
+<div class="qr-card">
+  <div class="method-badge">M&#233;thode 1 : Scannez le code QR</div>
+  <div class="qr-wrap">
+    ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:122mm;height:122mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
+  </div>
+</div>
+
+<div class="nfc-card">
+  <div class="nfc-top">
+
+    <!-- Logo NFC officiel : cercle blanc + ondes wifi + NFC -->
+    <div class="nfc-logo-wrap">
+      <svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Cercle extérieur -->
+        <circle cx="23" cy="23" r="21" stroke="#111" stroke-width="2.5" fill="white"/>
+        <!-- Arc externe (grand) -->
+        <path d="M10.5 20 C10.5 13.1 16.2 7.5 23 7.5 C29.8 7.5 35.5 13.1 35.5 20" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Arc moyen -->
+        <path d="M14 21.5 C14 16.8 18.1 13 23 13 C27.9 13 32 16.8 32 21.5" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Arc interne (petit) -->
+        <path d="M17.5 23 C17.5 20.5 20 18.5 23 18.5 C26 18.5 28.5 20.5 28.5 23" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+        <!-- Point central -->
+        <circle cx="23" cy="25.5" r="2.2" fill="#111"/>
+        <!-- Texte NFC -->
+        <text x="23" y="38.5" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="8.5" fill="#111" letter-spacing="1.5">NFC</text>
+      </svg>
+    </div>
+
+    <div class="nfc-method-text">
+      <div class="nfc-method-title">M&#233;thode 2 : Ouverture automatique</div>
+    </div>
+  </div>
+  <div class="nfc-bottom">
+    <div class="nfc-instruction">Approchez votre t&#233;l&#233;phone du badge<br>pour ouvrir la page d'envoi automatiquement</div>
+  </div>
+</div>
+
+</body>
+<button class="no-print" onclick="window.print()" style="position:fixed;bottom:16px;right:16px;background:#1a4a35;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">
+  &#128438; Imprimer / PDF
+</button>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, "_blank");
+    if (win) { win.focus(); setTimeout(() => URL.revokeObjectURL(blobUrl), 30000); }
+  }
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
+      {/* Toggle QR / NFC */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[["qr", "📱 QR Code"], ["nfc", "🏷️ Badge NFC"]].map(([k, l]) => (
+          <button key={k} onClick={() => setActiveSection(k)} style={{
+            padding: "8px 18px", border: `1.5px solid ${activeSection === k ? couleur : "#e0e0e0"}`,
+            borderRadius: 20, background: activeSection === k ? couleur : "#fff",
+            color: activeSection === k ? "#fff" : "#555", fontWeight: 700, fontSize: 13,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── Section QR ── */}
+      {activeSection === "qr" && (
+        <div style={{ maxWidth: 420, margin: "0 auto" }}>
+          {/* Badge environnement */}
+          <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 12px", borderRadius:20, fontSize:11, fontWeight:700, marginBottom:12,
+            background: isLocal ? "#fef9c3" : "#dcfce7",
+            color: isLocal ? "#92400e" : "#166534" }}>
+            {isLocal ? "🧪 Mode test local — localhost:5173" : "🌐 Production"}
+          </div>
+
+          {/* QR Code */}
+          <div style={{ textAlign: "center", marginBottom: 16 }}>
+            <div id="qr-container" style={{ display: "inline-block", background: "#fff", padding: 16, borderRadius: 14, boxShadow: `0 4px 20px ${couleur}22`, border: `2px solid ${couleur}18` }}>
+              <QRCode url={qrUrl} size={220} color={couleur} printId="qr-print-img" />
+            </div>
+          </div>
+
+          {/* Nom pharmacie */}
+          <div style={{ textAlign: "center", fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{pharmacie?.nom}</div>
+
+
+
+          {/* Avertissement local */}
+          {isLocal && (
+            <div style={{ marginBottom: 14, fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", lineHeight: 1.7 }}>
+              <div style={{ fontWeight: 800, marginBottom: 5 }}>🧪 Mode test local</div>
+              <div style={{ marginBottom: 4 }}>Le QR code encode <code style={{background:"#fff",padding:"1px 5px",borderRadius:3}}>localhost</code> — illisible depuis un téléphone.</div>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Pour tester sur téléphone :</div>
+              <div>1. Repérer l'adresse <strong>Network</strong> dans le terminal après <code style={{background:"#fff",padding:"1px 4px",borderRadius:3}}>npm run dev</code></div>
+              <div>2. Elle ressemble à : <code style={{background:"#fff",padding:"2px 5px",borderRadius:3}}>http://192.168.1.X:5173</code></div>
+              <div>3. Scanner le QR code depuis votre téléphone sur le même réseau Wi-Fi</div>
+            </div>
+          )}
+
+          {/* Mode d'emploi */}
+          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#555", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: couleur }}>📷 Mode d'emploi</div>
+            <div style={{ lineHeight: 1.9 }}>
+              <div>1. Imprimez et affichez ce QR code à l'accueil</div>
+              <div>2. Le patient scanne avec l'appareil photo de son téléphone</div>
+              <div>3. La page s'ouvre directement — sans application</div>
+              <div>4. Il prend une photo et envoie son ordonnance</div>
+            </div>
+          </div>
+
+          {/* Boutons */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button onClick={() => onPatientPage(pharmacie)} style={{
+              padding: "13px", border: "none", borderRadius: 10, background: couleur,
+              color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>📱 Tester la page</button>
+            <button onClick={handlePrint} style={{
+              padding: "13px", border: `1.5px solid ${couleur}`, borderRadius: 10,
+              background: "#fff", color: couleur, fontWeight: 700, fontSize: 14,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>🖨️ Imprimer</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Section NFC ── */}
+      {activeSection === "nfc" && (
+        <div style={{ maxWidth: 420, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ fontSize: 52, marginBottom: 16 }}>🏷️</div>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>Badge NFC</div>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 24, lineHeight: 1.7 }}>
+              Programmez un badge NTAG213 (~0,50€). Le patient approche son téléphone — la page s'ouvre instantanément.
+            </div>
+            {nfcStatus === "idle" && (
+              <button onClick={handleNFCWrite} style={{ padding: "13px 28px", border: "none", borderRadius: 12, background: couleur, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                📡 Programmer un badge NFC
+              </button>
+            )}
+            {nfcStatus === "writing" && <div style={{ color: couleur, fontWeight: 700 }}>📡 Approchez le badge…</div>}
+            {nfcStatus === "success" && <div style={{ color: "#15803d", fontWeight: 800, fontSize: 16 }}>✅ Badge programmé !</div>}
+            {nfcStatus === "error"   && <div style={{ color: "#dc2626", fontWeight: 700 }}>⚠️ Erreur — Réessayez</div>}
+            {nfcStatus === "unsupported" && (
+              <div style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#92400e", textAlign: "left" }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>NFC non disponible dans ce navigateur</div>
+                <div>Utilisez Chrome sur Android. Sur iPhone, la programmation NFC n'est pas prise en charge (lecture seule).</div>
+              </div>
+            )}
+          </div>
+          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#64748b", lineHeight: 1.8 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Compatibilité</div>
+            <div>📱 Programmation : Chrome Android uniquement</div>
+            <div>✅ Lecture : iPhone 7+ et Android avec NFC</div>
+            <div>🛒 Badge NTAG213 : ~0,50€ sur Amazon</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BottomNav({ tab, showLogs, canAdmin, setTab, setShowLogs }) {
+  const items = [
+    { id: "ordonnances", icon: "📋", label: "Ordo", always: true },
+    { id: "qrcode",      icon: "📱", label: "QR Code", adminOnly: true },
+    { id: "parametres",  icon: "⚙️", label: "Paramètres", adminOnly: true },
+    { id: "logs",        icon: "🗒️", label: "Logs", adminOnly: true },
+  ].filter(it => !it.adminOnly || canAdmin);
+  const active = showLogs ? "logs" : tab;
+  return (
+    <nav style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:200, background:"#fff", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"space-around", alignItems:"stretch", height:60 }} className="bottom-nav">
+      {items.map(it => {
+        const isActive = active === it.id;
+        return (
+          <button key={it.id} onClick={() => { if(it.id==="logs"){setShowLogs(true);}else{setTab(it.id);setShowLogs(false);} }}
+            style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, border:"none", background:"none", cursor:"pointer", fontFamily:"inherit", borderTop: isActive?"2px solid #1a3a6e":"2px solid transparent" }}>
+            <span style={{ fontSize:20 }}>{it.icon}</span>
+            <span style={{ fontSize:9, fontWeight:isActive?800:500, color:isActive?"#1a3a6e":"#94a3b8" }}>{it.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "admin", userId = "demo" }) {
+  const [pharmacie, setPharmacie] = useState(null);
+  const [ordonnances, setOrdonnances] = useState([]);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [tab, setTab] = useState("ordonnances");
+  const [showLogs, setShowLogs] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
+  const [viewMode, setViewMode] = useState("grid");
+  const [loadingId, setLoadingId] = useState(null);
+  const [viewerAtt, setViewerAtt] = useState(null);
+  const [printModal, setPrintModal] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("nouveau");
+
+  const searchRef = useRef(null);
+  const userId2 = userId;
+
+  const canAdmin = userRole !== "vendeur";
+
+  // Chargement initial + Realtime
+  // ─── OCR automatique dès réception ──────────────────────────────────────────
+  async function triggerOcrOnNew(ordos) {
+    const sb = getSupabaseClient();
+    for (const ordo of ordos) {
+      if (ordo.extracted?._ocrSuccess) continue;
+      const att = ordo.attachments?.[0];
+      if (!att?.path && !att?.dataUrl) continue;
+      try {
+        let dataUrl = att.dataUrl;
+        if (!dataUrl && att.path) {
+          const signedUrl = await getSignedUrl(att.path, 300);
+          if (!signedUrl) continue;
+          const resp = await fetch(signedUrl);
+          const blob = await resp.blob();
+          dataUrl = await new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+        }
+        if (!dataUrl) continue;
+        const base64 = dataUrl.split(",")[1];
+        const mimeType = att.type === "pdf" ? "application/pdf" : "image/jpeg";
+        const extracted = await extractFromFile(base64, mimeType, {
+          fallbackName: ordo.fromName || null,
+        });
+        if (extracted?._ocrSuccess) {
+          if (sb && !isDemoMode) {
+            await sb.from("ordonnances").update({
+              patient_nom:    extracted.nom        || null,
+              ocr_confidence: extracted._confidence || 0,
+            }).eq("id", ordo.id);
+          }
+          setOrdonnances(prev => prev.map(o =>
+            o.id === ordo.id ? { ...o, extracted } : o
+          ));
+        }
+      } catch(e) {
+        console.warn("[OCR auto]", ordo.id, e.message);
+      }
+    }
+  }
+
+  // Préchauffer Tesseract dès le login (évite le délai au 1er scan)
+  useEffect(() => { prewarmTesseract(); }, []);
+
+  useEffect(() => {
+    let unsub = () => {};
+    async function load() {
+      setDashLoading(true);
+      const [ph, ordos] = await Promise.all([
+        fetchPharmacie(pharmacieId),
+        fetchOrdonnances(pharmacieId, 7),
+      ]);
+      if (ph) setPharmacie(ph);
+      if (ordos) {
+        setOrdonnances(ordos);
+        // OCR sur les ordonnances déjà en base sans extraction
+        setTimeout(() => triggerOcrOnNew(ordos), 2000);
+      }
+      setDashLoading(false);
+      // Réaltime / pub-sub
+      unsub = subscribeToPharmacy(pharmacieId, async () => {
+        const updated = await fetchPharmacie(pharmacieId);
+        if (updated) setPharmacie(updated);
+        const updatedOrdos = await fetchOrdonnances(pharmacieId, 7);
+        if (updatedOrdos) {
+          setOrdonnances(updatedOrdos);
+          // Déclencher OCR automatique sur les nouvelles ordonnances sans extraction
+          triggerOcrOnNew(updatedOrdos, pharmacieId);
+        }
+      });
+    }
+    load();
+    return () => unsub();
+  }, [pharmacieId]);
+
+  if (dashLoading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{fontSize:48}}>💊</div>
+      <div style={{fontWeight:700,fontSize:16,color:"#1a3a6e"}}>Chargement OrdoMail…</div>
+      {isDemoMode && <div style={{fontSize:12,color:"#94a3b8"}}>Mode démonstration</div>}
+    </div>
+  );
+  if (!pharmacie) return <div style={{padding:40,textAlign:"center",color:"#dc2626"}}>Erreur : pharmacie introuvable</div>;
+  const ordonnancesJour = (ordonnances||[]).filter(o => isSameDay(o.receivedAt, selectedDate));
+  const normalize = (s) => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const filteredByDate = ordonnancesJour;
+  const filteredBySearch = searchQuery
+    ? filteredByDate.filter(o => {
+        const nom = o.extracted?.nom || o.fromName || "";
+        // Recherche par code patient (match exact ou partiel)
+        if (searchQuery.match(/^\d{1,3}$/) && o.code_patient) {
+          return o.code_patient.startsWith(searchQuery);
+        }
+        const words = normalize(searchQuery).split(/\s+/).filter(Boolean);
+        return words.every(w => normalize(nom).includes(w));
+      })
+    : filteredByDate;
+
+  const filteredOrdos = filterStatus === "tous" ? filteredBySearch
+    : filteredBySearch.filter(o => o.status === filterStatus);
+
+  const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
+  const couleur = pharmacie?.couleur || "#1a3a6e";
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr";
+  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
+  const joursDispos = [...new Set([toDateKey(new Date()), ...(ordonnances||[]).map(o => toDateKey(o.receivedAt))])].sort().reverse();
+
+  async function updateOrdo(id, patch) {
+    // Mise à jour optimiste locale immédiate
+    setOrdonnances(prev => prev.map(o => o.id === id ? {...o,...patch} : o));
+    // Persistance async
+    if (patch.status) {
+      await updateOrdoStatus(id, pharmacieId, patch.status);
+    }
+    if (patch.extracted) {
+      await updateOrdoExtracted(id, pharmacieId, patch.extracted);
+    }
+  }
+  function handleViewOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"view",ordonnanceId:id}).catch(()=>{}); }
+  function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id}).catch(()=>{}); }
+  async function handleFile(ordoId, file, dataUrl) {
+    setLoadingId(ordoId);
+    // Upload vers Storage (ou mémoire en mode démo)
+    await uploadOrdoFile(pharmacieId, ordoId, file, dataUrl);
+    // Mise à jour locale immédiate
+    const ext = file.name.split(".").pop().toLowerCase();
+    setOrdonnances(prev => prev.map(o => o.id === ordoId ? {
+      ...o, attachments:[{name:file.name,type:ext==="pdf"?"pdf":"image",dataUrl,size:`${(file.size/1024).toFixed(0)} Ko`}]
+    } : o));
+    // OCR
+    const ordo = ordonnances.find(o => o.id === ordoId);
+    const fallbackName = ordo?.fromName || ordo?.extracted?.nom || null;
+    const extracted = await extractFromFile(dataUrl.split(",")[1], file.type, { fallbackName });
+    await updateOrdo(ordoId, {extracted});
+    setLoadingId(null);
+  }
+  async function handleSaveParams(patch) {
+    await savePharmacie(pharmacieId, patch);
+    setPharmacie(p=>({...p,...patch}));
+  }
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f0f2f8",display:"flex",flexDirection:"column"}}>
+      <header style={{background:couleur,color:"#fff",height:52,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.2)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
+          {pharmacie?.logo?<img src={pharmacie.logo} alt="logo" style={{width:30,height:30,objectFit:"cover",borderRadius:7,flexShrink:0}}/>:<span style={{fontSize:20,flexShrink:0}}>💊</span>}
+          <div style={{minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{pharmacie?.nom}</div>
+            <div style={{fontSize:9,opacity:0.6,letterSpacing:0.5}}>ORDOMAIL</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:2,flexShrink:0}} className="desktop-nav">
+          <button onClick={()=>{setTab("ordonnances");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="ordonnances"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="ordonnances"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>📋 Ordonnances</button>
+          {canAdmin&&<><button onClick={()=>{setTab("qrcode");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="qrcode"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="qrcode"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>📱 QR Code</button>
+          <button onClick={()=>{setTab("parametres");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>
+          <button onClick={()=>setShowLogs(l=>!l)} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>🗒️ Logs</button></>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
+          <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.35)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⏏ Quitter</button>
+          <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"monospace",marginLeft:6}}>{APP_VERSION}</span>
+        </div>
+      </header>
+      <BottomNav tab={tab} showLogs={showLogs} canAdmin={canAdmin} setTab={setTab} setShowLogs={setShowLogs} />
+
+      {showLogs&&canAdmin&&<LogsPanel pharmacieId={pharmacieId} onClose={()=>setShowLogs(false)}/>}
+
+      {tab==="ordonnances"&&!showLogs&&(
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
+          <div style={{background:"#fff",borderBottom:"1px solid #e8eaf0",padding:"10px 16px",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,background:"#f0f2f8",borderRadius:10,padding:"5px 10px",flexShrink:0}}>
+                <span style={{fontSize:14}}>📅</span>
+                <select value={selectedDate} onChange={e=>{setSelectedDate(e.target.value);setSearchQuery("");}}
+                  style={{border:"none",background:"transparent",fontFamily:"inherit",fontSize:13,fontWeight:700,color:"#1a3a6e",cursor:"pointer",outline:"none"}}>
+                  {joursDispos.map(d=><option key={d} value={d}>{formatDateLabel(d)}</option>)}
+                </select>
+              </div>
+              <div style={{flex:1,position:"relative",minWidth:120}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
+                <input ref={searchRef} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
+                  placeholder="Nom ou code (ex: 247)…"
+                  style={{width:"100%",padding:"8px 10px 8px 32px",border:`1.5px solid ${searchQuery?couleur:"#e0e0e0"}`,borderRadius:10,fontSize:13,fontFamily:"inherit",outline:"none",background:"#fff",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                <button onClick={()=>setViewMode("grid")} style={{width:32,height:32,border:`1.5px solid ${viewMode==="grid"?couleur:"#e0e0e0"}`,borderRadius:8,background:viewMode==="grid"?couleur:"#fff",color:viewMode==="grid"?"#fff":"#888",cursor:"pointer",fontSize:14}}>⊞</button>
+                <button onClick={()=>setViewMode("list")} style={{width:32,height:32,border:`1.5px solid ${viewMode==="list"?couleur:"#e0e0e0"}`,borderRadius:8,background:viewMode==="list"?couleur:"#fff",color:viewMode==="list"?"#fff":"#888",cursor:"pointer",fontSize:14}}>☰</button>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              {[["nouveau","🔔 À traiter",ordonnancesJour.filter(o=>o.status==="nouveau").length],["imprime","✓ Imprimées",ordonnancesJour.filter(o=>o.status==="imprime").length],["tous","Toutes",ordonnancesJour.length]].map(([k,l,count])=>(
+                <button key={k} onClick={()=>setFilterStatus(k)}
+                  style={{padding:"5px 12px",borderRadius:16,border:`1.5px solid ${filterStatus===k?couleur:"#e0e0e0"}`,background:filterStatus===k?couleur:"#fff",color:filterStatus===k?"#fff":"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                  {l}<span style={{background:filterStatus===k?"rgba(255,255,255,0.25)":"#f0f0f0",borderRadius:10,padding:"0 6px",fontSize:11}}>{count}</span>
+                </button>
+              ))}
+              <span style={{fontSize:12,color:"#bbb",marginLeft:4}}>{filteredOrdos.length} ordonnance{filteredOrdos.length!==1?"s":""}</span>
+            </div>
+          </div>
+          <div style={{flex:1,overflow:"auto",padding:"12px 12px 80px"}}>
+            {filteredOrdos.length===0?(
+              <div style={{textAlign:"center",padding:"40px 20px",color:"#bbb"}}>
+                <div style={{fontSize:36,marginBottom:10}}>📭</div>
+                <div style={{fontSize:15,fontWeight:600}}>Aucune ordonnance</div>
+              </div>
+            ):viewMode==="grid"?(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:12}}>
+                {filteredOrdos.map(o=>{
+                  const accent=getOrdoAccent(o.id);
+                  return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
+                    onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
+                    onView={()=>{handleViewOrdo(o.id);(async () => {
+              const a = o.attachments?.[0];
+              if (!a) return;
+              if (a.dataUrl) { setViewerAtt(a); return; }
+              if (a.path) {
+                const url = await getSignedUrl(a.path, 300);
+                if (url) setViewerAtt({ ...a, dataUrl: url });
+              }
+            })();}}
+                    onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
+                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}
+                    loadingId={loadingId}/>;
+                })}
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {filteredOrdos.map(o=>{
+                  const accent=getOrdoAccent(o.id);
+                  return <OrdoRow key={o.id} ordo={o} couleur={couleur} accent={accent}
+                    onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
+                    onView={()=>(async () => {
+              const a = o.attachments?.[0];
+              if (!a) return;
+              if (a.dataUrl) { setViewerAtt(a); return; }
+              if (a.path) {
+                const url = await getSignedUrl(a.path, 300);
+                if (url) setViewerAtt({ ...a, dataUrl: url });
+              }
+            })()}
+                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}/>;
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab==="qrcode"&&canAdmin&&!showLogs&&<QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>}
+      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams}/>}
+
+      {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
+      {printModal&&<PrintConfirmModal ordo={printModal}
+        onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
+        onCancel={()=>setPrintModal(null)}/>}
+
+      <div id="ordomail-print-area" style={{display:"none"}}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes popIn{0%{opacity:0;transform:scale(0.92)}100%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}@media print{body>*{display:none!important}#ordomail-print-area{display:block!important;position:fixed;top:0;left:0;width:100%;background:#fff}}@media(max-width:640px){.hide-mobile{display:none!important}.desktop-nav{display:none!important}.bottom-nav{display:flex!important}}@media(min-width:641px){.desktop-nav{display:flex!important}.bottom-nav{display:none!important}.mobile-padded{padding-bottom:0!important}}`}</style>
+    </div>
+  );
+}
+
+export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, AbonnementSection, CompteSection, ParametresTab };
+export default PharmacieDashboard;

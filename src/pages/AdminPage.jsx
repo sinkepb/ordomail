@@ -722,7 +722,7 @@ function AdminDashboardLive() {
                 fontWeight:tab===k?700:500,
                 background:tab===k?"#3b82f6":"#1e293b",
                 color:tab===k?"#fff":"#94a3b8",
-                border:`1px solid ${tab===k?"#3b82f6":"#334155"}`}}>
+                outline:`1px solid ${tab===k?"#3b82f6":"#334155"}`}}>
               {l}
             </button>
           ))}
