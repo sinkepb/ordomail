@@ -1,8 +1,63 @@
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, changePlan,
-  snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
+import { PLANS } from "../lib/utils.js";
+import { getSupabaseClient, isDemoMode, changePlan,
+  snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
+
+console.log("✅ MODULE CHARGÉ: pages/AdminPage.jsx");
+
+const MOCK_INVOICES = [
+  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
+  { id:"INV-2025-005", subId:"sub2", date:"01/06/2025", amount:39,  desc:"Standard — Juin 2025" },
+  { id:"INV-2025-004", subId:"sub3", date:"15/05/2025", amount:189, desc:"Pro Annuel — Q2 2025" },
+  { id:"INV-2025-003", subId:"sub1", date:"15/05/2025", amount:19,  desc:"Starter — Mai 2025" },
+  { id:"INV-2025-002", subId:"sub7", date:"20/05/2025", amount:39,  desc:"Standard — Mai 2025" },
+];
+
+const MOCK_SUBSCRIPTIONS = [
+  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
+  { id:"sub2", pharmacie:"Pharmacie du Soleil",   email:"pharma@soleil.fr",             plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"01/08/2025", subId:"sub2" },
+  { id:"sub3", pharmacie:"Pharmacie Lafayette",   email:"contact@lafayette.fr",         plan:"pro",      billing:"annual",  status:"active",    mrr:63,  renewal:"15/09/2025", subId:"sub3" },
+  { id:"sub4", pharmacie:"Pharmacie des Arts",    email:"info@pharmaarts.fr",           plan:"starter",  billing:"monthly", status:"trialing",  mrr:0,   renewal:"30/07/2025", subId:"sub4" },
+  { id:"sub5", pharmacie:"Pharmacie Saint-Michel",email:"saintmichel@pharma.fr",        plan:"standard", billing:"annual",  status:"past_due",  mrr:31,  renewal:"01/07/2025", subId:"sub5" },
+  { id:"sub6", pharmacie:"Pharmacie Beaubourg",   email:"contact@beaubourg.fr",         plan:"starter",  billing:"monthly", status:"canceled",  mrr:0,   renewal:"—",          subId:"sub6" },
+  { id:"sub7", pharmacie:"Pharmacie de la Gare",  email:"gare@pharma.fr",              plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"20/07/2025", subId:"sub7" },
+  { id:"sub8", pharmacie:"Pharmacie Marais",      email:"marais@pharma.fr",             plan:"pro",      billing:"monthly", status:"trialing",  mrr:0,   renewal:"10/08/2025", subId:"sub8" },
+];
+
+
+const DB = {
+  pharmacies: [
+    {
+      id: "ph1", nom: "Pharmacie Centrale", couleur: "#1a3a6e",
+      email: "contact@pharmaciecentrale.fr", password: "demo123",
+      adresse: "12 rue de la Paix, 75001 Paris",
+      emailReception: "ph1@in.ordomail.fr",
+      plan: "starter", createdAt: "2025-01-15T10:00:00Z",
+      postes: [
+        { id:"p1", nom:"Poste Accueil",     actif:true,  pin:"1234" },
+        { id:"p2", nom:"Poste Caisse",      actif:true,  pin:"5678" },
+        { id:"p3", nom:"Poste Préparation", actif:false, pin:"9012" },
+      ],
+      ordonnances: makeOrdos(3,15),
+    },
+    {
+      id: "ph2", nom: "Pharmacie du Soleil", couleur: "#15623a",
+      email: "pharma@soleil.fr", password: "demo123",
+      adresse: "45 avenue du Soleil, 69001 Lyon",
+      emailReception: "ph2@in.ordomail.fr",
+      plan: "standard", createdAt: "2025-02-01T10:00:00Z",
+      postes: [
+        { id:"p1", nom:"Poste 1", actif:true, pin:"1111" },
+        { id:"p2", nom:"Poste 2", actif:true, pin:"2222" },
+      ],
+      ordonnances: makeOrdos(2,10),
+    },
+  ],
+  admin: { email: "admin@ordomail.fr", password: "admin2025" },
+};
+
 
 function BackofficeAdmin({ onBack }) {
   const [authed,    setAuthed]    = useState(false);
