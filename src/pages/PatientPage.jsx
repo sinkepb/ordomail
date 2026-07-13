@@ -447,7 +447,9 @@ function PatientPage({ pharmacie, onBack }) {
             size: `${(item.file.size/1024).toFixed(0)} Ko`, dataUrl: item.dataUrl }],
           extracted: extracted || { nom: nom.toUpperCase() },
         });
-        return { ok: true };
+        // Code démo : 3 chiffres basé sur l'heure
+        const demoCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+        return { ok: true, code_patient: demoCode };
       }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -483,6 +485,10 @@ function PatientPage({ pharmacie, onBack }) {
         throw new Error(failed[0].reason?.message || "Erreur envoi");
       }
       // Succès total ou partiel
+      // Récupérer le code patient du premier résultat réussi
+      const firstSuccess = results.find(r => r.status === "fulfilled")?.value;
+      const code = firstSuccess?.code_patient || null;
+      setCodePatient(code);
       setStep("success");
     } catch(e) {
       console.error("[PatientPage]", e.message);
@@ -491,20 +497,12 @@ function PatientPage({ pharmacie, onBack }) {
     setSending(false);
   }
 
-  if (step === "success" && codePatient) return (
+  if (step === "success") return (
     <PatientStories
       pharmacie={pharmacie}
       nom={nom}
       codePatient={codePatient}
       onRestart={() => { setStep("form"); setFiles([]); setNom(""); setCodePatient(null); }}
-    />
-  );
-  if (step === "success") return (
-    <PatientStories
-      pharmacie={pharmacie}
-      nom={nom}
-      codePatient={null}
-      onRestart={() => { setStep("form"); setFiles([]); setNom(""); }}
     />
   );
 
