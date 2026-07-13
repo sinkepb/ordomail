@@ -539,7 +539,14 @@ export async function fetchInteretsParCode(pharmacieId, codePatient) {
 
 // Charger tous les intérêts du jour pour une pharmacie (pour le dashboard)
 export async function fetchInteretsDuJour(pharmacieId) {
-  if (IS_DEMO) return [];
+  if (IS_DEMO) {
+    // Mode démo : lire depuis window.__ordomailDB
+    const db = getDB ? getDB() : window.__ordomailDB;
+    const today = new Date().toISOString().split("T")[0];
+    return (db?.offre_interets || []).filter(
+      i => i.pharmacie_id === pharmacieId && i.date_jour === today
+    );
+  }
   const sb = getSupabase();
   const today = new Date().toISOString().split("T")[0];
   const { data } = await sb

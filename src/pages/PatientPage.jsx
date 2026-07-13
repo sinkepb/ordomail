@@ -65,27 +65,58 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
     const offreId = story.id?.toString().replace('offre-', '');
     const isOn    = !interets[offreId];
 
-    // Mise à jour optimiste
+    // Mise à jour locale immédiate
     setInterets(prev => ({ ...prev, [offreId]: isOn }));
 
-    if (!isDemoMode && codePatient) {
-      const sb = getSupabaseClient();
-      if (isOn) {
-        await sb.from("offre_interets").upsert({
-          pharmacie_id: pharmacie.id,
-          code_patient: codePatient,
-          offre_id:     offreId,
-          offre_titre:  story.title,
-          offre_emoji:  story.emoji || "🎁",
-          offre_type:   story.offreType || "promo",
-        }, { onConflict: "code_patient,offre_id,date_jour" });
-      } else {
-        await sb.from("offre_interets")
-          .delete()
-          .eq("code_patient", codePatient)
-          .eq("offre_id", offreId)
-          .eq("date_jour", new Date().toISOString().split("T")[0]);
+    const interet = {
+      id:           `int-${Date.now()}`,
+      pharmacie_id: pharmacie?.id,
+      code_patient: codePatient,
+      offre_id:     offreId,
+      offre_titre:  story.title,
+      offre_emoji:  story.emoji || '🎁',
+      offre_type:   story.offreType || 'promo',
+      date_jour:    new Date().toISOString().split('T')[0],
+      created_at:   new Date().toISOString(),
+    };
+
+    if (isDemoMode) {
+      // Mode démo : stocker dans window.__ordomailDB
+      if (window.__ordomailDB) {
+        if (!window.__ordomailDB.offre_interets) window.__ordomailDB.offre_interets = [];
+        if (isOn) {
+          window.__ordomailDB.offre_interets = window.__ordomailDB.offre_interets.filter(
+            i => !(i.code_patient === codePatient && i.offre_id === offreId)
+          );
+          window.__ordomailDB.offre_interets.push(interet);
+        } else {
+          window.__ordomailDB.offre_interets = window.__ordomailDB.offre_interets.filter(
+            i => !(i.code_patient === codePatient && i.offre_id === offreId)
+          );
+        }
       }
+      return;
+    }
+
+    // Mode prod : Supabase
+    if (!codePatient) return;
+    const sb = getSupabaseClient();
+    if (!sb) return;
+    if (isOn) {
+      await sb.from('offre_interets').upsert({
+        pharmacie_id: pharmacie?.id,
+        code_patient: codePatient,
+        offre_id:     offreId,
+        offre_titre:  story.title,
+        offre_emoji:  story.emoji || '🎁',
+        offre_type:   story.offreType || 'promo',
+      }, { onConflict: 'code_patient,offre_id,date_jour' });
+    } else {
+      await sb.from('offre_interets')
+        .delete()
+        .eq('code_patient', codePatient)
+        .eq('offre_id', offreId)
+        .eq('date_jour', new Date().toISOString().split('T')[0]);
     }
   } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);
@@ -181,9 +212,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         } catch(e) { console.warn("[offres_stories] Erreur:", e.message, "→ pas d'offres affichées"); }
       }
 
-      console.log("[PatientStories] stories chargées:", base.length);
-      console.log("[PatientStories] types:", base.map(s=>s.type).join(", "));
-      console.log("[PatientStories] pharmacie.id:", pharmacie?.id);
+      console.log("[PatientStories] stories chargées:", base.length, "types:", base.map(s=>s.type).join(", "));
+      console.log("[PatientStories] pharmacie.id:", pharmacie?.id, "isDemoMode:", isDemoMode);
       setAllStories(base);
     }
 

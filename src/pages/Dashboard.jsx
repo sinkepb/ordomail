@@ -1282,6 +1282,11 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         setOrdonnances(ordos);
           // Charger les intérêts du jour
           fetchInteretsDuJour(pharmacieId).then(interets => setInteretsDuJour(interets));
+          // Rafraîchir les intérêts toutes les 5s (patients peuvent signaler en temps réel)
+          const interetsInterval = setInterval(() => {
+            fetchInteretsDuJour(pharmacieId).then(i => setInteretsDuJour(i));
+          }, 5000);
+          return () => clearInterval(interetsInterval);
         // OCR sur les ordonnances déjà en base sans extraction
         setTimeout(() => triggerOcrOnNew(ordos), 2000);
       }

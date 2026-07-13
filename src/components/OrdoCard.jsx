@@ -129,9 +129,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 18, color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
             }}>
-            {ordo.code_patient
-              ? <span style={{fontSize:12,fontWeight:900,fontFamily:"monospace",letterSpacing:2,lineHeight:1}}>{ordo.code_patient}</span>
-              : initiale}
+            {initiale}
           </div>
 
           </div>
@@ -233,11 +231,11 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
         border: `2px solid ${accent.border}`,
         display: "flex", alignItems: "center", justifyContent: "center",
         color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
-        fontSize: ordo.code_patient ? 13 : 17,
-        fontFamily: ordo.code_patient ? "monospace" : "inherit",
-        letterSpacing: ordo.code_patient ? 1 : 0,
+        fontSize: 17,
+        fontFamily: "inherit",
+        letterSpacing: 0,
       }}>
-        {ordo.code_patient || nom?.charAt(0)?.toUpperCase() || "?"}
+        {nom?.charAt(0)?.toUpperCase() || "?"}
       </div>
 
       {/* Nom + email */}
