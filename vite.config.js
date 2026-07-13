@@ -5,11 +5,15 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    sourcemap: true,
+    minify: false,
     rollupOptions: {
-      output: {
-        manualChunks: undefined
-      }
+      preserveEntrySignatures: 'exports-only',
+      output: { manualChunks: undefined },
     }
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'qrcode', '@supabase/supabase-js'],
+    exclude: ['tesseract.js', 'pdfjs-dist']
   }
 })
