@@ -13,7 +13,7 @@ import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
   isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
 } from "../supabase.js";
 
-const APP_VERSION = "v6.1 · 13/07/2026 15:52";
+const APP_VERSION = "v6.1 · 13/07/2026 16:10";
 
 const MOCK_INVOICES = [
   { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
@@ -151,37 +151,69 @@ function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
 }
 
 function OffresSection({ pharmacie, planInfo }) {
-  const isPremium = planInfo?.offresStories === true;
-  const [offres, setOffres]     = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm]         = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
-  const [saving, setSaving]     = useState(false);
+  const [offres, setOffres]       = useState([]);
+  const [showForm, setShowForm]   = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+  const [saving, setSaving]       = useState(false);
   const sb = getSupabaseClient();
 
-  // Types d'offres
   const TYPES = [
-    { id:"promo",    label:"Promotion",   emoji:"🏷️", desc:"Réduction sur un produit" },
-    { id:"service",  label:"Service",     emoji:"🩺", desc:"Mise en avant d'un service" },
-    { id:"fidelite", label:"Fidélité",    emoji:"🎁", desc:"Offre de fidélité" },
+    { id:"promo",    label:"Promotion",   emoji:"🏷️" },
+    { id:"service",  label:"Service",     emoji:"🩺" },
+    { id:"fidelite", label:"Fidélité",    emoji:"🎁" },
   ];
 
+  // Charger les offres au montage
   useEffect(() => {
-    if (!isPremium || !sb) return;
-    sb.from("offres_stories").select("*").eq("pharmacie_id", pharmacie.id).order("created_at", { ascending: false })
+    if (!pharmacie?.id) return;
+    if (isDemoMode) {
+      // Démo : offres en mémoire déjà dans le state
+      return;
+    }
+    if (!sb) return;
+    sb.from("offres_stories")
+      .select("*")
+      .eq("pharmacie_id", pharmacie.id)
+      .order("created_at", { ascending: false })
       .then(({ data }) => { if (data) setOffres(data); });
-  }, [isPremium]);
+  }, [pharmacie?.id]);
+
+  function openNew() {
+    setEditingId(null);
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+    setShowForm(true);
+  }
+
+  function openEdit(offre) {
+    setEditingId(offre.id);
+    setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
+      emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
+      actif:offre.actif, date_fin:offre.date_fin||"" });
+    setShowForm(true);
+  }
 
   async function saveOffre() {
     if (!form.titre.trim()) return;
     setSaving(true);
     const payload = { ...form, pharmacie_id: pharmacie.id };
-    if (sb && !isDemoMode) {
-      const { data } = await sb.from("offres_stories").insert(payload).select().single();
-      if (data) setOffres(prev => [data, ...prev]);
+    if (editingId) {
+      // Modification
+      if (sb && !isDemoMode) {
+        await sb.from("offres_stories").update(payload).eq("id", editingId);
+      }
+      setOffres(prev => prev.map(o => o.id === editingId ? { ...o, ...payload } : o));
     } else {
-      setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
+      // Création
+      if (sb && !isDemoMode) {
+        const { data } = await sb.from("offres_stories").insert(payload).select().single();
+        if (data) setOffres(prev => [data, ...prev]);
+      } else {
+        setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
+      }
     }
     setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+    setEditingId(null);
     setShowForm(false);
     setSaving(false);
   }
@@ -192,31 +224,10 @@ function OffresSection({ pharmacie, planInfo }) {
   }
 
   async function deleteOffre(id) {
+    if (!window.confirm("Supprimer cette offre ?")) return;
     setOffres(prev => prev.filter(o => o.id !== id));
     if (sb && !isDemoMode) await sb.from("offres_stories").delete().eq("id", id);
   }
-
-  // Paywall si pas premium
-  if (!isPremium) return (
-    <div style={{ background:"#fff", borderRadius:14, padding:28, boxShadow:"0 2px 10px rgba(0,0,0,0.07)", textAlign:"center" }}>
-      <div style={{ fontSize:48, marginBottom:12 }}>💎</div>
-      <div style={{ fontWeight:900, fontSize:18, color:"#1a1a1a", marginBottom:8 }}>Offres & Promotions en Stories</div>
-      <div style={{ fontSize:14, color:"#64748b", lineHeight:1.7, marginBottom:20, maxWidth:340, margin:"0 auto 20px" }}>
-        Diffusez vos promotions, services et offres de fidélité directement dans les stories vues par vos patients pendant leur attente.<br/><br/>
-        Fonctionnalité disponible avec le plan <strong>Premium</strong>.
-      </div>
-      <div style={{ background:"#fef9f0", border:"1.5px solid #f59e0b", borderRadius:12, padding:"16px 20px", marginBottom:20, display:"inline-block", textAlign:"left" }}>
-        <div style={{ fontWeight:800, fontSize:15, color:"#92400e", marginBottom:8 }}>💎 Plan Premium — 119€/mois</div>
-        {["Postes illimités","Offres & Promotions en Stories","Ordonnances illimitées","Support prioritaire"].map(f=>(
-          <div key={f} style={{ fontSize:13, color:"#78350f", marginBottom:4 }}>✅ {f}</div>
-        ))}
-      </div>
-      <br/>
-      <button style={{ padding:"12px 28px", border:"none", borderRadius:12, background:"#b45309", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>
-        Passer en Premium →
-      </button>
-    </div>
-  );
 
   return (
     <div style={{ background:"#fff", borderRadius:14, padding:22, boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>
@@ -234,7 +245,7 @@ function OffresSection({ pharmacie, planInfo }) {
       {/* Formulaire création */}
       {showForm && (
         <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18 }}>
-          <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>Créer une offre</div>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>{editingId ? "✏️ Modifier l'offre" : "➕ Créer une offre"}</div>
 
           {/* Type */}
           <div style={{ display:"flex", gap:8, marginBottom:14 }}>
@@ -293,7 +304,7 @@ function OffresSection({ pharmacie, planInfo }) {
             </button>
             <button onClick={saveOffre} disabled={!form.titre.trim()||saving}
               style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              {saving ? "Enregistrement…" : "✅ Publier l'offre"}
+              {saving ? "Enregistrement…" : editingId ? "✅ Enregistrer" : "✅ Publier l'offre"}
             </button>
           </div>
         </div>
@@ -325,12 +336,20 @@ function OffresSection({ pharmacie, planInfo }) {
           </div>
           <div style={{ display:"flex", gap:6, flexShrink:0 }}>
             <button onClick={()=>toggleOffre(offre.id, offre.actif)}
-              style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#bbf7d0"}`, borderRadius:8, background:offre.actif?"#fff":"#f0fdf4", color:offre.actif?"#64748b":"#15803d", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-              {offre.actif?"Pause":"▶ Activer"}
+              style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#fecdd3":"#bbf7d0"}`, borderRadius:8,
+                background:offre.actif?"#fff5f5":"#f0fdf4", color:offre.actif?"#dc2626":"#15803d",
+                fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              {offre.actif?"⏸ Pause":"▶ Activer"}
+            </button>
+            <button onClick={()=>openEdit(offre)}
+              style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8,
+                background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+              ✏️
             </button>
             <button onClick={()=>deleteOffre(offre.id)}
-              style={{ padding:"5px 8px", border:"1.5px solid #fee2e2", borderRadius:8, background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-              ✕
+              style={{ padding:"5px 9px", border:"1.5px solid #fee2e2", borderRadius:8,
+                background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+              🗑️
             </button>
           </div>
         </div>
@@ -1313,9 +1332,11 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
     const result = [];
     for (const o of filteredOrdos) {
       if (o.code_patient) {
-        const key = `${o.code_patient}-${toDateKey(o.receivedAt)}`;
+        const key = `${o.code_patient}-${toDateKey(o.receivedAt || new Date())}`;
         if (groups[key]) {
           groups[key].ordonnances.push(o);
+          // Garder le status "nouveau" si au moins une ordonnance est nouvelle
+          if (o.status === "nouveau") groups[key].status = "nouveau";
         } else {
           const group = { ...o, _isGroup: true, ordonnances: [o] };
           groups[key] = group;
