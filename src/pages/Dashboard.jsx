@@ -1307,7 +1307,10 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
 
   const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
   const couleur = pharmacie?.couleur || "#1a3a6e";
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr";
+  // Toujours utiliser l'URL de production pour le QR code
+  // (évite que les patients soient redirigés vers l'env de dev protégé par Vercel)
+  const PROD_URL = import.meta.env.VITE_APP_URL || "https://ordomail.fr";
+  const baseUrl  = import.meta.env.DEV ? window.location.origin : PROD_URL;
   const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
   const joursDispos = [...new Set([toDateKey(new Date()), ...(ordonnances||[]).map(o => toDateKey(o.receivedAt))])].sort().reverse();
 
