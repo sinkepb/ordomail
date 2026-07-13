@@ -1,24 +1,24 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// ORDOMAIL — App.jsx (Routeur principal)
-// v6.0 · 12/07/2026 14:51
-// Architecture modulaire : pages/ + components/ + lib/
-// ═══════════════════════════════════════════════════════════════════════════
-
 import React, { useState, useEffect, useRef } from "react";
-
-
-const APP_VERSION = "v6.0 · 12/07/2026 18:40";
-
-// ── Diagnostic démarrage ─────────────────────────────────────────────────────
-console.log("=== ORDOMAIL DÉMARRAGE ===");
-console.log("APP_VERSION:", "v6.0 · 12/07/2026 18:40");
-console.log("VITE_SUPABASE_URL:", import.meta.env.VITE_SUPABASE_URL || "❌ UNDEFINED");
-console.log("VITE_DEMO_MODE:", import.meta.env.VITE_DEMO_MODE || "❌ UNDEFINED");
-console.log("isDemoMode:", typeof isDemoMode !== "undefined" ? isDemoMode : "❌ UNDEFINED");
-
-
-// ── Supabase ─────────────────────────────────────────────────────────────────
 import {
+
+// ── Capture d'erreur globale ──────────────────────────────────────────────────
+window.addEventListener('error', function(e) {
+  console.error('[GLOBAL ERROR]', e.message, e.filename, e.lineno, e.colno);
+  console.error('[ERROR OBJ]', e.error?.stack);
+  // Afficher sur la page
+  const div = document.createElement('div');
+  div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#dc2626;color:#fff;padding:16px;z-index:99999;font-family:monospace;font-size:13px;';
+  div.innerHTML = '<b>ERREUR: ' + e.message + '</b><br>' + 
+    'Fichier: ' + e.filename + ':' + e.lineno + ':' + e.colno + '<br>' +
+    (e.error?.stack || '').replace(/\n/g,'<br>').slice(0, 500);
+  document.body.appendChild(div);
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('[UNHANDLED PROMISE]', e.reason);
+});
+
+
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   fetchPharmacie, savePharmacie, savePostes,
   fetchOrdonnances, updateOrdoStatus, updateOrdoExtracted, uploadOrdoFile,
@@ -29,26 +29,42 @@ import {
   getCurrentSession, onAuthStateChange,
   snapshotMetriquesJournalieres, fetchHistoriqueMetriques,
 } from "./supabase.js";
-
-// ── Lib ──────────────────────────────────────────────────────────────────────
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, getPrevPlan, computeImpact, canAddPoste } from "./lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "./lib/utils.js";
 import { getTesseractWorker, extractFromFile, prewarmTesseract } from "./lib/ocr.js";
 import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/print.jsx";
-
-// ── Pages ────────────────────────────────────────────────────────────────────
 import { LandingPage, PersistentNav } from "./pages/LandingPage.jsx";
 import { AppLogin, LoginPage, LoginTabContent, BoutonProSanteConnect, ResetPasswordPage } from "./pages/LoginPage.jsx";
 import { PatientPage, PatientStories } from "./pages/PatientPage.jsx";
 import { PharmacieDashboard, QRNFCTab, BottomNav, OffresSection, AbonnementSection, CompteSection, ParametresTab } from "./pages/Dashboard.jsx";
 import { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin, HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin } from "./pages/AdminPage.jsx";
-
-// ── Components ───────────────────────────────────────────────────────────────
 import { OrdoCard, OrdoRow, AttachmentThumb } from "./components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "./components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "./components/UpgradeModal.jsx";
 import { CVBadge, Btn, Input } from "./components/ui.jsx";
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ORDOMAIL — App.jsx (Routeur principal)
+// v6.0 · 12/07/2026 14:51
+// Architecture modulaire : pages/ + components/ + lib/
+// ═══════════════════════════════════════════════════════════════════════════
+
+const APP_VERSION = "v6.0 · 12/07/2026 18:40";
+
+// ── Diagnostic démarrage ─────────────────────────────────────────────────────
+console.log("=== ORDOMAIL DÉMARRAGE ===");
+console.log("APP_VERSION:", "v6.0 · 12/07/2026 18:40");
+console.log("VITE_SUPABASE_URL:", import.meta.env.VITE_SUPABASE_URL || "❌ UNDEFINED");
+console.log("VITE_DEMO_MODE:", import.meta.env.VITE_DEMO_MODE || "❌ UNDEFINED");
+console.log("isDemoMode:", typeof isDemoMode !== "undefined" ? isDemoMode : "❌ UNDEFINED");
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+
+// ── Lib ──────────────────────────────────────────────────────────────────────
+
+// ── Pages ────────────────────────────────────────────────────────────────────
+
+// ── Components ───────────────────────────────────────────────────────────────
 
 // ── Error Boundary — affiche l'erreur au lieu d'une page blanche ─────────────
 class ErrorBoundary extends React.Component {
@@ -172,7 +188,6 @@ const DB = {
   admin: { email: "admin@ordomail.fr", password: "admin2025" },
 };
 
-
 // ─── Système de notifications (pub/sub) ──────────────────────────────────────
 
 // ─── Logs d'audit ─────────────────────────────────────────────────────────────
@@ -238,7 +253,6 @@ function LogsPanel({ pharmacieId, onClose }) {
     </div>
   );
 }
-
 
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
