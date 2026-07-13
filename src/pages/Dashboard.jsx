@@ -1307,10 +1307,10 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
 
   const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
   const couleur = pharmacie?.couleur || "#1a3a6e";
-  // Toujours utiliser l'URL de production pour le QR code
-  // (évite que les patients soient redirigés vers l'env de dev protégé par Vercel)
-  const PROD_URL = import.meta.env.VITE_APP_URL || "https://ordomail.fr";
-  const baseUrl  = import.meta.env.DEV ? window.location.origin : PROD_URL;
+  // URL QR code : utilise VITE_APP_URL si défini, sinon l'origine courante
+  // → En prod : VITE_APP_URL = https://ordomail.fr
+  // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
+  const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
   const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
   const joursDispos = [...new Set([toDateKey(new Date()), ...(ordonnances||[]).map(o => toDateKey(o.receivedAt))])].sort().reverse();
 
