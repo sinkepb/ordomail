@@ -1,9 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
-  updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
-  exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
-  isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
-} from "../supabase.js";
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
@@ -12,6 +7,37 @@ import { OrdoCard, OrdoRow, AttachmentThumb } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
+
+
+const APP_VERSION = "v6.0 · 13/07/2026 11:32";
+
+import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
+  updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
+  exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
+  isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
+} from "../supabase.js";
+
+console.log("✅ MODULE CHARGÉ: pages/Dashboard.jsx");
+
+const MOCK_INVOICES = [
+  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
+  { id:"INV-2025-005", subId:"sub2", date:"01/06/2025", amount:39,  desc:"Standard — Juin 2025" },
+  { id:"INV-2025-004", subId:"sub3", date:"15/05/2025", amount:189, desc:"Pro Annuel — Q2 2025" },
+  { id:"INV-2025-003", subId:"sub1", date:"15/05/2025", amount:19,  desc:"Starter — Mai 2025" },
+  { id:"INV-2025-002", subId:"sub7", date:"20/05/2025", amount:39,  desc:"Standard — Mai 2025" },
+];
+
+const MOCK_SUBSCRIPTIONS = [
+  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
+  { id:"sub2", pharmacie:"Pharmacie du Soleil",   email:"pharma@soleil.fr",             plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"01/08/2025", subId:"sub2" },
+  { id:"sub3", pharmacie:"Pharmacie Lafayette",   email:"contact@lafayette.fr",         plan:"pro",      billing:"annual",  status:"active",    mrr:63,  renewal:"15/09/2025", subId:"sub3" },
+  { id:"sub4", pharmacie:"Pharmacie des Arts",    email:"info@pharmaarts.fr",           plan:"starter",  billing:"monthly", status:"trialing",  mrr:0,   renewal:"30/07/2025", subId:"sub4" },
+  { id:"sub5", pharmacie:"Pharmacie Saint-Michel",email:"saintmichel@pharma.fr",        plan:"standard", billing:"annual",  status:"past_due",  mrr:31,  renewal:"01/07/2025", subId:"sub5" },
+  { id:"sub6", pharmacie:"Pharmacie Beaubourg",   email:"contact@beaubourg.fr",         plan:"starter",  billing:"monthly", status:"canceled",  mrr:0,   renewal:"—",          subId:"sub6" },
+  { id:"sub7", pharmacie:"Pharmacie de la Gare",  email:"gare@pharma.fr",              plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"20/07/2025", subId:"sub7" },
+  { id:"sub8", pharmacie:"Pharmacie Marais",      email:"marais@pharma.fr",             plan:"pro",      billing:"monthly", status:"trialing",  mrr:0,   renewal:"10/08/2025", subId:"sub8" },
+];
+
 
 function LogsPanel({ pharmacieId, onClose }) {
   const [logs, setLogs] = useState([]);

@@ -40,3 +40,18 @@ export function getOrdoAccent(id) {
   const hash = [...String(id)].reduce((a,c)=>a+c.charCodeAt(0),0);
   return ORDO_ACCENTS[hash % ORDO_ACCENTS.length];
 }
+
+export const C = {
+  navy:    "#1a3a6e",
+  navyD:   "#0f2347",
+  navyL:   "#dbeafe",
+  green:   "#15623a",
+  greenL:  "#dcfce7",
+  white:   "#ffffff",
+  ink:     "#0f172a",
+  slate:   "#475569",
+  muted:   "#94a3b8",
+  border:  "#e2e8f0",
+  surface: "#f8fafc",
+  amber:   "#e6a817",
+};

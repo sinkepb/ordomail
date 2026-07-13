@@ -1,5 +1,20 @@
 import { useState, useEffect, useRef } from "react";
+
 import { PLAN_LIMITS } from "../lib/plans.js";
+import { C } from "../lib/utils.js";
+
+const APP_VERSION = "v6.0 · 13/07/2026 11:32";
+
+console.log("✅ MODULE CHARGÉ: pages/LandingPage.jsx");
+
+const DEMO_ORDOS = [
+  { nom: "MARTIN Pierre",    cv: "1 75 04 75 118 042 18", medecin: "Dr Bernard",  source: "email",  status: "nouveau",  mins: 3  },
+  { nom: "DUBOIS Sophie",    cv: "2 82 11 75 063 014 22", medecin: "Dr Leclerc", source: "qrcode", status: "nouveau",  mins: 11 },
+  { nom: "LEFEBVRE Jean",    cv: "1 60 03 75 042 118 08", medecin: "Dr Moreau",  source: "email",  status: "nouveau",  mins: 24 },
+  { nom: "ROUX Anne",        cv: "2 91 03 69 215 088 45", medecin: "Dr Petit",   source: "qrcode", status: "imprime",  mins: 42 },
+  { nom: "THOMAS Isabelle",  cv: "2 77 06 13 042 118 31", medecin: "Dr Gautier", source: "email",  status: "imprime",  mins: 68 },
+];
+
 
 function MiniDashboard() {
   const [filter, setFilter] = useState("nouveau");
