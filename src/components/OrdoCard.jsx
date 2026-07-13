@@ -235,6 +235,19 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
         <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{timeAgo(ordo.receivedAt)}</div>
       </div>
 
+      {/* Code patient — badge prioritaire */}
+      {ordo.code_patient && (
+        <div style={{
+          fontSize: 18, fontWeight: 900, padding: "4px 12px",
+          borderRadius: 10, background: "#1a3a6e", color: "#fff",
+          fontFamily: "monospace", letterSpacing: 3, flexShrink: 0,
+          boxShadow: "0 2px 8px rgba(26,58,110,0.35)",
+          minWidth: 52, textAlign: "center",
+        }}>
+          {ordo.code_patient}
+        </div>
+      )}
+
       {/* Source + statut */}
       <span style={{ fontSize: 14, flexShrink: 0 }} title={ordo.source}>{srcIcon}</span>
       <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,

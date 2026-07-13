@@ -3,6 +3,8 @@ import { getSupabaseClient, isDemoMode, fetchPharmacie } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 
+console.log("✅ MODULE CHARGÉ: pages/PatientPage.jsx");
+
 const HEALTH_STORIES = [
   {
     id: 1,
@@ -53,7 +55,7 @@ const HEALTH_STORIES = [
   },
 ];
 
-function PatientStories({ pharmacie, nom, onRestart }) {
+function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
   const [quizAnswer, setQuizAnswer] = useState(null); // index réponse choisie
@@ -240,6 +242,18 @@ function PatientStories({ pharmacie, nom, onRestart }) {
         <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
         <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
 
+        {/* Code patient affiché EN GRAND sur la 1ère story */}
+        {story.id === 1 && codePatient && (
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 80, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 12, lineHeight: 1, textShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+              {codePatient}
+            </div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginTop: 8, fontWeight: 600 }}>
+              ← Montrez ce code au pharmacien →
+            </div>
+          </div>
+        )}
+
         {/* Story info */}
         {!isQuiz && !isOffre && (
           <div style={{ fontSize: 16, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, maxWidth: 300 }}>{story.text}</div>
@@ -315,6 +329,37 @@ function PatientStories({ pharmacie, nom, onRestart }) {
       )}
 
       {/* Bouton fin de stories */}
+      {/* Bandeau code patient — visible sur TOUTES les stories */}
+      {codePatient && (
+        <div style={{
+          position: "absolute", bottom: current === allStories.length - 1 && progress > 80 ? 90 : 24,
+          left: 0, right: 0, zIndex: 20,
+          display: "flex", flexDirection: "column", alignItems: "center",
+          transition: "bottom 0.3s",
+        }}>
+          <div style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(8px)",
+            borderRadius: 20,
+            padding: "10px 28px",
+            display: "flex", alignItems: "center", gap: 14,
+            border: "1.5px solid rgba(255,255,255,0.2)",
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 2 }}>
+                Votre code
+              </div>
+              <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 6, lineHeight: 1 }}>
+                {codePatient}
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", maxWidth: 120, lineHeight: 1.4 }}>
+              Donnez ce code au pharmacien
+            </div>
+          </div>
+        </div>
+      )}
+
       {current === allStories.length - 1 && progress > 80 && (
         <div style={{ padding: "0 24px 32px", zIndex: 10 }}>
           <button onClick={onRestart}
@@ -421,7 +466,8 @@ function PatientPage({ pharmacie, onBack }) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Erreur ${res.status}`);
       }
-      return res.json();
+      const data = await res.json();
+      return { ...data, code_patient: data.code_patient };
     }
 
     try {
@@ -444,10 +490,19 @@ function PatientPage({ pharmacie, onBack }) {
     setSending(false);
   }
 
+  if (step === "success" && codePatient) return (
+    <PatientStories
+      pharmacie={pharmacie}
+      nom={nom}
+      codePatient={codePatient}
+      onRestart={() => { setStep("form"); setFiles([]); setNom(""); setCodePatient(null); }}
+    />
+  );
   if (step === "success") return (
     <PatientStories
       pharmacie={pharmacie}
       nom={nom}
+      codePatient={null}
       onRestart={() => { setStep("form"); setFiles([]); setNom(""); }}
     />
   );
