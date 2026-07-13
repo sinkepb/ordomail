@@ -1,4 +1,5 @@
 // ─── Génération PDF et impression ───────────────────────────────────────────
+import { PLAN_LIMITS } from "./plans.js";
 
 function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   const planInfo = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
