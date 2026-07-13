@@ -439,16 +439,17 @@ function PatientPage({ pharmacie, onBack }) {
       const ext       = item.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
+        // Code démo : 3 chiffres unique basé sur l'heure
+        const demoCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
         addOrdonnance(pharmacie.id, {
           id: `qr-${Date.now()}-${Math.random()}`, fromName: nom.toUpperCase(),
           subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
           status: "nouveau", source: "qrcode",
+          code_patient: demoCode,
           attachments: [{ name: item.name, type: ext === "pdf" ? "pdf" : "image",
             size: `${(item.file.size/1024).toFixed(0)} Ko`, dataUrl: item.dataUrl }],
           extracted: extracted || { nom: nom.toUpperCase() },
         });
-        // Code démo : 3 chiffres basé sur l'heure
-        const demoCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
         return { ok: true, code_patient: demoCode };
       }
 
