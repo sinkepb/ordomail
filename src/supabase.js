@@ -522,3 +522,31 @@ export async function fetchHistoriqueMetriques(pharmacieId, jours = 30) {
   return data || [];
 }
 
+
+// ─── Intérêts patients pour les offres ───────────────────────────────────────
+export async function fetchInteretsParCode(pharmacieId, codePatient) {
+  if (IS_DEMO) return [];
+  const sb = getSupabase();
+  const today = new Date().toISOString().split("T")[0];
+  const { data } = await sb
+    .from("offre_interets")
+    .select("*")
+    .eq("pharmacie_id", pharmacieId)
+    .eq("code_patient", codePatient)
+    .eq("date_jour", today);
+  return data || [];
+}
+
+// Charger tous les intérêts du jour pour une pharmacie (pour le dashboard)
+export async function fetchInteretsDuJour(pharmacieId) {
+  if (IS_DEMO) return [];
+  const sb = getSupabase();
+  const today = new Date().toISOString().split("T")[0];
+  const { data } = await sb
+    .from("offre_interets")
+    .select("*")
+    .eq("pharmacie_id", pharmacieId)
+    .eq("date_jour", today);
+  return data || [];
+}
+

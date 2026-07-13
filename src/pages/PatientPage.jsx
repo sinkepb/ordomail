@@ -58,11 +58,41 @@ const HEALTH_STORIES = [
 function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [quizAnswer, setQuizAnswer] = useState(null); // index réponse choisie
+  const [quizAnswer, setQuizAnswer] = useState(null);
+
+  // Toggle intérêt patient pour une offre
+  async function toggleInteret(story) {
+    const offreId = story.id?.toString().replace('offre-', '');
+    const isOn    = !interets[offreId];
+
+    // Mise à jour optimiste
+    setInterets(prev => ({ ...prev, [offreId]: isOn }));
+
+    if (!isDemoMode && codePatient) {
+      const sb = getSupabaseClient();
+      if (isOn) {
+        await sb.from("offre_interets").upsert({
+          pharmacie_id: pharmacie.id,
+          code_patient: codePatient,
+          offre_id:     offreId,
+          offre_titre:  story.title,
+          offre_emoji:  story.emoji || "🎁",
+          offre_type:   story.offreType || "promo",
+        }, { onConflict: "code_patient,offre_id,date_jour" });
+      } else {
+        await sb.from("offre_interets")
+          .delete()
+          .eq("code_patient", codePatient)
+          .eq("offre_id", offreId)
+          .eq("date_jour", new Date().toISOString().split("T")[0]);
+      }
+    }
+  } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);
   const timerRef = useRef(null);
   const DURATION = 6000;
   const [allStories, setAllStories] = useState(HEALTH_STORIES);
+  const [interets, setInterets]     = useState({}); // { offre_id: true/false }
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -260,19 +290,37 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         )}
 
         {/* Story offre pharmacie */}
-        {story.type === "offre" && (
-          <div style={{ width:"100%", maxWidth:300 }}>
-            {story.badge && (
-              <div style={{ display:"inline-block", background:"rgba(255,255,255,0.25)", borderRadius:24, padding:"4px 16px", fontSize:18, fontWeight:900, color:"#fff", marginBottom:14, border:"2px solid rgba(255,255,255,0.4)" }}>
-                {story.badge}
-              </div>
-            )}
-            <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280 }}>{story.text}</div>
-            <div style={{ marginTop:18, padding:"10px 16px", background:"rgba(255,255,255,0.15)", borderRadius:12, fontSize:13, color:"rgba(255,255,255,0.8)", fontWeight:600 }}>
-              💬 Demandez à votre pharmacien
+        {story.type === "offre" && (() => {
+          const offreId = story.id?.toString().replace("offre-", "");
+          const isOn    = !!interets[offreId];
+          return (
+            <div style={{ width:"100%", maxWidth:300 }}>
+              {story.badge && (
+                <div style={{ display:"inline-block", background:"rgba(255,255,255,0.25)", borderRadius:24, padding:"4px 16px", fontSize:18, fontWeight:900, color:"#fff", marginBottom:14, border:"2px solid rgba(255,255,255,0.4)" }}>
+                  {story.badge}
+                </div>
+              )}
+              <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280, marginBottom:20 }}>{story.text}</div>
+
+              {/* Bouton toggle intérêt */}
+              {codePatient && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleInteret(story); }}
+                  style={{
+                    width:"100%", padding:"14px 20px",
+                    border: isOn ? "2px solid #4ade80" : "2px solid rgba(255,255,255,0.5)",
+                    borderRadius:16, cursor:"pointer", fontFamily:"inherit",
+                    background: isOn ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.15)",
+                    color:"#fff", fontWeight:800, fontSize:16,
+                    display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+                    transition:"all 0.2s",
+                  }}>
+                  {isOn ? "✅ Je suis intéressé(e)" : "✋ Je suis intéressé(e)"}
+                </button>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
         {/* Story quiz */}
         {isQuiz && (
           <div style={{ width: "100%", maxWidth: 320 }}>
@@ -432,6 +480,10 @@ function PatientPage({ pharmacie, onBack }) {
     setSending(true);
     setStep("uploading");
 
+    // Générer UN SEUL code pour toute la session d'envoi
+    // (même code pour toutes les ordonnances envoyées en même temps)
+    const sessionCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+
     // Préparer tous les envois en parallèle
     async function sendOne(item) {
       const base64    = item.dataUrl?.split(",")[1] || "";
@@ -439,18 +491,16 @@ function PatientPage({ pharmacie, onBack }) {
       const ext       = item.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
-        // Code démo : 3 chiffres unique basé sur l'heure
-        const demoCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
         addOrdonnance(pharmacie.id, {
           id: `qr-${Date.now()}-${Math.random()}`, fromName: nom.toUpperCase(),
           subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
           status: "nouveau", source: "qrcode",
-          code_patient: demoCode,
+          code_patient: sessionCode,
           attachments: [{ name: item.name, type: ext === "pdf" ? "pdf" : "image",
             size: `${(item.file.size/1024).toFixed(0)} Ko`, dataUrl: item.dataUrl }],
           extracted: extracted || { nom: nom.toUpperCase() },
         });
-        return { ok: true, code_patient: demoCode };
+        return { ok: true, code_patient: sessionCode };
       }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -462,6 +512,7 @@ function PatientPage({ pharmacie, onBack }) {
       formData.append("medecin",      "");
       formData.append("medicaments",  JSON.stringify([]));
       formData.append("file",         item.file, item.name);
+      formData.append("session_code",  sessionCode); // même code pour tous les fichiers
 
       const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {
         method: "POST", body: formData,

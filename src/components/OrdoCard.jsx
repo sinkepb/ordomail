@@ -297,7 +297,7 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId }) {
+function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [] }) {
   const [expanded, setExpanded] = useState(false);
   const isNew  = group.ordonnances.some(o => o.status === "nouveau");
   const nom    = group.extracted?.nom || group.fromName || "Patient";
@@ -362,6 +362,30 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
             <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a" }}>{nom}</div>
           </div>
         </div>
+
+        {/* Intérêts offres du patient */}
+        {interets.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {interets.map(int => (
+              <div key={int.id} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "7px 12px", marginBottom: 5,
+                background: "#fff8e1", borderRadius: 10,
+                border: "1.5px solid #fde68a",
+              }}>
+                <span style={{ fontSize: 18 }}>{int.offre_emoji || "🎁"}</span>
+                <div>
+                  <div style={{ fontSize: 11, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Intéressé(e) par
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#78350f" }}>
+                    {int.offre_titre}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Liste des ordonnances du groupe */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>

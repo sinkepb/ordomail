@@ -11,6 +11,7 @@ import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
   updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
   exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
   isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
+  fetchInteretsDuJour,
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
@@ -1204,6 +1205,7 @@ function BottomNav({ tab, showLogs, canAdmin, setTab, setShowLogs }) {
 function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "admin", userId = "demo" }) {
   const [pharmacie, setPharmacie] = useState(null);
   const [ordonnances, setOrdonnances] = useState([]);
+  const [interetsDuJour, setInteretsDuJour] = useState([]); // intérêts offres du jour
   const [dashLoading, setDashLoading] = useState(true);
   const [tab, setTab] = useState("ordonnances");
   const [showLogs, setShowLogs] = useState(false);
@@ -1278,6 +1280,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
       if (ph) setPharmacie(ph);
       if (ordos) {
         setOrdonnances(ordos);
+          // Charger les intérêts du jour
+          fetchInteretsDuJour(pharmacieId).then(interets => setInteretsDuJour(interets));
         // OCR sur les ordonnances déjà en base sans extraction
         setTimeout(() => triggerOcrOnNew(ordos), 2000);
       }
@@ -1335,15 +1339,16 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         const key = `${o.code_patient}-${toDateKey(o.receivedAt || new Date())}`;
         if (groups[key]) {
           groups[key].ordonnances.push(o);
-          // Garder le status "nouveau" si au moins une ordonnance est nouvelle
           if (o.status === "nouveau") groups[key].status = "nouveau";
         } else {
-          const group = { ...o, _isGroup: true, ordonnances: [o] };
+          // Attacher les intérêts à ce groupe
+          const groupInterets = interetsDuJour.filter(i => i.code_patient === o.code_patient);
+          const group = { ...o, _isGroup: true, ordonnances: [o], interets: groupInterets };
           groups[key] = group;
           result.push(group);
         }
       } else {
-        result.push({ ...o, _isGroup: false, ordonnances: [o] });
+        result.push({ ...o, _isGroup: false, ordonnances: [o], interets: [] });
       }
     }
     return result;
@@ -1463,6 +1468,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                   if (o._isGroup && o.ordonnances.length > 1) {
                     return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)}
                       group={o} couleur={couleur}
+                      interets={o.interets || []}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
                       onView={async (ordo)=>{
                         handleViewOrdo(ordo.id);
@@ -1517,6 +1523,25 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                             🖨️ Tout imprimer
                           </button>
                         </div>
+                        {/* Intérêts offres du patient */}
+                        {(o.interets||[]).length > 0 && (
+                          <div style={{marginBottom:8}}>
+                            {(o.interets||[]).map(int=>(
+                              <div key={int.id} style={{
+                                display:"flex",alignItems:"center",gap:8,
+                                padding:"5px 10px",marginBottom:4,
+                                background:"#fff8e1",borderRadius:8,
+                                border:"1.5px solid #fde68a",
+                              }}>
+                                <span style={{fontSize:16}}>{int.offre_emoji||"🎁"}</span>
+                                <span style={{fontSize:12,fontWeight:700,color:"#92400e"}}>
+                                  Intéressé(e) : {int.offre_titre}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Lignes individuelles */}
                         {o.ordonnances.map((ord,idx)=>(
                           <div key={ord.id} style={{display:"flex",alignItems:"center",gap:8,
