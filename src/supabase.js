@@ -674,3 +674,17 @@ export async function updateSonnetteActive(pharmacieId, active) {
     .eq('id', pharmacieId);
   return { ok: !error };
 }
+
+// ─── Mode démo : ajouter une ordonnance dans la DB mémoire ───────────────────
+export function addOrdonnance(pharmacieId, ordo) {
+  const db = getDB();
+  if (!db) { console.warn("[addOrdonnance] DB non initialisée"); return; }
+  const ph = db.pharmacies.find(p => p.id === pharmacieId);
+  if (!ph) { console.warn("[addOrdonnance] Pharmacie introuvable:", pharmacieId); return; }
+  if (!ph.ordonnances) ph.ordonnances = [];
+  ph.ordonnances.unshift(ordo);
+  // Notifier les listeners Realtime démo
+  if (_listeners[pharmacieId]) {
+    _listeners[pharmacieId].forEach(fn => fn(ordo));
+  }
+}

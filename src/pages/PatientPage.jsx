@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 
@@ -239,11 +239,19 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
             // Insérer les offres en 2ème position
             base.splice(1, 0, ...offreStories);
           }
-        } catch(e) { console.warn("[offres_stories] Erreur:", e.message, "→ pas d'offres affichées"); }
+        } catch(e) {
+          console.warn("[offres_stories] Erreur:", e.message);
+          // Fallback : afficher offres démo si Supabase indisponible
+          const demoFallback = [
+            { id:"offre-fb-1", offreType:"promo", emoji:"🏷️",
+              bg:["#dc2626","#b91c1c"], title:"-20% Doliprane",
+              text:"Offre de bienvenue.", type:"offre", badge:"-20%" },
+          ];
+          base.splice(1, 0, ...demoFallback);
+        }
       }
 
-      console.log("[PatientStories] stories chargées:", base.length, "types:", base.map(s=>s.type).join(", "));
-      console.log("[PatientStories] pharmacie.id:", pharmacie?.id, "isDemoMode:", isDemoMode);
+      console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", pharmacie?.id, "demo:", isDemoMode);
       setAllStories(base);
     }
 
