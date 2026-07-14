@@ -81,7 +81,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette }) {
+function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email  = ordo.fromEmail || "";
@@ -183,8 +183,8 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
               )}
             </div>
           )}
-          {/* Bouton sonnette — si ordonnance via QR */}
-          {ordo.code_patient && onSonnette && (
+          {/* Bouton sonnette */}
+          {onSonnette && sonnetteActive !== false && (
             <button onClick={onSonnette} title="Appeler le patient"
               style={{
                 padding: "13px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
