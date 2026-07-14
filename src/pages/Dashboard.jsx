@@ -7,12 +7,26 @@ import { OrdoCard, OrdoRow, AttachmentThumb, OrdoGroup } from "../components/Ord
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
-import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
-  updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
-  exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
-  isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
-  fetchInteretsDuJour, appellerPatient, updateSonnetteActive,
+import {
+  fetchPharmacie,
+  savePharmacie,
+  savePostes,
+  fetchOrdonnances,
+  updateOrdoStatus,
+  subscribeToPharmacy,
+  addAuditLog,
+  getAuditLogs,
+  exportLogsCSV,
+  fetchAbonnement,
+  fetchFactures,
+  changePlan,
+  isDemoMode,
+  getSupabaseClient,
+  getSignedUrl,
+  registerDB,
+  fetchInteretsDuJour,
   appellerPatient,
+  updateSonnetteActive,
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
