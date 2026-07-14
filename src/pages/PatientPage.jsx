@@ -818,7 +818,6 @@ function PatientPage({ pharmacie, onBack }) {
         <div style={{ fontSize:11, color:"#bbb", textAlign:"center" }}>Données transmises de manière sécurisée à votre pharmacie uniquement.</div>
       </div>
     </div>
-      </div>
   );
 }
 
