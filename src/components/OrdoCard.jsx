@@ -81,7 +81,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId }) {
+function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email  = ordo.fromEmail || "";
@@ -182,6 +182,16 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
                 </button>
               )}
             </div>
+          )}
+          {/* Bouton sonnette — si ordonnance via QR */}
+          {ordo.code_patient && onSonnette && (
+            <button onClick={onSonnette} title="Appeler le patient"
+              style={{
+                padding: "13px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 9, background: "#f0f4ff", cursor: "pointer", fontSize: 18,
+              }}>
+              🔔
+            </button>
           )}
           <button onClick={onPrint} style={{
             flex: 1, padding: "13px 8px", border: "none", borderRadius: 9,
@@ -294,7 +304,7 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [] }) {
+function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette }) {
   const [expanded, setExpanded] = useState(false);
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew  = group.ordonnances.some(o => o.status === "nouveau");
@@ -340,6 +350,18 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
           }}>
             {count} ordonnance{count > 1 ? "s" : ""}
           </div>
+          {/* Bouton sonnette */}
+          {onSonnette && (
+            <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
+              title="Appeler le patient"
+              style={{
+                background: "rgba(255,255,255,0.2)", border: "1.5px solid rgba(255,255,255,0.4)",
+                borderRadius: 8, padding: "4px 10px", cursor: "pointer",
+                fontSize: 18, lineHeight: 1,
+              }}>
+              🔔
+            </button>
+          )}
           {/* Badge intérêts */}
           {interets.length > 0 && (
             <div style={{

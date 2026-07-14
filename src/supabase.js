@@ -557,3 +557,120 @@ export async function fetchInteretsDuJour(pharmacieId) {
   return data || [];
 }
 
+
+// ─── Sonnette patient ─────────────────────────────────────────────────────────
+
+// Vendeur → appeler un patient
+export async function appellerPatient(pharmacieId, codePatient, posteNom) {
+  if (IS_DEMO) {
+    // Mode démo : stocker dans window pour que PatientPage le lise
+    if (!window.__ordomailDB) window.__ordomailDB = {};
+    if (!window.__ordomailDB.appels) window.__ordomailDB.appels = [];
+    window.__ordomailDB.appels.push({
+      id: `app-${Date.now()}`,
+      pharmacie_id: pharmacieId,
+      code_patient: codePatient,
+      poste_nom: posteNom,
+      created_at: new Date().toISOString(),
+    });
+    // Déclencher un event custom pour que PatientPage réagisse en démo
+    window.dispatchEvent(new CustomEvent('ordomail:appel', {
+      detail: { codePatient, posteNom }
+    }));
+    return true;
+  }
+  const sb = getSupabase();
+  const { error } = await sb.from('appels_patient').insert({
+    pharmacie_id: pharmacieId,
+    code_patient: codePatient,
+    poste_nom: posteNom || 'Caisse',
+  });
+  return !error;
+}
+
+// Patient → écouter les appels (Realtime)
+export function ecouterAppels(pharmacieId, codePatient, onAppel) {
+  if (IS_DEMO) {
+    // Mode démo : écouter l'event custom
+    const handler = (e) => {
+      if (e.detail.codePatient === codePatient) onAppel(e.detail);
+    };
+    window.addEventListener('ordomail:appel', handler);
+    return () => window.removeEventListener('ordomail:appel', handler);
+  }
+  const sb = getSupabase();
+  const channel = sb
+    .channel(`appels:${pharmacieId}:${codePatient}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'appels_patient',
+      filter: `pharmacie_id=eq.${pharmacieId}`,
+    }, (payload) => {
+      if (payload.new.code_patient === codePatient) {
+        onAppel(payload.new);
+      }
+    })
+    .subscribe();
+  return () => sb.removeChannel(channel);
+}
+
+// Activer/désactiver sonnette (admin backoffice)
+export async function setSonnetteActive(pharmacieId, active) {
+  const sb = getSupabase();
+  await sb.from('pharmacies').update({ sonnette_active: active }).eq('id', pharmacieId);
+}
+
+
+// ─── Sonnette patient ─────────────────────────────────────────────────────────
+
+export async function appellerPatient(pharmacieId, codePatient) {
+  if (IS_DEMO) {
+    // Mode démo : event custom sur window
+    window.dispatchEvent(new CustomEvent('ordomail:appel', {
+      detail: { pharmacie_id: pharmacieId, code_patient: codePatient }
+    }));
+    return { ok: true };
+  }
+  const sb = getSupabase();
+  const { error } = await sb.from('appels_patient').insert({
+    pharmacie_id: pharmacieId,
+    code_patient: codePatient,
+  });
+  return { ok: !error };
+}
+
+export function ecouterAppels(pharmacieId, codePatient, callback) {
+  if (IS_DEMO) {
+    // Mode démo : écouter l'event custom
+    const handler = (e) => {
+      if (e.detail?.code_patient === codePatient) callback(e.detail);
+    };
+    window.addEventListener('ordomail:appel', handler);
+    return () => window.removeEventListener('ordomail:appel', handler);
+  }
+  // Mode prod : Supabase Realtime
+  const sb = getSupabase();
+  const channel = sb.channel(`appels:${pharmacieId}:${codePatient}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'appels_patient',
+      filter: `pharmacie_id=eq.${pharmacieId}`,
+    }, (payload) => {
+      if (payload.new?.code_patient === codePatient) {
+        callback(payload.new);
+      }
+    })
+    .subscribe();
+  return () => sb.removeChannel(channel);
+}
+
+export async function updateSonnetteActive(pharmacieId, active) {
+  if (IS_DEMO) return { ok: true };
+  const sb = getSupabase();
+  const { error } = await sb.from('pharmacies')
+    .update({ sonnette_active: active })
+    .eq('id', pharmacieId);
+  return { ok: !error };
+}

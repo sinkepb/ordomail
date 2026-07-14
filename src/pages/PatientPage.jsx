@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, fetchPharmacie } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 
@@ -53,12 +53,41 @@ const HEALTH_STORIES = [
     text: "Votre pharmacie propose souvent la vaccination sans RDV, des bilans de médication gratuits et la livraison à domicile.",
     type: "info",
   },
+  {
+    id: 6, emoji: "🔔",
+    bg: ["#1a3a6e", "#0f2347"],
+    title: "Restez ici !",
+    text: "Gardez cette page ouverte. Votre pharmacien vous appellera et votre téléphone vibrera quand ce sera votre tour.",
+    type: "info",
+  },
 ];
 
 function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
   const [quizAnswer, setQuizAnswer] = useState(null);
+  const [appele, setAppele]         = useState(false);
+
+  useEffect(() => {
+    if (!pharmacie?.id || !codePatient) return;
+    const unsub = ecouterAppels(pharmacie.id, codePatient, (data) => {
+      if ('vibrate' in navigator) navigator.vibrate([400, 200, 400, 200, 400]);
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [0, 0.4, 0.8].forEach(delay => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.3);
+          osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.3);
+        });
+      } catch(e) {}
+      setAppel(data);
+      setTimeout(() => setAppel(null), 8000);
+    });
+    return unsub;
+  }, [pharmacie?.id, codePatient]);
 
   // Toggle intérêt patient pour une offre
   async function toggleInteret(story) {
@@ -123,7 +152,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const timerRef = useRef(null);
   const DURATION = 6000;
   const [allStories, setAllStories] = useState(HEALTH_STORIES);
-  const [interets, setInterets]     = useState({}); // { offre_id: true/false }
+  const [interets, setInterets]     = useState({});
+  const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -299,6 +329,38 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         userSelect: "none",
       }}>
 
+      {/* ── Bandeau appel sonnette ── */}
+      {appel && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, zIndex: 200,
+          background: "linear-gradient(135deg,#1a3a6e,#0f2347)",
+          padding: "18px 20px", display: "flex", alignItems: "center", gap: 14,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+          animation: "slideDown 0.3s ease-out",
+        }}>
+          <div style={{ fontSize: 40, animation: "ring 0.4s ease-in-out 4" }}>🔔</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", marginBottom: 2 }}>
+              {"C'est votre tour !"}
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              {appel.poste_nom || "Le pharmacien"} {"vous attend au comptoir"}
+            </div>
+          </div>
+          <button onClick={() => setAppel(null)} style={{
+            background: "rgba(255,255,255,0.2)", border: "1.5px solid rgba(255,255,255,0.4)",
+            borderRadius: 10, color: "#fff", padding: "8px 16px",
+            fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            {"J'arrive ✓"}
+          </button>
+        </div>
+      )}
+      <style>{`
+        @keyframes ring { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-18deg)} 75%{transform:rotate(18deg)} }
+        @keyframes slideDown { from{transform:translateY(-100%);opacity:0} to{transform:translateY(0);opacity:1} }
+      `}</style>
+
       {/* Barres de progression */}
       <div style={{ display: "flex", gap: 4, padding: "14px 16px 8px", position: "relative", zIndex: 10 }}>
         {allStories.map((s, i) => (
@@ -435,6 +497,29 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
       )}
 
       {/* Bouton fin de stories */}
+      {/* Sonnette — overlay plein ecran */}
+      {appele && (
+        <div style={{
+          position:"absolute",top:0,left:0,right:0,bottom:0,zIndex:50,
+          background:"rgba(0,0,0,0.8)",display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",backdropFilter:"blur(8px)",
+        }}>
+          <div style={{fontSize:72,marginBottom:16}}>🔔</div>
+          <div style={{fontSize:26,fontWeight:900,color:"#fff",textAlign:"center",marginBottom:8}}>
+            C&apos;est votre tour !
+          </div>
+          <div style={{fontSize:15,color:"rgba(255,255,255,0.8)",textAlign:"center",marginBottom:28}}>
+            Votre pharmacien vous appelle au comptoir
+          </div>
+          <button onClick={()=>setAppele(false)}
+            style={{padding:"14px 32px",borderRadius:14,border:"none",
+              background:"#fff",color:"#1a3a6e",fontWeight:800,fontSize:16,
+              cursor:"pointer",fontFamily:"inherit"}}>
+            J&apos;arrive ! 👋
+          </button>
+        </div>
+      )}
+
       {/* Bandeau code patient — visible sur TOUTES les stories */}
       {codePatient && (
         <div style={{
@@ -725,6 +810,7 @@ function PatientPage({ pharmacie, onBack }) {
         <div style={{ fontSize:11, color:"#bbb", textAlign:"center" }}>Données transmises de manière sécurisée à votre pharmacie uniquement.</div>
       </div>
     </div>
+      </div>
   );
 }
 

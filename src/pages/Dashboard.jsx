@@ -11,7 +11,8 @@ import { fetchPharmacie, savePharmacie, savePostes, fetchOrdonnances,
   updateOrdoStatus, subscribeToPharmacy, addAuditLog, getAuditLogs,
   exportLogsCSV, fetchAbonnement, fetchFactures, changePlan,
   isDemoMode, getSupabaseClient, getSignedUrl, registerDB,
-  fetchInteretsDuJour,
+  fetchInteretsDuJour, appellerPatient, updateSonnetteActive,
+  appellerPatient,
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
@@ -1473,6 +1474,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)}
                       group={o} couleur={couleur}
                       interets={o.interets || []}
+                      onSonnette={pharmacie?.sonnette_active !== false ? () => appellerPatient(pharmacieId, o.code_patient, session?.posteNom || "Caisse") : null}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
                       onView={async (ordo)=>{
                         handleViewOrdo(ordo.id);
@@ -1486,6 +1488,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                       loadingId={loadingId}/>;
                   }
                   return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
+                    sonnetteActive={pharmacie?.sonnette_active !== false}
+                    onSonnette={o.code_patient ? ()=>appellerPatient(pharmacieId, o.code_patient) : null}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
                     onView={()=>{handleViewOrdo(o.id);(async () => {
               const a = o.attachments?.[0];
@@ -1498,6 +1502,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}
+                    onSonnette={o.code_patient && pharmacie?.sonnette_active !== false ? () => appellerPatient(pharmacieId, o.code_patient, session?.posteNom || "Caisse") : null}
                     loadingId={loadingId}/>;
                 })}
               </div>

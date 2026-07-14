@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
+import { updateSonnetteActive } from "../supabase.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { PLANS } from "../lib/utils.js";
 
@@ -1083,6 +1084,26 @@ function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClear
           {msg}
         </div>
       )}
+      {/* Toggle sonnette */}
+      <div style={{marginTop:16,padding:"14px 16px",background:"#1e293b",borderRadius:12,border:"1px solid #334155",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:13,color:"#fff"}}>🔔 Sonnette patient</div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Appel du patient au comptoir</div>
+        </div>
+        <button
+          onClick={async()=>{
+            const newVal = pharmacie.sonnette_active === false ? true : false;
+            await updateSonnetteActive(pharmacie.id, newVal);
+            pharmacie.sonnette_active = newVal;
+            onRefresh();
+          }}
+          style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,
+            background:pharmacie.sonnette_active!==false?"#14532d":"#450a0a",
+            color:pharmacie.sonnette_active!==false?"#86efac":"#fca5a5"}}>
+          {pharmacie.sonnette_active!==false?"✅ Activée":"❌ Désactivée"}
+        </button>
+      </div>
+
       <button onClick={()=>onSave(pharmacie.id, plan, postesActifs)} disabled={saving}
         style={{width:"100%",marginTop:16,padding:"13px",border:"none",borderRadius:10,background:saving?"#1e3a5f":"#3b82f6",color:"#fff",fontWeight:800,fontSize:15,cursor:saving?"not-allowed":"pointer",fontFamily:"inherit"}}>
         {saving ? "Enregistrement…" : "✅ Valider le contrat"}
