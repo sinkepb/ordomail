@@ -1503,7 +1503,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                   }
                   return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
-                    onSonnette={o.code_patient ? ()=>appellerPatient(pharmacieId, o.code_patient) : null}
+                    onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
                     onView={()=>{handleViewOrdo(o.id);(async () => {
               const a = o.attachments?.[0];
@@ -1516,7 +1516,6 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}
-                    onSonnette={o.code_patient && pharmacie?.sonnette_active !== false ? () => appellerPatient(pharmacieId, o.code_patient, session?.posteNom || "Caisse") : null}
                     loadingId={loadingId}/>;
                 })}
               </div>
