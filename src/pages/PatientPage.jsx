@@ -1,3 +1,4 @@
+// @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
@@ -215,14 +216,19 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         // base reste HEALTH_STORIES par défaut
       }
 
-      // Charger offres pharmacie — toujours essayer même si stories_content a échoué
-      if (pharmacie?.id) {
+      // Charger offres pharmacie — uniquement si pharmacie connue
+      const pharmaId = pharmacie?.id;
+      console.log("[PatientStories] chargement offres, pharmacie.id:", pharmaId);
+      if (pharmaId) {
         try {
-          const { data: offres } = await sb
+          const { data: offres, error: offresErr } = await sb
             .from("offres_stories")
             .select("*")
-            .eq("pharmacie_id", pharmacie.id)
+            .eq("pharmacie_id", pharmaId)
             .eq("actif", true);
+
+          console.log("[PatientStories] offres reçues:", offres?.length ?? 0, "erreur:", offresErr?.message);
+
           if (offres && offres.length > 0) {
             const offreStories = offres
               .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
@@ -237,19 +243,16 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
                 type: "offre",
                 badge: o.badge || null,
               }));
-            // Insérer les offres en 2ème position
             base.splice(1, 0, ...offreStories);
+            console.log("[PatientStories] offres injectées:", offreStories.length);
+          } else {
+            console.log("[PatientStories] aucune offre active pour cette pharmacie");
           }
         } catch(e) {
           console.warn("[offres_stories] Erreur:", e.message);
-          // Fallback : afficher offres démo si Supabase indisponible
-          const demoFallback = [
-            { id:"offre-fb-1", offreType:"promo", emoji:"🏷️",
-              bg:["#dc2626","#b91c1c"], title:"-20% Doliprane",
-              text:"Offre de bienvenue.", type:"offre", badge:"-20%" },
-          ];
-          base.splice(1, 0, ...demoFallback);
         }
+      } else {
+        console.log("[PatientStories] pharmacie.id inconnu — pas d'offres");
       }
 
       console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", pharmacie?.id, "demo:", isDemoMode);
