@@ -365,29 +365,16 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
             <div style={{ fontSize: 10, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Patient</div>
             <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
           </div>
-          {/* Sonnette + intérêts à droite du nom */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            {interets.length > 0 && (
-              <div style={{
-                fontSize: 11, fontWeight: 800, padding: "3px 8px",
-                borderRadius: 20, background: "#fef3c7",
-                color: "#92400e", border: "1px solid #fde68a",
-              }}>
-                🎯 {interets.length}
-              </div>
-            )}
-            {onSonnette && (
-              <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
-                title="Appeler le patient"
-                style={{
-                  background: "#fffbeb", border: "2px solid #fde68a",
-                  borderRadius: 10, padding: "6px 12px", cursor: "pointer",
-                  fontSize: 18, lineHeight: 1, fontFamily: "inherit",
-                }}>
-                🔔
-              </button>
-            )}
-          </div>
+          {/* Badge intérêts à droite du nom */}
+          {interets.length > 0 && (
+            <div style={{
+              fontSize: 11, fontWeight: 800, padding: "3px 8px", flexShrink: 0,
+              borderRadius: 20, background: "#fef3c7",
+              color: "#92400e", border: "1px solid #fde68a",
+            }}>
+              🎯 {interets.length}
+            </div>
+          )}
         </div>
 
         {/* Intérêts offres du patient */}
@@ -451,11 +438,23 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       </div>
 
       {/* Actions globales */}
-      <div style={{ padding: "0 14px 14px" }}>
+      <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
+        {/* Sonnette — même ligne que le bouton imprimer */}
+        {onSonnette && (
+          <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
+            title="Appeler le patient"
+            style={{
+              padding: "12px 14px", border: "2px solid #fde68a",
+              borderRadius: 9, background: "#fffbeb", cursor: "pointer",
+              fontSize: 20, lineHeight: 1, flexShrink: 0, fontFamily: "inherit",
+            }}>
+            🔔
+          </button>
+        )}
         <button
           onClick={() => group.ordonnances.filter(o => o.status === 'nouveau').forEach(o => onPrint(o))}
           style={{
-            width: "100%", padding: "12px", border: "none", borderRadius: 9,
+            flex: 1, padding: "12px", border: "none", borderRadius: 9,
             background: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
               ? accent.bandeau : "#e2e8f0",
             color: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
