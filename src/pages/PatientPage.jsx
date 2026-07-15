@@ -221,16 +221,19 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
       console.log("[PatientStories] chargement offres, pharmacie.id:", capturedPharmaId);
       if (capturedPharmaId) {
         try {
-          const { data: offres, error: offresErr } = await sb
-            .from("offres_stories")
-            .select("*")
-            .eq("pharmacie_id", capturedPharmaId)
-            .eq("actif", true);
-
-          console.log("[PatientStories] offres reçues:", offres?.length ?? 0, "erreur:", offresErr?.message, "code:", offresErr?.code);
-          if (offresErr) {
-            console.error("[PatientStories] ERREUR COMPLÈTE offres:", JSON.stringify(offresErr));
-          }
+          // Fetch direct REST pour compatibilité maximale mobile
+          const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          const url = `${supabaseUrl}/rest/v1/offres_stories?pharmacie_id=eq.${capturedPharmaId}&actif=eq.true&select=*`;
+          const resp = await fetch(url, {
+            headers: {
+              "apikey": supabaseKey,
+              "Authorization": `Bearer ${supabaseKey}`,
+              "Content-Type": "application/json",
+            },
+          });
+          const offres = resp.ok ? await resp.json() : [];
+          console.log("[PatientStories] offres reçues (fetch direct):", offres?.length ?? 0, "status:", resp.status);
 
           if (offres && offres.length > 0) {
             const offreStories = offres
@@ -252,7 +255,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
             console.log("[PatientStories] aucune offre active pour cette pharmacie");
           }
         } catch(e) {
-          console.warn("[offres_stories] Erreur:", e.message);
+          console.warn("[offres_stories] Erreur fetch:", e.message);
         }
       } else {
         console.log("[PatientStories] pharmacie.id inconnu — pas d'offres");
