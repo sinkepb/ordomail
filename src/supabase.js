@@ -574,11 +574,13 @@ export async function setSonnetteActive(pharmacieId, active) {
 // ─── Sonnette patient ─────────────────────────────────────────────────────────
 
 export async function appellerPatient(pharmacieId, codePatient) {
+  console.log("[SONNETTE] appel pharmacie:", pharmacieId, "code:", codePatient, "demo:", IS_DEMO);
   if (IS_DEMO) {
     // Mode démo : event custom sur window
     window.dispatchEvent(new CustomEvent('ordomail:appel', {
       detail: { pharmacie_id: pharmacieId, code_patient: codePatient }
     }));
+    console.log("[SONNETTE] event dispatché");
     return { ok: true };
   }
   const sb = getSupabase();
@@ -590,9 +592,10 @@ export async function appellerPatient(pharmacieId, codePatient) {
 }
 
 export function ecouterAppels(pharmacieId, codePatient, callback) {
+  console.log("[SONNETTE] écoute pharmacie:", pharmacieId, "code:", codePatient, "demo:", IS_DEMO);
   if (IS_DEMO) {
-    // Mode démo : écouter l'event custom
     const handler = (e) => {
+      console.log("[SONNETTE] event reçu, code event:", e.detail?.code_patient, "code attendu:", codePatient);
       if (e.detail?.code_patient === codePatient) callback(e.detail);
     };
     window.addEventListener('ordomail:appel', handler);

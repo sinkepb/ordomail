@@ -69,6 +69,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const [appele, setAppele]         = useState(false);
 
   useEffect(() => {
+    console.log("[SONNETTE] écoute code:", codePatient, "pharmacie:", pharmacie?.id);
     if (!pharmacie?.id || !codePatient) return;
     const unsub = ecouterAppels(pharmacie.id, codePatient, (data) => {
       if ('vibrate' in navigator) navigator.vibrate([400, 200, 400, 200, 400]);
@@ -83,8 +84,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
           osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.3);
         });
       } catch(e) {}
-      setAppel(data);
-      setTimeout(() => setAppel(null), 8000);
+      setAppele(true);
+      setTimeout(() => setAppele(false), 8000);
     });
     return unsub;
   }, [pharmacie?.id, codePatient]);
@@ -400,17 +401,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
         <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
 
-        {/* Code patient affiché EN GRAND sur la 1ère story */}
-        {story.id === 1 && codePatient && (
-          <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: 80, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 12, lineHeight: 1, textShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
-              {codePatient}
-            </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginTop: 8, fontWeight: 600 }}>
-              ← Montrez ce code au pharmacien →
-            </div>
-          </div>
-        )}
+
 
         {/* Story info */}
         {!isQuiz && !isOffre && (
@@ -528,32 +519,29 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         </div>
       )}
 
-      {/* Bandeau code patient — visible sur TOUTES les stories */}
+      {/* Bandeau code patient — EN HAUT sur toutes les stories */}
       {codePatient && (
         <div style={{
-          position: "absolute", bottom: current === allStories.length - 1 && progress > 80 ? 90 : 24,
-          left: 0, right: 0, zIndex: 20,
-          display: "flex", flexDirection: "column", alignItems: "center",
-          transition: "bottom 0.3s",
+          position: "absolute", top: 48, left: 0, right: 0, zIndex: 20,
+          display: "flex", justifyContent: "center",
+          pointerEvents: "none",
         }}>
           <div style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(8px)",
-            borderRadius: 20,
-            padding: "10px 28px",
-            display: "flex", alignItems: "center", gap: 14,
-            border: "1.5px solid rgba(255,255,255,0.2)",
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(10px)",
+            borderRadius: 14,
+            padding: "8px 20px",
+            display: "flex", alignItems: "center", gap: 12,
+            border: "1.5px solid rgba(255,255,255,0.25)",
           }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 2 }}>
-                Votre code
-              </div>
-              <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 6, lineHeight: 1 }}>
-                {codePatient}
-              </div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" }}>
+              Votre code
             </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", maxWidth: 120, lineHeight: 1.4 }}>
-              Donnez ce code au pharmacien
+            <div style={{ fontSize: 28, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 5, lineHeight: 1 }}>
+              {codePatient}
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", maxWidth: 90, lineHeight: 1.3 }}>
+              À donner au pharmacien
             </div>
           </div>
         </div>
