@@ -1537,6 +1537,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     );
                   })}
                 </div>
+              </div>}
               </div>
               <div style={{flex:1,position:"relative",minWidth:120}}>
                 <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
