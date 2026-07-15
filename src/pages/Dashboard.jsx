@@ -1,3 +1,4 @@
+// @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, C } from "../lib/utils.js";
@@ -652,10 +653,20 @@ function ParametresTab({ pharmacie, onSave }) {
                       // Sauvegarder le PIN en Supabase via Edge Function update-pin
                       try {
                         const sb = getSupabaseClient();
-                        if(sb && !isDemoMode) {
+                        if(isDemoMode) {
+                          // Mode démo : sauvegarder le PIN dans la DB mémoire
+                          const db = window._ordomailDB || window.__ordomailDB;
+                          if (db) {
+                            const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                            if (ph) {
+                              const posteIdx = (ph.postes || []).findIndex(p => p.id === poste.id);
+                              if (posteIdx !== -1) ph.postes[posteIdx].pin = v;
+                            }
+                          }
+                        } else {
                           await sb.functions.invoke("update-pin", { body:{ posteId: poste.id, pin: v } });
                         }
-                        setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,_pinSaved:true}:p));
+                        setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,_pinSaved:true,pin:v}:p));
                       } catch(err) {
                         console.error("[PIN save]", err.message);
                       }
@@ -663,8 +674,37 @@ function ParametresTab({ pharmacie, onSave }) {
                     placeholder="••••"
                     style={{width:80,border:`1.5px solid ${poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none",transition:"border 0.2s"}}/>
                   <span style={{fontSize:11,fontWeight:600,color:poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#94a3b8"}}>
-                    {poste._pinSaved?"✅ Enregistré":poste.pin&&poste.pin.length===4?"⏳ Saisissez pour enregistrer":"⚠️ PIN manquant"}
+                    {poste._pinSaved ? "✅ Enregistré" : poste.pin && poste.pin.length===4 ? "En attente..." : "⚠️ PIN manquant"}
                   </span>
+                  {poste.pin && poste.pin.length === 4 && !poste._pinSaved && (
+                    <button
+                      onClick={async () => {
+                        const v = poste.pin;
+                        try {
+                          const sb = getSupabaseClient();
+                          if (isDemoMode) {
+                            const db = window._ordomailDB || window.__ordomailDB;
+                            if (db) {
+                              const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                              if (ph) {
+                                const idx = (ph.postes||[]).findIndex(p => p.id === poste.id);
+                                if (idx !== -1) ph.postes[idx].pin = v;
+                              }
+                            }
+                          } else {
+                            await sb.functions.invoke("update-pin", { body: { posteId: poste.id, pin: v } });
+                          }
+                          setPostes(prev => prev.map(p => p.id===poste.id ? {...p, _pinSaved:true} : p));
+                        } catch(err) { console.error("[PIN save]", err.message); }
+                      }}
+                      style={{
+                        padding:"3px 10px", border:"none", borderRadius:6,
+                        background:"#1a3a6e", color:"#fff", fontWeight:700,
+                        fontSize:12, cursor:"pointer", fontFamily:"inherit",
+                      }}>
+                      Sauvegarder
+                    </button>
+                  )}
                   <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>Rôle : Vendeur</span>
                 </div>
               </div>
@@ -1679,6 +1719,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     );
                   }
                   return <OrdoRow key={o.id} ordo={o} couleur={couleur} accent={accent}
+                    sonnetteActive={pharmacie?.sonnette_active !== false}
+                    onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
                     onView={()=>(async () => {
               const a = o.attachments?.[0];
