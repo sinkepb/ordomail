@@ -4,6 +4,7 @@ import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
 import { PLAN_LIMITS } from "../lib/plans.js";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
 
+console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
 
 function BoutonProSanteConnect({ onClick, loading }) {
   return (
@@ -28,6 +29,7 @@ function LoginTabContent({ onLogin }) {
   const [pscLoading, setPscLoading] = useState(false);
   const [mode, setMode] = useState("choice"); // choice | email | pin | pin-code
   const [pin, setPin] = useState("");
+  const [code, setCode] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
   const [codePharmacien, setCodePharmacien] = useState(""); // code 6 chiffres
@@ -82,6 +84,29 @@ function LoginTabContent({ onLogin }) {
     setCodeLoading(false);
   }
 
+  async function handleCodePharmacieSubmit() {
+    if (code.length !== 6) return;
+    setCodeLoading(true); setCodeError("");
+    try {
+      if (isDemoMode) {
+        const db = window._ordomailDB || { pharmacies: [] };
+        const ph = db.pharmacies?.find(p => p.codeVendeur === code);
+        if (!ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+        setPharmacieInfo(ph);
+      } else {
+        const sb = getSupabaseClient();
+        const { data: ph, error } = await sb
+          .from("pharmacies")
+          .select("id, nom, couleur, code_vendeur")
+          .eq("code_vendeur", code)
+          .maybeSingle();
+        if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+        setPharmacieInfo(ph);
+      }
+    } catch(e) { setCodeError("Erreur de connexion"); }
+    setCodeLoading(false);
+  }
+
   async function handlePinDigit(d) {
     if (pin.length >= 4) return;
     const newPin = pin + d;
@@ -100,6 +125,97 @@ function LoginTabContent({ onLogin }) {
       }
     }
   }
+
+  if (mode === "pin-code") return (
+    <div>
+      <button onClick={() => { setMode("choice"); setCode(""); setCodeError(""); setPharmacieInfo(null); }}
+        style={{border:"none",background:"none",cursor:"pointer",color:"#94a3b8",fontSize:13,marginBottom:18,display:"flex",alignItems:"center",gap:5,fontFamily:"inherit"}}>
+        ← Retour
+      </button>
+
+      {!pharmacieInfo ? (
+        /* Étape 1 : saisie code pharmacie */
+        <div>
+          <div style={{textAlign:"center",marginBottom:22}}>
+            <div style={{fontSize:36,marginBottom:8}}>🏥</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#1a1a1a",marginBottom:4}}>Code pharmacie</div>
+            <div style={{fontSize:12,color:"#94a3b8"}}>Saisissez le code à 6 chiffres de votre pharmacie</div>
+          </div>
+          <input
+            type="tel" maxLength={6} value={code}
+            onChange={e => { setCode(e.target.value.replace(/[^0-9]/g,"")); setCodeError(""); }}
+            placeholder="123456"
+            style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",border:`2px solid ${codeError?"#ef4444":"#e2e8f0"}`,borderRadius:12,fontSize:28,fontFamily:"monospace",fontWeight:900,textAlign:"center",letterSpacing:8,outline:"none",marginBottom:12}}
+            autoFocus
+          />
+          {codeError && (
+            <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 14px",fontSize:13,color:"#dc2626",marginBottom:12,textAlign:"center"}}>{codeError}</div>
+          )}
+          <button
+            onClick={handleCodePharmacieSubmit}
+            disabled={code.length !== 6 || codeLoading}
+            style={{width:"100%",padding:"14px",border:"none",borderRadius:12,
+              background:code.length===6?"#1a3a6e":"#e2e8f0",
+              color:code.length===6?"#fff":"#94a3b8",
+              fontWeight:800,fontSize:15,cursor:code.length===6?"pointer":"default",fontFamily:"inherit"}}>
+            {codeLoading ? "Recherche…" : "→ Continuer"}
+          </button>
+          {isDemoMode && (
+            <div style={{marginTop:12,fontSize:11,color:"#aaa",textAlign:"center",lineHeight:2}}>
+              Démo : <code style={{background:"#dbeafe",padding:"1px 6px",borderRadius:3,fontWeight:700}}>123456</code> (Pharmacie Centrale)
+              &nbsp;ou&nbsp;
+              <code style={{background:"#dbeafe",padding:"1px 6px",borderRadius:3,fontWeight:700}}>654321</code> (Pharmacie du Soleil)
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Étape 2 : saisie PIN */
+        <div>
+          <div style={{textAlign:"center",marginBottom:22}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#475569",marginBottom:4}}>
+              🏥 {pharmacieInfo.nom}
+            </div>
+            <div style={{fontSize:12,color:"#94a3b8"}}>Saisissez votre code PIN à 4 chiffres</div>
+          </div>
+          <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:26}}>
+            {[0,1,2,3].map(i=>(
+              <div key={i} style={{width:18,height:18,borderRadius:"50%",
+                background:i<pin.length?"#1a3a6e":"#e2e8f0",
+                border:`2px solid ${i<pin.length?"#1a3a6e":"#cbd5e1"}`,
+                transition:"all 0.15s",transform:i<pin.length?"scale(1.15)":"scale(1)"}}/>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:240,margin:"0 auto 14px"}}>
+            {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
+              <button key={i}
+                onClick={()=>{ if(d==="⌫"){setPin(p=>p.slice(0,-1));setPinError("");}else if(d!=="")handlePinDigit(String(d)); }}
+                disabled={pinLoading||(d!=="⌫"&&d!==""&&pin.length>=4)}
+                style={{height:56,border:d===""?"none":"1.5px solid #e2e8f0",borderRadius:12,
+                  background:d===""?"transparent":d==="⌫"?"#fef2f2":"#f8fafc",
+                  color:d==="⌫"?"#ef4444":"#1a1a1a",fontSize:d==="⌫"?18:22,
+                  fontWeight:700,cursor:d===""?"default":"pointer",fontFamily:"inherit",
+                  visibility:d===""?"hidden":"visible"}}>
+                {d}
+              </button>
+            ))}
+          </div>
+          {pinLoading && <div style={{textAlign:"center",color:"#1a3a6e",fontSize:13,fontWeight:600}}>🔐 Vérification…</div>}
+          {pinError && <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 14px",fontSize:13,color:"#dc2626",textAlign:"center"}}>{pinError}</div>}
+          {isDemoMode && (
+            <div style={{marginTop:14,padding:"10px 12px",background:"#f0f7ff",borderRadius:8,fontSize:11,color:"#555",lineHeight:1.8}}>
+              <div style={{fontWeight:700,marginBottom:2,color:"#1a3a6e"}}>PINs de démo :</div>
+              <div>🖥️ Poste Accueil → <code style={{background:"#dbeafe",padding:"1px 5px",borderRadius:3}}>1234</code></div>
+              <div>🖥️ Poste Caisse → <code style={{background:"#dbeafe",padding:"1px 5px",borderRadius:3}}>5678</code></div>
+            </div>
+          )}
+          <button onClick={()=>{setPharmacieInfo(null);setPin("");setPinError("");}}
+            style={{marginTop:12,background:"none",border:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"inherit",width:"100%",textAlign:"center"}}>
+            ← Changer de pharmacie
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   if (mode === "pin") return (
     <div>
@@ -172,13 +288,24 @@ function LoginTabContent({ onLogin }) {
       {/* Vendeur */}
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Vendeur / Préparateur</div>
-        <button onClick={()=>setMode("pin")} style={{width:"100%",padding:"13px 16px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#f8fafc",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:14}}
+        <button onClick={()=>setMode("pin-code")} style={{width:"100%",padding:"13px 16px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#f8fafc",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:14}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor="#1a3a6e";e.currentTarget.style.background="#f0f4ff";}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.background="#f8fafc";}}>
           <div style={{width:40,height:40,borderRadius:10,background:"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🖥️</div>
-          <div style={{textAlign:"left"}}><div style={{fontWeight:700,fontSize:14,color:"#1a1a1a"}}>Connexion par code PIN</div><div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Saisissez votre code à 4 chiffres</div></div>
+          <div style={{textAlign:"left"}}>
+            <div style={{fontWeight:700,fontSize:14,color:"#1a1a1a"}}>Connexion vendeur</div>
+            <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Code pharmacie + code PIN à 4 chiffres</div>
+          </div>
           <span style={{marginLeft:"auto",color:"#c8d5e8",fontSize:18}}>→</span>
         </button>
+        {isDemoMode && (
+          <div style={{marginTop:8,fontSize:11,color:"#aaa",lineHeight:2,padding:"8px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
+            <div style={{fontWeight:700,color:"#475569",marginBottom:2}}>Codes démo :</div>
+            <div>🏥 Pharmacie Centrale → code <code style={{background:"#dbeafe",padding:"1px 6px",borderRadius:3,fontWeight:700}}>123456</code></div>
+            <div>🖥️ Poste Accueil → PIN <code style={{background:"#dbeafe",padding:"1px 6px",borderRadius:3,fontWeight:700}}>1234</code></div>
+            <div>🖥️ Poste Caisse → PIN <code style={{background:"#dbeafe",padding:"1px 6px",borderRadius:3,fontWeight:700}}>5678</code></div>
+          </div>
+        )}
       </div>
             {/* Séparateur */}
       <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}>
