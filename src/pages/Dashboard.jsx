@@ -559,7 +559,7 @@ function ParametresTab({ pharmacie, onSave }) {
       setPostes(prev => [...prev, newPoste]);
     } else {
       const sb = getSupabaseClient();
-      const { data, error } = await sb.from("postes")
+      const { data, error } = await sb.from("pharmacie_postes")
         .insert({ pharmacie_id: pharmacie.id, nom, actif: true })
         .select().single();
       if (!error && data) {
@@ -664,7 +664,13 @@ function ParametresTab({ pharmacie, onSave }) {
                             }
                           }
                         } else {
-                          await sb.functions.invoke("update-pin", { body:{ posteId: poste.id, pin: v } });
+                          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                          await fetch(`${supabaseUrl}/functions/v1/update-pin`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey },
+                            body: JSON.stringify({ posteId: poste.id, pin: v }),
+                          });
                         }
                         setPostes(prev=>prev.map(p=>p.id===poste.id?{...p,_pinSaved:true,pin:v}:p));
                       } catch(err) {

@@ -115,11 +115,21 @@ export async function authSignInPIN(pin, pharmacieId) {
     }
     return { error: new Error('PIN incorrect ou poste inactif') };
   }
-  // Mode prod : Edge Function verify-pin (bcrypt côté serveur)
-  const sb = getSupabase();
+  // Mode prod : fetch direct (pas sb.functions.invoke qui ajoute un token null → 401)
   try {
-    const { data, error } = await sb.functions.invoke('verify-pin', { body: { pin, pharmacieId } });
-    if (error || !data?.success) return { error: error || new Error('PIN incorrect') };
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/verify-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        // PAS de Authorization header — vendeur non authentifié
+      },
+      body: JSON.stringify({ pin, pharmacieId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.success) return { error: new Error(data?.error || 'PIN incorrect') };
     return { pharmacie: data.pharmacie, poste: data.poste, userRole: 'vendeur', userId: data.poste.id, posteNom: data.poste.nom };
   } catch(e) {
     return { error: new Error('Erreur de connexion: ' + e.message) };
@@ -199,7 +209,7 @@ export async function savePostes(pharmacieId, postes, pinChanges = {}) {
   const sb = getSupabase();
   // Upsert postes
   const rows = postes.map(p => ({ ...p, pharmacie_id: pharmacieId }));
-  const { data, error } = await sb.from('postes').upsert(rows).select();
+  const { data, error } = await sb.from('pharmacie_postes').upsert(rows).select();
   if (error) throw error;
   // Mettre à jour les PINs via Edge Function (bcrypt)
   for (const [posteId, newPin] of Object.entries(pinChanges)) {
