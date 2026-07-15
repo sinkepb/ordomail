@@ -1680,11 +1680,21 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                             <div style={{fontWeight:800,fontSize:15,color:"#1a1a1a"}}>{o.extracted?.nom||o.fromName||"Patient"}</div>
                             <div style={{fontSize:11,color:"#64748b"}}>{o.ordonnances.length} ordonnances · {timeAgo(o.receivedAt)}</div>
                           </div>
-                          <button onClick={()=>o.ordonnances.forEach(ord=>{handlePrintOrdo(ord.id);setPrintModal(ord);})}
-                            style={{padding:"8px 14px",border:"none",borderRadius:9,background:accent.bandeau,
-                              color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                            🖨️ Tout imprimer
-                          </button>
+                          <div style={{display:"flex",gap:6}}>
+                            {pharmacie?.sonnette_active !== false && (
+                              <button onClick={()=>appellerPatient(pharmacieId, o.code_patient)}
+                                title="Appeler le patient"
+                                style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",
+                                  borderRadius:9,background:"#f0f4ff",cursor:"pointer",fontSize:16}}>
+                                🔔
+                              </button>
+                            )}
+                            <button onClick={()=>o.ordonnances.forEach(ord=>{handlePrintOrdo(ord.id);setPrintModal(ord);})}
+                              style={{padding:"8px 14px",border:"none",borderRadius:9,background:accent.bandeau,
+                                color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                              🖨️ Tout imprimer
+                            </button>
+                          </div>
                         </div>
                         {/* Intérêts offres du patient */}
                         {(o.interets||[]).length > 0 && (
