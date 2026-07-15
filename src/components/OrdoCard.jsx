@@ -107,11 +107,21 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
             {isNew ? "📋 À TRAITER" : "✓ IMPRIMÉE"}
           </span>
-          {/* Icône source : ✉️ email / 📱 QR / ⬇️ upload */}
+          {/* Icône source */}
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
             {ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️"}
           </span>
-
+          {/* Code patient */}
+          {ordo.code_patient && (
+            <span style={{
+              fontSize: 14, fontWeight: 900, fontFamily: "monospace", letterSpacing: 2,
+              color: isNew ? "#fff" : accent.avatar,
+              background: "rgba(255,255,255,0.2)", borderRadius: 6,
+              padding: "1px 7px", border: "1px solid rgba(255,255,255,0.35)",
+            }}>
+              {ordo.code_patient}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 11, color: isNew ? "rgba(255,255,255,0.8)" : accent.avatar + "99" }}>{timeAgo(ordo.receivedAt)}</span>
       </div>
