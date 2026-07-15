@@ -1582,6 +1582,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)}
                       group={o} couleur={couleur}
                       interets={o.interets || []}
+                      sonnetteActive={pharmacie?.sonnette_active !== false}
                       onSonnette={pharmacie?.sonnette_active !== false ? () => appellerPatient(pharmacieId, o.code_patient, session?.posteNom || "Caisse") : null}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
                       onView={async (ordo)=>{

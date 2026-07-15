@@ -105,7 +105,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "🔔 À TRAITER" : "✓ IMPRIMÉE"}
+            {isNew ? "📋 À TRAITER" : "✓ IMPRIMÉE"}
           </span>
           {/* Icône source : ✉️ email / 📱 QR / ⬇️ upload */}
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
@@ -304,7 +304,7 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette }) {
+function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette, sonnetteActive }) {
   const [expanded, setExpanded] = useState(false);
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew  = group.ordonnances.some(o => o.status === "nouveau");
@@ -328,7 +328,7 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "🔔 À TRAITER" : "✓ IMPRIMÉE"}
+            {isNew ? "📋 À TRAITER" : "✓ IMPRIMÉE"}
           </span>
           <span style={{ fontSize: 12 }}>📱</span>
           {/* Code patient */}
@@ -440,8 +440,8 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       {/* Actions globales */}
       <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
         {/* Sonnette — même ligne que le bouton imprimer */}
-        {onSonnette && (
-          <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
+        {onSonnette && sonnetteActive !== false && (
+          <button onClick={() => onSonnette()}
             title="Appeler le patient"
             style={{
               padding: "12px 14px", border: "2px solid #fde68a",
