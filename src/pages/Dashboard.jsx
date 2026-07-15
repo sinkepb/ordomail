@@ -1380,7 +1380,43 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
   const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
   const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
-  const joursDispos = [...new Set([toDateKey(new Date()), ...(ordonnances||[]).map(o => toDateKey(o.receivedAt))])].sort().reverse();
+  // Calendrier complet : tous les jours du mois courant
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  // Jours qui ont des ordonnances
+  const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
+
+  // Générer tous les jours du mois affiché
+  const getDaysInMonth = (year, month) => {
+    const days = [];
+    const firstDay = new Date(year, month, 1).getDay(); // 0=dim
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    // Décalage lundi en premier (0=lun, 6=dim)
+    const offset = (firstDay + 6) % 7;
+    for (let i = 0; i < offset; i++) days.push(null); // cases vides
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      days.push(toDateKey(date));
+    }
+    return days;
+  };
+
+  const calDays = getDaysInMonth(calMonth.year, calMonth.month);
+  const today = toDateKey(new Date());
+
+  // Navigation mois
+  const prevMonth = () => setCalMonth(prev => {
+    const d = new Date(prev.year, prev.month - 1, 1);
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const nextMonth = () => setCalMonth(prev => {
+    const d = new Date(prev.year, prev.month + 1, 1);
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const monthLabel = new Date(calMonth.year, calMonth.month, 1)
+    .toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
   async function updateOrdo(id, patch) {
     // Mise à jour optimiste locale immédiate
@@ -1446,12 +1482,48 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
           <div style={{background:"#fff",borderBottom:"1px solid #e8eaf0",padding:"10px 16px",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,background:"#f0f2f8",borderRadius:10,padding:"5px 10px",flexShrink:0}}>
-                <span style={{fontSize:14}}>📅</span>
-                <select value={selectedDate} onChange={e=>{setSelectedDate(e.target.value);setSearchQuery("");}}
-                  style={{border:"none",background:"transparent",fontFamily:"inherit",fontSize:13,fontWeight:700,color:"#1a3a6e",cursor:"pointer",outline:"none"}}>
-                  {joursDispos.map(d=><option key={d} value={d}>{formatDateLabel(d)}</option>)}
-                </select>
+              {/* Calendrier mensuel complet */}
+              <div style={{background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0",padding:"10px 12px",minWidth:260}}>
+                {/* Header mois */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <button onClick={prevMonth} style={{border:"none",background:"transparent",cursor:"pointer",fontSize:16,color:"#1a3a6e",padding:"0 6px"}}>‹</button>
+                  <span style={{fontWeight:800,fontSize:13,color:"#1a3a6e",textTransform:"capitalize"}}>{monthLabel}</span>
+                  <button onClick={nextMonth} style={{border:"none",background:"transparent",cursor:"pointer",fontSize:16,color:"#1a3a6e",padding:"0 6px"}}>›</button>
+                </div>
+                {/* Jours de la semaine */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+                  {["L","M","M","J","V","S","D"].map((d,i)=>(
+                    <div key={i} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#94a3b8"}}>{d}</div>
+                  ))}
+                </div>
+                {/* Cases du calendrier */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                  {calDays.map((day, i) => {
+                    if (!day) return <div key={i}/>;
+                    const isToday   = day === today;
+                    const isSelected = day === selectedDate;
+                    const hasOrdos  = joursAvecOrdos.has(day);
+                    const isFuture  = day > today;
+                    return (
+                      <button key={day} onClick={()=>{if(!isFuture){setSelectedDate(day);setSearchQuery("");}}}
+                        title={hasOrdos ? formatDateLabel(day) : ""}
+                        style={{
+                          width:"100%",aspectRatio:"1",border:"none",borderRadius:6,cursor:isFuture?"default":"pointer",
+                          fontFamily:"inherit",fontSize:12,fontWeight:isSelected||isToday?800:hasOrdos?600:400,
+                          background: isSelected ? couleur : isToday ? "#dbeafe" : "transparent",
+                          color: isSelected ? "#fff" : isToday ? "#1a3a6e" : isFuture ? "#d1d5db" : hasOrdos ? "#1a3a6e" : "#64748b",
+                          position:"relative",
+                        }}>
+                        {day.split("-")[2].replace(/^0/,"")}
+                        {/* Point indicateur si ordonnances */}
+                        {hasOrdos && !isSelected && (
+                          <span style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%)",
+                            width:4,height:4,borderRadius:"50%",background:isToday?"#1a3a6e":couleur,display:"block"}}/>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div style={{flex:1,position:"relative",minWidth:120}}>
                 <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
@@ -1477,8 +1549,17 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
           <div style={{flex:1,overflow:"auto",padding:"12px 12px 80px"}}>
             {filteredOrdos.length===0?(
               <div style={{textAlign:"center",padding:"40px 20px",color:"#bbb"}}>
-                <div style={{fontSize:36,marginBottom:10}}>📭</div>
-                <div style={{fontSize:15,fontWeight:600}}>Aucune ordonnance</div>
+                <div style={{fontSize:36,marginBottom:10}}>{joursAvecOrdos.has(selectedDate) ? "🔍" : "📅"}</div>
+                <div style={{fontSize:15,fontWeight:600,color:"#64748b"}}>
+                  {joursAvecOrdos.has(selectedDate)
+                    ? "Aucune ordonnance trouvée"
+                    : "Aucune ordonnance ce jour"}
+                </div>
+                {!joursAvecOrdos.has(selectedDate) && (
+                  <div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>
+                    Les jours avec des ordonnances sont marqués d'un point dans le calendrier
+                  </div>
+                )}
               </div>
             ):viewMode==="grid"?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:12}}>
