@@ -1,3 +1,4 @@
+// @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl, isDemoMode } from "../supabase.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
@@ -105,7 +106,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "📋 À TRAITER" : "✓ IMPRIMÉE"}
+            {isNew ? "NOUVEAU" : "✓ IMPRIMÉ"}
           </span>
           {/* Icône source */}
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
@@ -151,7 +152,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
 
         {/* Carte vitale */}
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Carte Vitale</div>
+          <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Ordonnance</div>
           {isLoading
             ? <div style={{ fontSize: 12, color: "#1a3a6e", animation: "pulse 1s ease infinite" }}>🔍 Analyse en cours…</div>
             : null
@@ -229,7 +230,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
   );
 }
 
-function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
+function OrdoRow({ ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -255,21 +256,14 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
         fontFamily: "inherit",
         letterSpacing: 0,
       }}>
-        {nom?.charAt(0)?.toUpperCase() || "?"}
+        {ordo.code_patient
+          ? <span style={{fontSize:11,fontWeight:900,fontFamily:"monospace",letterSpacing:0}}>{ordo.code_patient}</span>
+          : nom?.charAt(0)?.toUpperCase() || "?"}
       </div>
 
       {/* Nom + email */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {ordo.code_patient && (
-            <span style={{
-              background: "#1a3a6e", color: "#fff", fontFamily: "monospace",
-              fontSize: 13, fontWeight: 900, letterSpacing: 2,
-              padding: "2px 8px", borderRadius: 6, flexShrink: 0,
-            }}>
-              {ordo.code_patient}
-            </span>
-          )}
           <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
         </div>
         {email && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email}</div>}
@@ -294,6 +288,13 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen }) {
             cursor: hasFile ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
           👁
         </button>
+        {onSonnette && sonnetteActive !== false && (
+          <button onClick={onSonnette} title="Appeler le patient"
+            style={{ padding: "6px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 8, background: "#f0f4ff", cursor: "pointer", fontSize: 15 }}>
+            🔔
+          </button>
+        )}
         <button onClick={onPrint}
           style={{ padding: "6px 12px", border: "none", borderRadius: 8,
             background: isNew ? accent.bandeau : "#475569", color: "#fff",
@@ -338,7 +339,7 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "📋 À TRAITER" : "✓ IMPRIMÉE"}
+            {isNew ? "NOUVEAU" : "✓ IMPRIMÉ"}
           </span>
           <span style={{ fontSize: 12 }}>📱</span>
           {/* Code patient */}

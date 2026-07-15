@@ -224,16 +224,24 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
           // Fetch direct REST pour compatibilité maximale mobile
           const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
           const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY;
-          const url = `${supabaseUrl}/rest/v1/offres_stories?pharmacie_id=eq.${capturedPharmaId}&actif=eq.true&select=*`;
+          const url = `${supabaseUrl}/rest/v1/offres_stories?pharmacie_id=eq.${capturedPharmaId}&select=*`;
           const resp = await fetch(url, {
             headers: {
               "apikey": supabaseKey,
               "Authorization": `Bearer ${supabaseKey}`,
               "Content-Type": "application/json",
+              "Accept": "application/json",
             },
           });
-          const offres = resp.ok ? await resp.json() : [];
-          console.log("[PatientStories] offres reçues (fetch direct):", offres?.length ?? 0, "status:", resp.status);
+          const allOffres = resp.ok ? await resp.json() : [];
+          console.log("[PatientStories] TOUTES offres:", allOffres?.length ?? 0, "status:", resp.status);
+          if (allOffres?.length > 0) {
+            console.log("[PatientStories] exemple:", JSON.stringify(allOffres[0]).slice(0, 200));
+          }
+          const offres = Array.isArray(allOffres)
+            ? allOffres.filter(o => o.actif === true || o.actif === "true" || o.actif === 1)
+            : [];
+          console.log("[PatientStories] offres actives:", offres.length);
 
           if (offres && offres.length > 0) {
             const offreStories = offres
@@ -531,7 +539,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
       {/* Bandeau code patient — EN HAUT sur toutes les stories */}
       {codePatient && (
         <div style={{
-          position: "absolute", top: 48, left: 0, right: 0, zIndex: 20,
+          position: "absolute", top: 72, left: 0, right: 0, zIndex: 20,
           display: "flex", justifyContent: "center",
           pointerEvents: "none",
         }}>
