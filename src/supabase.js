@@ -161,8 +161,12 @@ export async function fetchPharmacie(pharmacieId) {
     return db.pharmacies.find(p => p.id === pharmacieId) || null;
   }
   const sb = getSupabase();
-  const { data, error } = await sb.from('pharmacies').select('*, postes(*)').eq('id', pharmacieId).single();
+  const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*)').eq('id', pharmacieId).single();
   if (error) throw error;
+  // Normaliser pharmacie_postes → postes pour compatibilité dashboard
+  if (data && data.pharmacie_postes) {
+    data.postes = data.pharmacie_postes;
+  }
   return data;
 }
 
