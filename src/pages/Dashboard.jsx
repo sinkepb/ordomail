@@ -1231,6 +1231,9 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
   const [filterStatus, setFilterStatus] = useState("nouveau");
+  const [calMonth, setCalMonth]         = useState(() => {
+    const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() };
+  });
 
   const searchRef = useRef(null);
   const userId2 = userId;
@@ -1380,12 +1383,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
   const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
   const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
-  // Calendrier complet : tous les jours du mois courant
-  const [calMonth, setCalMonth] = useState(() => {
-    const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() };
-  });
-
-  // Jours qui ont des ordonnances
+  // Calendrier : jours avec ordonnances (recomputed)
   const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
 
   // Générer tous les jours du mois affiché
