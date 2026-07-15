@@ -667,6 +667,7 @@ function ParametresTab({ pharmacie, onSave }) {
                   </span>
                   <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>Rôle : Vendeur</span>
                 </div>
+              </div>}
               </div>
             ))}
             <Btn variant="ghost" small onClick={addPoste} style={{width:"100%",justifyContent:"center",borderStyle:"dashed",marginTop:4}}>+ Ajouter un poste</Btn>
@@ -1231,6 +1232,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
   const [filterStatus, setFilterStatus] = useState("nouveau");
+  const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth]         = useState(() => {
     const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() };
   });
@@ -1480,8 +1482,21 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
           <div style={{background:"#fff",borderBottom:"1px solid #e8eaf0",padding:"10px 16px",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              {/* Calendrier mensuel complet */}
-              <div style={{background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0",padding:"10px 12px",minWidth:260}}>
+              {/* Bouton déclencheur calendrier */}
+              <div style={{position:"relative"}}>
+                <button onClick={()=>setShowCalendar(s=>!s)}
+                  style={{display:"flex",alignItems:"center",gap:6,background:"#f0f2f8",
+                    borderRadius:10,padding:"7px 12px",border:`1.5px solid ${showCalendar?couleur:"#e0e0e0"}`,
+                    cursor:"pointer",fontFamily:"inherit",color:"#1a3a6e",fontWeight:700,fontSize:13}}>
+                  <span>📅</span>
+                  <span>{formatDateLabel(selectedDate)}</span>
+                  <span style={{fontSize:10,color:"#94a3b8"}}>{showCalendar?"▲":"▼"}</span>
+                </button>
+
+              {/* Calendrier mensuel — affiché/caché */}
+              {showCalendar && <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:100,
+                background:"#fff",borderRadius:14,border:"1px solid #e2e8f0",padding:"12px 14px",minWidth:260,
+                boxShadow:"0 8px 32px rgba(0,0,0,0.12)"}}>
                 {/* Header mois */}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
                   <button onClick={prevMonth} style={{border:"none",background:"transparent",cursor:"pointer",fontSize:16,color:"#1a3a6e",padding:"0 6px"}}>‹</button>
@@ -1503,7 +1518,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     const hasOrdos  = joursAvecOrdos.has(day);
                     const isFuture  = day > today;
                     return (
-                      <button key={day} onClick={()=>{if(!isFuture){setSelectedDate(day);setSearchQuery("");}}}
+                      <button key={day} onClick={()=>{if(!isFuture){setSelectedDate(day);setSearchQuery("");setShowCalendar(false);}}}
                         title={hasOrdos ? formatDateLabel(day) : ""}
                         style={{
                           width:"100%",aspectRatio:"1",border:"none",borderRadius:6,cursor:isFuture?"default":"pointer",
