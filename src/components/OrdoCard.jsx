@@ -320,67 +320,39 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
       border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
     }}>
-      {/* Bandeau avec code en grand */}
+      {/* Bandeau compact : statut | source | code | time */}
       <div style={{
         background: isNew ? accent.bandeau : accent.bg,
-        padding: "10px 16px",
+        padding: "7px 14px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
             {isNew ? "🔔 À TRAITER" : "✓ IMPRIMÉE"}
           </span>
-          <span style={{ fontSize: 13 }}>📱</span>
-          {/* Badge code patient — mis en avant */}
-          <div style={{
-            fontSize: 20, fontWeight: 900, padding: "3px 12px",
-            borderRadius: 8, background: "rgba(255,255,255,0.25)",
-            color: "#fff", fontFamily: "monospace", letterSpacing: 4,
-            border: "1.5px solid rgba(255,255,255,0.5)",
-          }}>
-            {group.code_patient}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Badge nombre d'ordonnances */}
-          <div style={{
-            fontSize: 11, fontWeight: 800, padding: "2px 8px",
-            borderRadius: 20, background: "rgba(255,255,255,0.2)",
-            color: "#fff",
-          }}>
-            {count} ordonnance{count > 1 ? "s" : ""}
-          </div>
-          {/* Bouton sonnette */}
-          {onSonnette && (
-            <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
-              title="Appeler le patient"
-              style={{
-                background: "rgba(255,255,255,0.2)", border: "1.5px solid rgba(255,255,255,0.4)",
-                borderRadius: 8, padding: "4px 10px", cursor: "pointer",
-                fontSize: 18, lineHeight: 1,
-              }}>
-              🔔
-            </button>
-          )}
-          {/* Badge intérêts */}
-          {interets.length > 0 && (
+          <span style={{ fontSize: 12 }}>📱</span>
+          {/* Code patient */}
+          {group.code_patient && (
             <div style={{
-              fontSize: 11, fontWeight: 800, padding: "2px 8px",
-              borderRadius: 20, background: "rgba(255,220,0,0.3)",
-              color: "#fff", border: "1px solid rgba(255,220,0,0.5)",
+              fontSize: 16, fontWeight: 900, padding: "2px 10px",
+              borderRadius: 7, background: "rgba(255,255,255,0.25)",
+              color: "#fff", fontFamily: "monospace", letterSpacing: 3,
+              border: "1px solid rgba(255,255,255,0.4)",
             }}>
-              🎯 {interets.length} intérêt{interets.length > 1 ? "s" : ""}
+              {group.code_patient}
             </div>
           )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, color: isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
-            {timeAgo(group.receivedAt)}
+            {count} ordo{count > 1 ? "s" : ""} · {timeAgo(group.receivedAt)}
           </span>
         </div>
       </div>
 
       {/* Corps */}
       <div style={{ padding: "12px 14px 10px" }}>
-        {/* Avatar + Nom */}
+        {/* Avatar + Nom + Sonnette sur la même ligne */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
           <div style={{
             width: 44, height: 44, borderRadius: "50%",
@@ -389,9 +361,32 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18, color: isNew ? "#fff" : accent.avatar, fontWeight: 900, flexShrink: 0,
           }}>{nom?.charAt(0)?.toUpperCase() || "?"}</div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Patient</div>
-            <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a" }}>{nom}</div>
+            <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+          </div>
+          {/* Sonnette + intérêts à droite du nom */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {interets.length > 0 && (
+              <div style={{
+                fontSize: 11, fontWeight: 800, padding: "3px 8px",
+                borderRadius: 20, background: "#fef3c7",
+                color: "#92400e", border: "1px solid #fde68a",
+              }}>
+                🎯 {interets.length}
+              </div>
+            )}
+            {onSonnette && (
+              <button onClick={(e) => { e.stopPropagation(); onSonnette(); }}
+                title="Appeler le patient"
+                style={{
+                  background: "#fffbeb", border: "2px solid #fde68a",
+                  borderRadius: 10, padding: "6px 12px", cursor: "pointer",
+                  fontSize: 18, lineHeight: 1, fontFamily: "inherit",
+                }}>
+                🔔
+              </button>
+            )}
           </div>
         </div>
 
