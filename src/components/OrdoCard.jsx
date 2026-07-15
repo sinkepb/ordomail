@@ -451,12 +451,12 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
       <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
         {/* Sonnette — même ligne que le bouton imprimer */}
         {onSonnette && sonnetteActive !== false && (
-          <button onClick={() => onSonnette()}
+          <button onClick={onSonnette}
             title="Appeler le patient"
             style={{
-              padding: "12px 14px", border: "2px solid #fde68a",
-              borderRadius: 9, background: "#fffbeb", cursor: "pointer",
-              fontSize: 20, lineHeight: 1, flexShrink: 0, fontFamily: "inherit",
+              padding: "12px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 9, background: "#f0f4ff", cursor: "pointer",
+              fontSize: 18, flexShrink: 0, fontFamily: "inherit",
             }}>
             🔔
           </button>
