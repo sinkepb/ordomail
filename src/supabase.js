@@ -1,3 +1,4 @@
+// @ordomail-deploy 15/07/2026 02:22
 // ═══════════════════════════════════════════════════════════════════════════════
 // ordomail/src/supabase.js
 // Couche de persistance — mode DÉMO ou SUPABASE selon VITE_DEMO_MODE
@@ -116,9 +117,13 @@ export async function authSignInPIN(pin, pharmacieId) {
   }
   // Mode prod : Edge Function verify-pin (bcrypt côté serveur)
   const sb = getSupabase();
-  const { data, error } = await sb.functions.invoke('verify-pin', { body: { pin, pharmacieId } });
-  if (error || !data?.success) return { error: error || new Error('PIN incorrect') };
-  return { pharmacie: data.pharmacie, poste: data.poste, userRole: 'vendeur', userId: data.poste.id, posteNom: data.poste.nom };
+  try {
+    const { data, error } = await sb.functions.invoke('verify-pin', { body: { pin, pharmacieId } });
+    if (error || !data?.success) return { error: error || new Error('PIN incorrect') };
+    return { pharmacie: data.pharmacie, poste: data.poste, userRole: 'vendeur', userId: data.poste.id, posteNom: data.poste.nom };
+  } catch(e) {
+    return { error: new Error('Erreur de connexion: ' + e.message) };
+  }
 }
 
 export async function authSignInPSC() {

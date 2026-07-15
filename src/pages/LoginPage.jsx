@@ -107,13 +107,12 @@ function LoginTabContent({ onLogin }) {
     setCodeLoading(false);
   }
 
-  async function handlePinDigit(d) {
-    if (pin.length >= 4) return;
-    const newPin = pin + d;
-    setPin(newPin); setPinError("");
+  async function handlePinDigit(d, fullPin) {
+    // fullPin = PIN complet depuis input clavier, sinon construire digit par digit
+    const newPin = fullPin || (pin.length >= 4 ? pin : pin + d);
+    if (!fullPin) { setPin(newPin); setPinError(""); }
     if (newPin.length === 4) {
       setPinLoading(true);
-      // Passer l'ID pharmacie pour limiter la recherche
       const result = await authSignInPIN(newPin, pharmacieInfo?.id);
       if (result.error) {
         setPinError("PIN incorrect ou poste inactif"); setPin(""); setPinLoading(false);
@@ -143,7 +142,33 @@ function LoginTabContent({ onLogin }) {
           </div>
           <input
             type="tel" maxLength={6} value={code}
-            onChange={e => { setCode(e.target.value.replace(/[^0-9]/g,"")); setCodeError(""); }}
+            onChange={async e => {
+              const v = e.target.value.replace(/[^0-9]/g,"").slice(0,6);
+              setCode(v); setCodeError("");
+              if (v.length === 6) {
+                // Connexion automatique dès les 6 chiffres saisis
+                setCodeLoading(true);
+                try {
+                  if (isDemoMode) {
+                    const db = window._ordomailDB || { pharmacies: [] };
+                    const ph = db.pharmacies?.find(p => p.codeVendeur === v);
+                    if (!ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+                    setPharmacieInfo(ph);
+                  } else {
+                    const sb = getSupabaseClient();
+                    const { data: ph, error } = await sb
+                      .from("pharmacies")
+                      .select("id, nom, couleur, code_vendeur")
+                      .eq("code_vendeur", v)
+                      .maybeSingle();
+                    if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
+                    setPharmacieInfo(ph);
+                  }
+                } catch(e) { setCodeError("Erreur de connexion"); }
+                setCodeLoading(false);
+              }
+            }}
+            onKeyDown={e => { if (e.key === "Enter" && code.length === 6) handleCodePharmacieSubmit(); }}
             placeholder="123456"
             style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",border:`2px solid ${codeError?"#ef4444":"#e2e8f0"}`,borderRadius:12,fontSize:28,fontFamily:"monospace",fontWeight:900,textAlign:"center",letterSpacing:8,outline:"none",marginBottom:12}}
             autoFocus
@@ -185,6 +210,18 @@ function LoginTabContent({ onLogin }) {
                 transition:"all 0.15s",transform:i<pin.length?"scale(1.15)":"scale(1)"}}/>
             ))}
           </div>
+          {/* Input caché pour capture clavier */}
+          <input
+            type="tel" maxLength={4}
+            value={pin}
+            onChange={e => {
+              const v = e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+              setPin(v); setPinError("");
+              if (v.length === 4) handlePinDigit(v[v.length-1], v);
+            }}
+            style={{position:"absolute",opacity:0,width:1,height:1,pointerEvents:"none"}}
+            autoFocus
+          />
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:240,margin:"0 auto 14px"}}>
             {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
               <button key={i}
@@ -233,6 +270,10 @@ function LoginTabContent({ onLogin }) {
           <div key={i} style={{width:18,height:18,borderRadius:"50%",background:i<pin.length?"#1a3a6e":"#e2e8f0",border:`2px solid ${i<pin.length?"#1a3a6e":"#cbd5e1"}`,transition:"all 0.15s",transform:i<pin.length?"scale(1.15)":"scale(1)"}}/>
         ))}
       </div>
+      {/* Input caché pour saisie clavier */}
+      <input type="tel" maxLength={4} value={pin}
+        onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"").slice(0,4);setPin(v);setPinError("");if(v.length===4)handlePinDigit(v[v.length-1],v);}}
+        style={{position:"absolute",opacity:0,width:1,height:1,pointerEvents:"none"}} autoFocus/>
       {/* Pavé numérique */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:240,margin:"0 auto 14px"}}>
         {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
