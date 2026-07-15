@@ -230,14 +230,30 @@ export async function fetchOrdonnances(pharmacieId, days = 7) {
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
     return ph?.ordonnances || [];
   }
-  const sb = getSupabase();
-  const since = new Date(); since.setDate(since.getDate() - days);
-  const { data, error } = await sb.from('ordonnances').select('*')
-    .eq('pharmacie_id', pharmacieId)
-    .gte('received_at', since.toISOString())
-    .order('received_at', { ascending: false });
-  if (error) throw error;
-  return (data || []).map(normOrdo);
+  // Fetch direct REST — contourne RLS qui exige auth.uid() (vendeur non-auth Supabase)
+  try {
+    const supabaseUrl = typeof import.meta !== 'undefined'
+      ? import.meta.env.VITE_SUPABASE_URL
+      : process.env.VITE_SUPABASE_URL;
+    const supabaseKey = typeof import.meta !== 'undefined'
+      ? import.meta.env.VITE_SUPABASE_ANON_KEY
+      : process.env.VITE_SUPABASE_ANON_KEY;
+    const since = new Date(); since.setDate(since.getDate() - days);
+    const url = `${supabaseUrl}/rest/v1/ordonnances?pharmacie_id=eq.${pharmacieId}&received_at=gte.${since.toISOString()}&order=received_at.desc&select=*`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) throw new Error(`fetchOrdonnances HTTP ${res.status}`);
+    const data = await res.json();
+    return (data || []).map(normOrdo);
+  } catch(e) {
+    console.error('[fetchOrdonnances]', e.message);
+    return [];
+  }
 }
 
 export async function updateOrdoStatus(ordoId, pharmacieId, status) {
