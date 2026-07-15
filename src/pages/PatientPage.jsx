@@ -161,6 +161,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
     const sb = getSupabaseClient();
     let base = [...HEALTH_STORIES];
 
+    const capturedPharmaId = pharmacie?.id; // Capturer AVANT l'async
     async function loadDynamic() {
       // Mode démo : utiliser des offres fictives pour tester
       if (isDemoMode) {
@@ -217,17 +218,19 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
       }
 
       // Charger offres pharmacie — uniquement si pharmacie connue
-      const pharmaId = pharmacie?.id;
-      console.log("[PatientStories] chargement offres, pharmacie.id:", pharmaId);
-      if (pharmaId) {
+      console.log("[PatientStories] chargement offres, pharmacie.id:", capturedPharmaId);
+      if (capturedPharmaId) {
         try {
           const { data: offres, error: offresErr } = await sb
             .from("offres_stories")
             .select("*")
-            .eq("pharmacie_id", pharmaId)
+            .eq("pharmacie_id", capturedPharmaId)
             .eq("actif", true);
 
-          console.log("[PatientStories] offres reçues:", offres?.length ?? 0, "erreur:", offresErr?.message);
+          console.log("[PatientStories] offres reçues:", offres?.length ?? 0, "erreur:", offresErr?.message, "code:", offresErr?.code);
+          if (offresErr) {
+            console.error("[PatientStories] ERREUR COMPLÈTE offres:", JSON.stringify(offresErr));
+          }
 
           if (offres && offres.length > 0) {
             const offreStories = offres
