@@ -1668,34 +1668,39 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     return (
                       <div key={o.code_patient+'-list-'+toDateKey(o.receivedAt)} style={{
                         background:"#fff",borderRadius:12,marginBottom:6,padding:"12px 18px",
-                        border:`2px solid ${accent.border}`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
+                        border:`2px solid ${o.ordonnances.every(ord=>ord.status==="imprime")?"#bbf7d0":accent.border}`,
+                        boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
                       }}>
                         {/* En-tête groupe */}
+                        {(()=>{
+                          const allImprime = o.ordonnances.every(ord=>ord.status==="imprime");
+                          return (
                         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
                           <div style={{
                             fontSize:22,fontWeight:900,padding:"4px 14px",borderRadius:10,
-                            background:"#1a3a6e",color:"#fff",fontFamily:"monospace",letterSpacing:4,flexShrink:0,
+                            background: allImprime ? "#475569" : "#1a3a6e",
+                            color:"#fff",fontFamily:"monospace",letterSpacing:4,flexShrink:0,
                           }}>{o.code_patient}</div>
                           <div style={{flex:1}}>
-                            <div style={{fontWeight:800,fontSize:15,color:"#1a1a1a"}}>{o.extracted?.nom||o.fromName||"Patient"}</div>
-                            <div style={{fontSize:11,color:"#64748b"}}>{o.ordonnances.length} ordonnances · {timeAgo(o.receivedAt)}</div>
+                            <div style={{fontWeight:800,fontSize:15,color: allImprime?"#64748b":"#1a1a1a"}}>
+                              {o.extracted?.nom||o.fromName||"Patient"}
+                            </div>
+                            <div style={{fontSize:11,color:"#64748b"}}>
+                              {o.ordonnances.length} ordonnances · {timeAgo(o.receivedAt)}
+                              {allImprime && <span style={{marginLeft:6,color:"#15803d",fontWeight:700}}>✓ Tout imprimé</span>}
+                            </div>
                           </div>
-                          <div style={{display:"flex",gap:6}}>
-                            {pharmacie?.sonnette_active !== false && (
-                              <button onClick={()=>appellerPatient(pharmacieId, o.code_patient)}
-                                title="Appeler le patient"
-                                style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",
-                                  borderRadius:9,background:"#f0f4ff",cursor:"pointer",fontSize:16}}>
-                                🔔
-                              </button>
-                            )}
-                            <button onClick={()=>o.ordonnances.forEach(ord=>{handlePrintOrdo(ord.id);setPrintModal(ord);})}
-                              style={{padding:"8px 14px",border:"none",borderRadius:9,background:accent.bandeau,
-                                color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                              🖨️ Tout imprimer
+                          {pharmacie?.sonnette_active !== false && (
+                            <button onClick={()=>appellerPatient(pharmacieId, o.code_patient)}
+                              title="Appeler le patient"
+                              style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",
+                                borderRadius:9,background:"#f0f4ff",cursor:"pointer",fontSize:16,flexShrink:0}}>
+                              🔔
                             </button>
-                          </div>
+                          )}
                         </div>
+                          );
+                        })()}
                         {/* Intérêts offres du patient */}
                         {(o.interets||[]).length > 0 && (
                           <div style={{marginBottom:8}}>
@@ -1716,21 +1721,35 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                         )}
 
                         {/* Lignes individuelles */}
-                        {o.ordonnances.map((ord,idx)=>(
+                        {o.ordonnances.map((ord,idx)=>{
+                          const ordImprime = ord.status === "imprime";
+                          return (
                           <div key={ord.id} style={{display:"flex",alignItems:"center",gap:8,
-                            padding:"6px 10px",background:"#f8fafc",borderRadius:8,marginBottom:4,
-                            border:"1px solid #e2e8f0"}}>
-                            <span style={{fontSize:12,color:"#475569",fontWeight:600,flex:1}}>
-                              📎 Ordonnance {idx+1}
-                              {ord.attachments?.[0]?.name && <span style={{color:"#94a3b8",fontWeight:400}}> — {ord.attachments[0].name}</span>}
+                            padding:"6px 10px",borderRadius:8,marginBottom:4,
+                            background: ordImprime?"#f0fdf4":"#f8fafc",
+                            border:`1px solid ${ordImprime?"#bbf7d0":"#e2e8f0"}`}}>
+                            <span style={{fontSize:12,fontWeight:600,flex:1,
+                              color: ordImprime?"#15803d":"#475569"}}>
+                              {ordImprime ? "✓" : "📎"} Ordonnance {idx+1}
+                              {ord.attachments?.[0]?.name && (
+                                <span style={{color:"#94a3b8",fontWeight:400}}> — {ord.attachments[0].name}</span>
+                              )}
                             </span>
-                            <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
-                              style={{padding:"4px 10px",border:"none",borderRadius:6,
-                                background:accent.bandeau,color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                              🖨️
-                            </button>
+                            {!ordImprime ? (
+                              <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
+                                style={{padding:"4px 10px",border:"none",borderRadius:6,
+                                  background:accent.bandeau,color:"#fff",fontSize:11,
+                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                                🖨️ Imprimer
+                              </button>
+                            ) : (
+                              <span style={{fontSize:11,color:"#15803d",fontWeight:700,flexShrink:0}}>
+                                ✓ Imprimée
+                              </span>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   }
