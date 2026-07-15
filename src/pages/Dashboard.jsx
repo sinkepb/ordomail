@@ -667,7 +667,6 @@ function ParametresTab({ pharmacie, onSave }) {
                   </span>
                   <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>Rôle : Vendeur</span>
                 </div>
-              </div>}
               </div>
             ))}
             <Btn variant="ghost" small onClick={addPoste} style={{width:"100%",justifyContent:"center",borderStyle:"dashed",marginTop:4}}>+ Ajouter un poste</Btn>
