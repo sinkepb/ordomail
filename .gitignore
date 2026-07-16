@@ -9,3 +9,9 @@ deploy.ps1
 files/ 
 git 
 src/lib/AdminPage.jsx 
+supabase/.temp/ 
+deploy.bat 
+deploy.ps1 
+files/ 
+git 
+src/lib/AdminPage.jsx 
