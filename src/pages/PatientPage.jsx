@@ -1,4 +1,4 @@
-// @version 16/07/2026 10:00 — fix-useeffect
+// @version 16/07/2026 10:05 — email-story
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -64,7 +64,7 @@ const HEALTH_STORIES = [
   },
 ];
 
-function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
+function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = false }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
   const [quizAnswer, setQuizAnswer] = useState(null);
@@ -154,7 +154,16 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
   const [touchStart, setTouchStart] = useState(null);
   const timerRef = useRef(null);
   const DURATION = 6000;
-  const [allStories, setAllStories] = useState(HEALTH_STORIES);
+  // Story email spéciale — injectée en premier si le patient a envoyé par email
+  const emailStory = emailMode ? [{
+    id: "email-instructions",
+    type: "email-instructions",
+    bg: ["#1a3a6e", "#1e40af"],
+    emoji: "✉️",
+    title: "Envoyez votre ordonnance",
+    codePatient,
+  }] : [];
+  const [allStories, setAllStories] = useState([...emailStory, ...HEALTH_STORIES]);
   const [interets, setInterets]     = useState({});
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
@@ -424,6 +433,37 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
         {/* Story info */}
         {!isQuiz && !isOffre && (
           <div style={{ fontSize: 16, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, maxWidth: 300 }}>{story.text}</div>
+        )}
+
+        {/* Story instructions email */}
+        {story.type === "email-instructions" && (
+          <div style={{ width:"100%", maxWidth:300, textAlign:"center" }}>
+            {/* Code en grand */}
+            <div style={{ background:"rgba(255,255,255,0.15)", borderRadius:16, padding:"18px 24px", marginBottom:20, backdropFilter:"blur(8px)", border:"1.5px solid rgba(255,255,255,0.3)" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:2, marginBottom:6 }}>
+                Votre code personnel
+              </div>
+              <div style={{ fontSize:64, fontWeight:900, color:"#fff", fontFamily:"monospace", letterSpacing:12, lineHeight:1 }}>
+                {story.codePatient}
+              </div>
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.8)", marginTop:8 }}>
+                Montrez ce code au comptoir
+              </div>
+            </div>
+            {/* Instructions */}
+            <div style={{ textAlign:"left" }}>
+              {[
+                ["1️⃣", "Ouvrez votre boite mail"],
+                ["2️⃣", "Envoyez votre ordonnance en pièce jointe à l'adresse copiée"],
+                ["3️⃣", "Revenez ici et attendez — nous vous appelons quand c'est prêt"],
+              ].map(([num, txt]) => (
+                <div key={num} style={{ display:"flex", gap:10, marginBottom:12, alignItems:"flex-start" }}>
+                  <span style={{ fontSize:18, flexShrink:0 }}>{num}</span>
+                  <span style={{ fontSize:14, color:"rgba(255,255,255,0.9)", lineHeight:1.5 }}>{txt}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Story offre pharmacie */}
@@ -744,6 +784,7 @@ function PatientPage({ pharmacie, onBack }) {
         pharmacie={pharmacie}
         nom={nom || "Patient"}
         codePatient={emailCode}
+        emailMode={true}
         onRestart={() => { setStep("form"); setEmailCode(null); setNom(""); }}
       />
     </div>
@@ -855,36 +896,6 @@ function PatientPage({ pharmacie, onBack }) {
           </div>
           <div style={{ padding:14, display:"flex", flexDirection:"column", gap:10 }}>
 
-            {/* ── Votre code personnel ── */}
-            <div style={{ background:"linear-gradient(135deg,#1a3a6e,#1e40af)", borderRadius:12, padding:"14px 16px", textAlign:"center" }}>
-              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.5, marginBottom:4 }}>
-                Votre code personnel
-              </div>
-              <div style={{ fontSize:52, fontWeight:900, color:"#fff", fontFamily:"monospace", letterSpacing:10, lineHeight:1 }}>
-                {emailCode || "…"}
-              </div>
-              <div style={{ fontSize:11, color:"rgba(255,255,255,0.75)", marginTop:6 }}>
-                Montrez ce code au comptoir
-              </div>
-            </div>
-
-            {/* ── Marche à suivre ── */}
-            <div style={{ background:"#f0f9ff", borderRadius:10, padding:"12px 14px", border:"1px solid #bae6fd" }}>
-              <div style={{ fontSize:12, fontWeight:800, color:"#1e40af", marginBottom:8 }}>
-                📋 Procédure en 3 étapes :
-              </div>
-              {[
-                ["1️⃣", "Copiez l'adresse email ci-dessous"],
-                ["2️⃣", "Ouvrez votre boite mail et envoyez votre ordonnance en pièce jointe"],
-                ["3️⃣", "Revenez ici et attendez — votre pharmacien vous appellera quand c'est prêt"],
-              ].map(([num, txt]) => (
-                <div key={num} style={{ display:"flex", gap:8, marginBottom:6, alignItems:"flex-start" }}>
-                  <span style={{ fontSize:15, flexShrink:0 }}>{num}</span>
-                  <span style={{ fontSize:12, color:"#1e40af", lineHeight:1.5 }}>{txt}</span>
-                </div>
-              ))}
-            </div>
-
             {/* ── Adresse email dynamique ── */}
             <div style={{ fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:0.8 }}>
               Adresse e-mail de votre pharmacie
@@ -907,10 +918,6 @@ function PatientPage({ pharmacie, onBack }) {
                 ? "✅ Copié ! Ouverture des stories…"
                 : "📋 Copier l'adresse et continuer →"}
             </button>
-
-            <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center" }}>
-              Restez sur les stories après envoi — nous vous appelons quand c'est prêt
-            </div>
           </div>
         </div>
 
