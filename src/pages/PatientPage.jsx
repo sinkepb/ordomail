@@ -1,4 +1,4 @@
-// @version 16/07/2026 09:57 — email-instructions
+// @version 16/07/2026 10:00 — fix-useeffect
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -580,6 +580,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
 function PatientPage({ pharmacie, onBack }) {
   const [step, setStep]           = useState("form");
   const [emailCode, setEmailCode] = useState(null); // code généré pour envoi email
+
+  // Générer le code email dès le montage de PatientPage
+  useEffect(() => {
+    setEmailCode(String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0"));
+  }, []);
   const [nom, setNom]             = useState("");
   const [files, setFiles]         = useState([]); // plusieurs ordonnances
   const [copied, setCopied]       = useState(false);
@@ -916,9 +921,5 @@ function PatientPage({ pharmacie, onBack }) {
 }
 
 export { PatientStories, PatientPage };
-export default PatientPage;// Générer le code email dès le montage
-  useEffect(() => {
-    setEmailCode(prev => prev || String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0"));
-  }, []);
+export default PatientPage;
 
-  
