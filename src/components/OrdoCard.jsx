@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // @version 16/07/2026 15:29 — rm-placeholder
+=======
+// @version 16/07/2026 15:50 — fix-allImprime-scope
+>>>>>>> develop
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl, isDemoMode } from "../supabase.js";
@@ -101,13 +105,13 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
     }}>
       {/* Bandeau statut — couleur unique par ordonnance */}
       <div style={{
-        background: allImprime ? "#f0fdf4" : isNew ? accent.bandeau : accent.bg,
+        background: isNew ? accent.bandeau : accent.bg,
         padding: "8px 16px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: allImprime ? "#15803d" : isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {allImprime ? "✓ TOUTES IMPRIMÉES" : isNew ? "NOUVEAU" : "EN COURS"}
+          <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
+            {isNew ? "NOUVEAU" : "EN COURS"}
           </span>
           {/* Icône source */}
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>

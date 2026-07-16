@@ -1,3 +1,4 @@
+// @version 16/07/2026 15:54 — register-form
 import { useState, useEffect, useRef } from "react";
 import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
   getSupabaseClient, isDemoMode } from "../supabase.js";
@@ -447,12 +448,7 @@ function LoginPage({ onLogin, onBack }) {
           </div>
           {tab==="login" && <LoginTabContent onLogin={onLogin}/>}
           {tab==="register" && (
-            <div style={{textAlign:"center",padding:"20px 0"}}>
-              <div style={{fontSize:36,marginBottom:12}}>🚀</div>
-              <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Démarrer votre essai gratuit</div>
-              <div style={{fontSize:13,color:"#64748b",marginBottom:20}}>30 jours gratuits · Sans engagement · Sans carte bancaire</div>
-              <Btn onClick={onBack} style={{width:"100%",justifyContent:"center"}}>Voir les tarifs →</Btn>
-            </div>
+            <RegisterForm onLogin={onLogin} />
           )}
         </div>
         <div style={{textAlign:"center",marginTop:16}}>
@@ -595,4 +591,73 @@ function ResetPasswordPage({ onDone }) {
 }
 
 export { BoutonProSanteConnect, LoginTabContent, LoginPage, AppLogin, ResetPasswordPage };
-export default AppLogin;
+export default AppLogin
+// ── Formulaire de création de compte pharmacie ────────────────────────────
+function RegisterForm({ onLogin }) {
+  const [nom,     setNom]     = useState("");
+  const [email,   setEmail]   = useState("");
+  const [pwd,     setPwd]     = useState("");
+  const [tel,     setTel]     = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState(false);
+
+  async function handleRegister() {
+    if (!nom || !email || !pwd) { setError("Nom, email et mot de passe requis"); return; }
+    if (pwd.length < 6) { setError("Mot de passe : 6 caractères minimum"); return; }
+    setLoading(true); setError("");
+    try {
+      if (isDemoMode) {
+        onLogin({ role:"pharmacie", pharmacieId:"demo-"+Date.now(), userRole:"admin",
+          pscUser:{ prenom:"Demo", nom, organisation:nom } });
+        return;
+      }
+      const sb = getSupabaseClient();
+      const { data: authData, error: authErr } = await sb.auth.signUp({ email, password: pwd });
+      if (authErr) { setError(authErr.message); setLoading(false); return; }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/register-pharmacie`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json", "apikey": supabaseKey },
+        body: JSON.stringify({ nom, email, tel, userId: authData.user?.id }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Erreur création compte"); setLoading(false); return; }
+      setSuccess(true);
+    } catch(e) { setError("Erreur : " + e.message); }
+    setLoading(false);
+  }
+
+  if (success) return (
+    <div style={{textAlign:"center",padding:"20px 0"}}>
+      <div style={{fontSize:48,marginBottom:12}}>✅</div>
+      <div style={{fontWeight:800,fontSize:16,color:"#15803d",marginBottom:8}}>Compte créé !</div>
+      <div style={{fontSize:13,color:"#64748b"}}>Vérifiez votre email pour confirmer votre compte.</div>
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Nom de votre pharmacie *"
+        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+      <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email professionnel *" type="email"
+        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+      <input value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="Mot de passe (6 car. min) *" type="password"
+        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+      <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone (optionnel)"
+        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+      {error && <div style={{fontSize:12,color:"#dc2626",background:"#fee2e2",padding:"8px 12px",borderRadius:8}}>{error}</div>}
+      <button onClick={handleRegister} disabled={loading}
+        style={{padding:"13px",border:"none",borderRadius:10,background:loading?"#94a3b8":"#1a3a6e",
+          color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+        {loading ? "Création..." : "🚀 Démarrer l'essai gratuit"}
+      </button>
+      <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
+        30 jours gratuits · Sans engagement · Sans carte bancaire
+      </div>
+    </div>
+  );
+}
+
+;
