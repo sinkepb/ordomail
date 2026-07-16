@@ -1,4 +1,4 @@
-// @version 16/07/2026 10:59 — email-sent-btn
+// @version 16/07/2026 14:23 — swipe-natural
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -309,7 +309,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
     const start = Date.now();
     // Bloquer le timer sur la story email-instructions
-    const isEmailStory = allStories[current]?.type === "email-instructions" && !emailSent;
+    const isEmailStory = allStories[current]?.type === "email-instructions";
 
     timerRef.current = setInterval(() => {
       if (isEmailStory) return; // pause : ne pas avancer
@@ -333,13 +333,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
   function goNext() {
     // Ne pas avancer depuis la story email-instructions
-    if (allStories[current]?.type === "email-instructions" && !emailSent) return;
     if (current < allStories.length - 1) {
       setCurrent(c => c + 1);
     }
   }
   function goPrev() {
-    if (allStories[current]?.type === "email-instructions" && !emailSent) return;
     if (current > 0) setCurrent(c => c - 1);
   }
 
@@ -480,20 +478,9 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
               ))}
             </div>
 
-            {!emailSent ? (
-              <button
-                onClick={e => { e.stopPropagation(); setEmailSent(true); goNext(); }}
-                style={{ marginTop:16, width:"100%", padding:"14px 20px",
-                  border:"2px solid rgba(255,255,255,0.5)", borderRadius:16,
-                  background:"rgba(255,255,255,0.2)", color:"#fff",
-                  fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>
-                ✅ J'ai envoyé mon ordonnance →
-              </button>
-            ) : (
-              <div style={{ marginTop:16, fontSize:13, color:"rgba(255,255,255,0.8)", textAlign:"center" }}>
-                ⏳ En attente de préparation…
-              </div>
-            )}
+            <div style={{ marginTop:16, fontSize:12, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>
+              Glissez vers la droite après envoi →
+            </div>
           </div>
         )}
 
