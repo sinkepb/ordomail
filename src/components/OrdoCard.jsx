@@ -100,13 +100,13 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
     }}>
       {/* Bandeau statut — couleur unique par ordonnance */}
       <div style={{
-        background: isNew ? accent.bandeau : accent.bg,
+        background: allImprime ? "#f0fdf4" : isNew ? accent.bandeau : accent.bg,
         padding: "8px 16px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "NOUVEAU" : "✓ IMPRIMÉ"}
+          <span style={{ fontSize: 10, fontWeight: 800, color: allImprime ? "#15803d" : isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
+            {allImprime ? "✓ TOUTES IMPRIMÉES" : isNew ? "NOUVEAU" : "EN COURS"}
           </span>
           {/* Icône source */}
           <span style={{ fontSize: 13 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
@@ -318,8 +318,8 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnett
 function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette, sonnetteActive }) {
   const [expanded, setExpanded] = useState(false);
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
-  const isNew  = group.ordonnances.some(o => o.status === "nouveau");
-  // Statuts individuels pour chaque ordonnance
+  const isNew      = group.ordonnances.some(o => o.status === "nouveau");
+  const allImprime = group.ordonnances.every(o => o.status === "imprime");
   const getOrdoIsNew = (o) => o.status === "nouveau";
   const nom    = group.extracted?.nom || group.fromName || "Patient";
   const accent = getOrdoAccent(group.id);
@@ -329,17 +329,19 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
     <div style={{
       background: "#fff", borderRadius: 16, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
-      border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
+      border: allImprime ? "2px solid #bbf7d0" : isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
     }}>
       {/* Bandeau compact : statut | source | code | time */}
+      {(()=>{ const allImprime = group.ordonnances.every(o=>o.status==="imprime"); return (
       <div style={{
-        background: isNew ? accent.bandeau : accent.bg,
+        background: allImprime ? "#f0fdf4" : isNew ? accent.bandeau : accent.bg,
         padding: "7px 14px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.8 }}>
-            {isNew ? "NOUVEAU" : "✓ IMPRIMÉ"}
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8,
+            color: allImprime ? "#15803d" : isNew ? "#fff" : accent.avatar }}>
+            {allImprime ? "✓ TOUTES IMPRIMÉES" : isNew ? "NOUVEAU" : "EN COURS"}
           </span>
           <span style={{ fontSize: 12 }}>📱</span>
           {/* Code patient */}
@@ -355,11 +357,12 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, color: isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
+          <span style={{ fontSize: 10, color: allImprime ? "#15803d" : isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
             {count} ordo{count > 1 ? "s" : ""} · {timeAgo(group.receivedAt)}
           </span>
         </div>
       </div>
+      ); })()}
 
       {/* Corps */}
       <div style={{ padding: "12px 14px 10px" }}>
@@ -412,74 +415,82 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
           </div>
         )}
 
-        {/* Liste des ordonnances du groupe */}
+        {/* Liste des ordonnances du groupe — impression individuelle */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-          {group.ordonnances.map((o, idx) => (
+          {group.ordonnances.map((o, idx) => {
+            const ordImprime = o.status === "imprime";
+            return (
             <div key={o.id} style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              background: "#f8fafc", borderRadius: 8, padding: "7px 10px",
-              border: "1px solid #e2e8f0",
+              borderRadius: 8, padding: "7px 10px",
+              background: ordImprime ? "#f0fdf4" : "#f8fafc",
+              border: `1px solid ${ordImprime ? "#bbf7d0" : "#e2e8f0"}`,
             }}>
-              <div style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>
-                📎 Ordonnance {idx + 1}
+              <div style={{ fontSize: 12, fontWeight: 600,
+                color: ordImprime ? "#15803d" : "#475569" }}>
+                {ordImprime ? "✓" : "📎"} Ordonnance {idx + 1}
                 {o.attachments?.[0]?.name && (
                   <span style={{ color: "#94a3b8", fontWeight: 400, marginLeft: 4 }}>
                     — {o.attachments[0].name}
                   </span>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 5 }}>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                 {o.attachments?.[0]?.dataUrl && (
                   <button onClick={() => onView(o)}
                     style={{ padding: "4px 8px", border: "1px solid #c7d2fe", borderRadius: 6,
-                      background: "#f0f4ff", color: "#4338ca", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      background: "#f0f4ff", color: "#4338ca", fontSize: 11,
+                      cursor: "pointer", fontFamily: "inherit" }}>
                     👁
                   </button>
                 )}
-                <button onClick={() => onPrint(o)}
-                  style={{ padding: "4px 8px", border: "none", borderRadius: 6,
-                    background: accent.bandeau, color: "#fff", fontSize: 11,
-                    cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                  🖨️
-                </button>
+                {!ordImprime ? (
+                  <button onClick={() => onPrint(o)}
+                    style={{ padding: "4px 10px", border: "none", borderRadius: 6,
+                      background: accent.bandeau, color: "#fff", fontSize: 11,
+                      cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                    🖨️ Imprimer
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, color: "#15803d", fontWeight: 700 }}>✓</span>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* Actions globales */}
+      {/* Footer fixe — sonnette toujours en bas */}
       <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
-        {/* Sonnette — même ligne que le bouton imprimer */}
         {onSonnette && sonnetteActive !== false && (
           <button onClick={onSonnette}
             title="Appeler le patient"
             style={{
-              padding: "12px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+              padding: "12px 14px", border: "1.5px solid rgba(26,58,110,0.3)",
               borderRadius: 9, background: "#f0f4ff", cursor: "pointer",
               fontSize: 18, flexShrink: 0, fontFamily: "inherit",
             }}>
             🔔
           </button>
         )}
-        <button
-          onClick={() => group.ordonnances.filter(o => o.status === 'nouveau').forEach(o => onPrint(o))}
-          style={{
-            flex: 1, padding: "12px", border: "none", borderRadius: 9,
-            background: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
-              ? accent.bandeau : "#e2e8f0",
-            color: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
-              ? "#fff" : "#94a3b8",
-            fontWeight: 800, fontSize: 14,
-            cursor: group.ordonnances.filter(o=>o.status==="nouveau").length > 0
-              ? "pointer" : "default",
-            fontFamily: "inherit",
-            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
-          }}>
-          {group.ordonnances.filter(o=>o.status==="nouveau").length > 0
-                ? `🖨️ Imprimer non traitées (${group.ordonnances.filter(o=>o.status==="nouveau").length})`
-                : "✓ Toutes imprimées"}
-        </button>
+        {/* Statut global */}
+        <div style={{
+          flex: 1, padding: "12px", borderRadius: 9,
+          background: allImprime ? "#f0fdf4" : accent.bg,
+          border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 800, fontSize: 13,
+          color: allImprime ? "#15803d" : accent.avatar,
+        }}>
+          {allImprime
+            ? "✓ Toutes imprimées"
+            : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
+        </div>
+        <button onClick={()=>{}} style={{display:"none"}}
+          //placeholder pour maintenir la structure
+        >
+        </div>
       </div>
     </div>
   );
