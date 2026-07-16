@@ -1,4 +1,4 @@
-// @version 16/07/2026 16:00 — CORS fix
+// @version 16/07/2026 16:04 — fix-email-notnull
 // OrdoMail — register-pharmacie
 // Crée le compte pharmacie après inscription Supabase Auth
 
@@ -49,6 +49,7 @@ Deno.serve(async (req) => {
       .from("pharmacies")
       .insert({
         nom,
+        email,
         email_reception: `${emailSlug}@in.ordomail.fr`,
         email_slug:      emailSlug,
         code_vendeur:    codeVendeur,
