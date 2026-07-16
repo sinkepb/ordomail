@@ -1,4 +1,4 @@
-// @version 16/07/2026 09:40 — email-with-code
+// @version 16/07/2026 09:57 — email-instructions
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -632,9 +632,8 @@ function PatientPage({ pharmacie, onBack }) {
   }
 
   function handleCopyEmail() {
-    // Générer le code si pas encore fait
+    // emailCode est déjà généré au montage — utiliser directement
     const code = emailCode || generateCode();
-    if (!emailCode) setEmailCode(code);
 
     // Construire l'email avec code intégré
     const emailAvecCode = buildEmailAvecCode(emailReception, code);
@@ -850,21 +849,63 @@ function PatientPage({ pharmacie, onBack }) {
             </div>
           </div>
           <div style={{ padding:14, display:"flex", flexDirection:"column", gap:10 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:0.8 }}>E-mail de votre pharmacie</div>
-            {/* Afficher l'email avec code si déjà généré, sinon email de base */}
-            <div style={{ fontSize:13, fontWeight:700, color:"#1a1a1a", fontFamily:"monospace", background:"#f0f7ff", borderRadius:8, padding:"11px 14px", wordBreak:"break-all", lineHeight:1.5, border:"1px solid #dbeafe" }}>
+
+            {/* ── Votre code personnel ── */}
+            <div style={{ background:"linear-gradient(135deg,#1a3a6e,#1e40af)", borderRadius:12, padding:"14px 16px", textAlign:"center" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.5, marginBottom:4 }}>
+                Votre code personnel
+              </div>
+              <div style={{ fontSize:52, fontWeight:900, color:"#fff", fontFamily:"monospace", letterSpacing:10, lineHeight:1 }}>
+                {emailCode || "…"}
+              </div>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.75)", marginTop:6 }}>
+                Montrez ce code au comptoir
+              </div>
+            </div>
+
+            {/* ── Marche à suivre ── */}
+            <div style={{ background:"#f0f9ff", borderRadius:10, padding:"12px 14px", border:"1px solid #bae6fd" }}>
+              <div style={{ fontSize:12, fontWeight:800, color:"#1e40af", marginBottom:8 }}>
+                📋 Procédure en 3 étapes :
+              </div>
+              {[
+                ["1️⃣", "Copiez l'adresse email ci-dessous"],
+                ["2️⃣", "Ouvrez votre boite mail et envoyez votre ordonnance en pièce jointe"],
+                ["3️⃣", "Revenez ici et attendez — votre pharmacien vous appellera quand c'est prêt"],
+              ].map(([num, txt]) => (
+                <div key={num} style={{ display:"flex", gap:8, marginBottom:6, alignItems:"flex-start" }}>
+                  <span style={{ fontSize:15, flexShrink:0 }}>{num}</span>
+                  <span style={{ fontSize:12, color:"#1e40af", lineHeight:1.5 }}>{txt}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Adresse email dynamique ── */}
+            <div style={{ fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:0.8 }}>
+              Adresse e-mail de votre pharmacie
+            </div>
+            <div style={{ fontSize:12, fontWeight:700, color:"#1a1a1a", fontFamily:"monospace", background:"#f0f7ff", borderRadius:8, padding:"11px 14px", wordBreak:"break-all", lineHeight:1.6, border:"1px solid #dbeafe" }}>
               {emailCode
-                ? <>{emailReception.split("@")[0]}-<span style={{color:"#1e40af"}}>{emailCode}</span>@{emailReception.split("@")[1]}</>
+                ? <>{emailReception.split("@")[0]}-<span style={{color:"#1e40af",fontWeight:900}}>{emailCode}</span>@{emailReception.split("@")[1]}</>
                 : emailReception}
             </div>
-            {emailCode && (
-              <div style={{ fontSize:11, color:"#475569", background:"#f0f9ff", borderRadius:8, padding:"8px 12px", border:"1px solid #bae6fd" }}>
-                💡 Votre code <strong>{emailCode}</strong> est intégré dans l'adresse — envoyez à cette adresse exacte
-              </div>
-            )}
-            <button onClick={handleCopyEmail} style={{ width:"100%", padding:"13px", border:"none", borderRadius:10, background:copied?"#16a34a":"#1e40af", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"background 0.3s" }}>
-              {copied ? "✅ Copié ! Ouverture des stories…" : "📋 Copier l'adresse et continuer"}
+
+            {/* ── Bouton copier ── */}
+            <button onClick={handleCopyEmail}
+              style={{ width:"100%", padding:"14px", border:"none", borderRadius:10,
+                background: copied ? "#16a34a" : "#1e40af",
+                color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer",
+                fontFamily:"inherit", display:"flex", alignItems:"center",
+                justifyContent:"center", gap:8, transition:"background 0.3s",
+                boxShadow: copied ? "none" : "0 4px 14px rgba(30,64,175,0.35)" }}>
+              {copied
+                ? "✅ Copié ! Ouverture des stories…"
+                : "📋 Copier l'adresse et continuer →"}
             </button>
+
+            <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center" }}>
+              Restez sur les stories après envoi — nous vous appelons quand c'est prêt
+            </div>
           </div>
         </div>
 
@@ -875,4 +916,9 @@ function PatientPage({ pharmacie, onBack }) {
 }
 
 export { PatientStories, PatientPage };
-export default PatientPage;
+export default PatientPage;// Générer le code email dès le montage
+  useEffect(() => {
+    setEmailCode(prev => prev || String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0"));
+  }, []);
+
+  
