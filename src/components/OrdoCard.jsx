@@ -487,10 +487,6 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
             ? "✓ Toutes imprimées"
             : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
         </div>
-        <button onClick={()=>{}} style={{display:"none"}}
-          //placeholder pour maintenir la structure
-        >
-        </div>
       </div>
     </div>
   );
