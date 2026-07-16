@@ -578,6 +578,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient }) {
 
 function PatientPage({ pharmacie, onBack }) {
   const [step, setStep]           = useState("form");
+  const [emailCode, setEmailCode] = useState(null); // code généré pour envoi email
   const [nom, setNom]             = useState("");
   const [files, setFiles]         = useState([]); // plusieurs ordonnances
   const [copied, setCopied]       = useState(false);
@@ -616,17 +617,43 @@ function PatientPage({ pharmacie, onBack }) {
     setFiles(prev => prev.filter((_, i) => i !== idx));
   }
 
+  // Génère le code email (même algo que sessionCode)
+  function generateCode() {
+    return String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+  }
+
+  // Construit l'adresse email avec le code patient intégré
+  // Format : base@domain → base-247@domain
+  // Ex : ph1@in.ordomail.fr → ph1-247@in.ordomail.fr
+  function buildEmailAvecCode(baseEmail, code) {
+    const [local, domain] = baseEmail.split("@");
+    return `${local}-${code}@${domain}`;
+  }
+
   function handleCopyEmail() {
-    const doCopy = () => { setCopied(true); setTimeout(() => setCopied(false), 2500); };
+    // Générer le code si pas encore fait
+    const code = emailCode || generateCode();
+    if (!emailCode) setEmailCode(code);
+
+    // Construire l'email avec code intégré
+    const emailAvecCode = buildEmailAvecCode(emailReception, code);
+
+    const doCopy = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+      // Lancer les stories après copie (délai court pour feedback visuel)
+      setTimeout(() => setStep("email-wait"), 800);
+    };
+
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(emailReception).then(doCopy).catch(() => {
+      navigator.clipboard.writeText(emailAvecCode).then(doCopy).catch(() => {
         const el = document.createElement("textarea");
-        el.value = emailReception; document.body.appendChild(el);
+        el.value = emailAvecCode; document.body.appendChild(el);
         el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
       });
     } else {
       const el = document.createElement("textarea");
-      el.value = emailReception; document.body.appendChild(el);
+      el.value = emailAvecCode; document.body.appendChild(el);
       el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
     }
   }
@@ -704,6 +731,18 @@ function PatientPage({ pharmacie, onBack }) {
     }
     setSending(false);
   }
+
+  // Nouveau step : patient a copié l'email, il attend sur les stories
+  if (step === "email-wait") return (
+    <div style={{ width:"100%", maxWidth:430, margin:"0 auto" }}>
+      <PatientStories
+        pharmacie={pharmacie}
+        nom={nom || "Patient"}
+        codePatient={emailCode}
+        onRestart={() => { setStep("form"); setEmailCode(null); setNom(""); }}
+      />
+    </div>
+  );
 
   if (step === "success") return (
     <PatientStories
@@ -811,11 +850,19 @@ function PatientPage({ pharmacie, onBack }) {
           </div>
           <div style={{ padding:14, display:"flex", flexDirection:"column", gap:10 }}>
             <div style={{ fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:0.8 }}>E-mail de votre pharmacie</div>
+            {/* Afficher l'email avec code si déjà généré, sinon email de base */}
             <div style={{ fontSize:13, fontWeight:700, color:"#1a1a1a", fontFamily:"monospace", background:"#f0f7ff", borderRadius:8, padding:"11px 14px", wordBreak:"break-all", lineHeight:1.5, border:"1px solid #dbeafe" }}>
-              {emailReception}
+              {emailCode
+                ? <>{emailReception.split("@")[0]}-<span style={{color:"#1e40af"}}>{emailCode}</span>@{emailReception.split("@")[1]}</>
+                : emailReception}
             </div>
+            {emailCode && (
+              <div style={{ fontSize:11, color:"#475569", background:"#f0f9ff", borderRadius:8, padding:"8px 12px", border:"1px solid #bae6fd" }}>
+                💡 Votre code <strong>{emailCode}</strong> est intégré dans l'adresse — envoyez à cette adresse exacte
+              </div>
+            )}
             <button onClick={handleCopyEmail} style={{ width:"100%", padding:"13px", border:"none", borderRadius:10, background:copied?"#16a34a":"#1e40af", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"background 0.3s" }}>
-              {copied ? "✅ E-mail copié !" : "📋 Copier l'e-mail"}
+              {copied ? "✅ Copié ! Ouverture des stories…" : "📋 Copier l'adresse et continuer"}
             </button>
           </div>
         </div>
