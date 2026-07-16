@@ -3,3 +3,9 @@ dist/
 .env
 .env.local
 .DS_Store
+supabase/.temp/ 
+deploy.bat 
+deploy.ps1 
+files/ 
+git 
+src/lib/AdminPage.jsx 
