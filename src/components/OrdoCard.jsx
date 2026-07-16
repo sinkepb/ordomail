@@ -1,3 +1,4 @@
+// @version 16/07/2026 15:36 — FORCE-UPDATE-153605
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl, isDemoMode } from "../supabase.js";
@@ -486,10 +487,6 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
           {allImprime
             ? "✓ Toutes imprimées"
             : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
-        </div>
-        <button onClick={()=>{}} style={{display:"none"}}
-          //placeholder pour maintenir la structure
-        >
         </div>
       </div>
     </div>
