@@ -1,4 +1,4 @@
-// @version 16/07/2026 10:05 — email-story
+// @version 16/07/2026 10:11 — email-blocked
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -155,6 +155,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const timerRef = useRef(null);
   const DURATION = 6000;
   // Story email spéciale — injectée en premier si le patient a envoyé par email
+  // En emailMode : remplace la story "Ordonnance reçue" (id:1) par les instructions
   const emailStory = emailMode ? [{
     id: "email-instructions",
     type: "email-instructions",
@@ -163,7 +164,10 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     title: "Envoyez votre ordonnance",
     codePatient,
   }] : [];
-  const [allStories, setAllStories] = useState([...emailStory, ...HEALTH_STORIES]);
+  const baseStories = emailMode
+    ? HEALTH_STORIES.filter(s => s.id !== 1)  // supprimer "Ordonnance reçue" en mode email
+    : HEALTH_STORIES;
+  const [allStories, setAllStories] = useState([...emailStory, ...baseStories]);
   const [interets, setInterets]     = useState({});
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
@@ -299,7 +303,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     if (isQuiz) return; // Pause sur le quiz
 
     const start = Date.now();
+    // Bloquer le timer sur la story email-instructions
+    const isEmailStory = allStories[current]?.type === "email-instructions";
+
     timerRef.current = setInterval(() => {
+      if (isEmailStory) return; // pause : ne pas avancer
       const elapsed = Date.now() - start;
       const pct = Math.min((elapsed / DURATION) * 100, 100);
       setProgress(pct);
@@ -319,11 +327,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   }, [quizAnswer]);
 
   function goNext() {
+    // Ne pas avancer depuis la story email-instructions
+    if (allStories[current]?.type === "email-instructions") return;
     if (current < allStories.length - 1) {
       setCurrent(c => c + 1);
     }
   }
   function goPrev() {
+    if (allStories[current]?.type === "email-instructions") return;
     if (current > 0) setCurrent(c => c - 1);
   }
 
