@@ -1,3 +1,4 @@
+// @version 16/07/2026 09:40 — email-with-code
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
