@@ -1,4 +1,4 @@
-// @version 16/07/2026 10:11 — email-blocked
+// @version 16/07/2026 10:36 — fix-setstories
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
@@ -173,7 +173,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
   useEffect(() => {
     const sb = getSupabaseClient();
-    let base = [...HEALTH_STORIES];
+    // En mode email : exclure la story "Ordonnance reçue" (id:1)
+    const baseStoriesForLoad = emailMode
+      ? HEALTH_STORIES.filter(s => s.id !== 1)
+      : HEALTH_STORIES;
+    let base = [...baseStoriesForLoad];
 
     const capturedPharmaId = pharmacie?.id; // Capturer AVANT l'async
     async function loadDynamic() {
@@ -194,7 +198,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           },
         ];
         base = [base[0], ...demoOffres, ...base.slice(1)];
-        setAllStories(base);
+        setAllStories([...emailStory, ...base]);
         return;
       }
       if (!sb) return;
@@ -284,7 +288,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
 
       console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", pharmacie?.id, "demo:", isDemoMode);
-      setAllStories(base);
+      setAllStories([...emailStory, ...base]);
     }
 
     loadDynamic();
