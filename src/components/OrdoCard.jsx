@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-// @version 16/07/2026 15:29 — rm-placeholder
-=======
 // @version 16/07/2026 15:50 — fix-allImprime-scope
->>>>>>> develop
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl, isDemoMode } from "../supabase.js";
