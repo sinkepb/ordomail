@@ -1,7 +1,7 @@
 // @version 16/07/2026 15:50 — fix-allImprime-scope
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSignedUrl, isDemoMode } from "../supabase.js";
+import { getSignedUrl } from "../supabase.js";
 import { timeAgo, getOrdoAccent } from "../lib/utils.js";
 
 
@@ -83,7 +83,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive }) {
+function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email  = ordo.fromEmail || "";
@@ -93,7 +93,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
   const accent = getOrdoAccent(ordo.id); // couleur unique par ordonnance
 
   return (
-    <div style={{
+    <div id={id} style={{
       background: "#fff", borderRadius: 16, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22, 0 1px 4px rgba(0,0,0,0.08)` : "0 1px 6px rgba(0,0,0,0.06)",
       border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
@@ -231,7 +231,7 @@ function OrdoCard({ ordo, couleur, onPrint, onView, onUpload, onReopen, loadingI
   );
 }
 
-function OrdoRow({ ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive }) {
+function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -240,7 +240,7 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnett
   const srcIcon = ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️";
 
   return (
-    <div style={{
+    <div id={id} style={{
       background: isNew ? accent.bg + "55" : "#fff",
       borderRadius: 12, marginBottom: 6, padding: "12px 18px",
       display: "flex", alignItems: "center", gap: 14,
@@ -316,7 +316,7 @@ function OrdoRow({ ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnett
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette, sonnetteActive }) {
+function OrdoGroup({ id, group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette, sonnetteActive }) {
   const [expanded, setExpanded] = useState(false);
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
@@ -327,7 +327,7 @@ function OrdoGroup({ group, couleur, onPrint, onView, onReopen, onUpload, loadin
   const count  = group.ordonnances.length;
 
   return (
-    <div style={{
+    <div id={id} style={{
       background: "#fff", borderRadius: 16, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
       border: allImprime ? "2px solid #bbf7d0" : isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
