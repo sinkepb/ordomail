@@ -1,3 +1,4 @@
+// @version 17/07/2026 13:36 — audit-logs
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
@@ -1284,6 +1285,10 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
 
   const searchRef = useRef(null);
   const userId2 = userId;
+  // Dériver le nom du poste depuis pharmacie.postes (disponible après chargement)
+  const posteNom = pharmacie?.postes?.find(p => p.id === userId)?.nom
+                || pharmacie?.pharmacie_postes?.find(p => p.id === userId)?.nom
+                || "";
 
   const canAdmin = userRole !== "vendeur";
 
@@ -1474,8 +1479,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
       await updateOrdoExtracted(id, pharmacieId, patch.extracted);
     }
   }
-  function handleViewOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"view",ordonnanceId:id}).catch(()=>{}); }
-  function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id}).catch(()=>{}); }
+  function handleViewOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"view",ordonnanceId:id,posteNom}).catch(()=>{}); }
+  function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id,posteNom}).catch(()=>{}); }
   async function handleFile(ordoId, file, dataUrl) {
     setLoadingId(ordoId);
     // Upload vers Storage (ou mémoire en mode démo)
@@ -1656,7 +1661,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
               }
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
-                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}
+                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     loadingId={loadingId}/>;
                 })}
               </div>
@@ -1766,7 +1771,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                 if (url) setViewerAtt({ ...a, dataUrl: url });
               }
             })()}
-                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id});}}/>;
+                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}/>;
                 })}
               </div>
             )}

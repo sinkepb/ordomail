@@ -343,24 +343,46 @@ export function notifyPharmacy(pharmacieId) {
 // Stockage en mémoire pour mode démo
 const _auditLogs = [];
 
-export async function addAuditLog({ userId, userRole, pharmacieId, action, ordonnanceId }) {
-  const entry = { id: `log-${Date.now()}`, ts: new Date().toISOString(), userId, userRole, pharmacieId, action, ordonnanceId };
-  if (IS_DEMO) { _auditLogs.push(entry); return; }
+export async function addAuditLog({ userId, userRole, pharmacieId, action, ordonnanceId, posteNom }) {
   const sb = getSupabase();
-  await sb.from('audit_logs').insert({ pharmacie_id: pharmacieId, user_id: userId, user_role: userRole, action, ordonnance_id: ordonnanceId });
+  await sb.from('audit_logs').insert({
+    pharmacie_id:  pharmacieId,
+    user_id:       userId        || null,
+    user_role:     userRole      || null,
+    poste_nom:     posteNom      || null,
+    action,
+    ordonnance_id: ordonnanceId  || null,
+  });
 }
 
 export async function getAuditLogs(pharmacieId) {
-  if (IS_DEMO) return _auditLogs.filter(l => l.pharmacieId === pharmacieId).slice(-100).reverse();
   const sb = getSupabase();
-  const { data } = await sb.from('audit_logs').select('*').eq('pharmacie_id', pharmacieId).order('created_at', { ascending: false }).limit(100);
-  return data || [];
+  const { data } = await sb.from('audit_logs')
+    .select('id, created_at, user_id, user_role, poste_nom, action, ordonnance_id')
+    .eq('pharmacie_id', pharmacieId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  // Normaliser snake_case → camelCase pour le rendu LogsPanel
+  return (data || []).map(l => ({
+    id:           l.id,
+    ts:           l.created_at,
+    userId:       l.user_id,
+    userRole:     l.user_role,
+    posteNom:     l.poste_nom,
+    action:       l.action,
+    ordonnanceId: l.ordonnance_id,
+  }));
 }
 
 export async function exportLogsCSV(pharmacieId) {
   const logs = await getAuditLogs(pharmacieId);
-  const csv = ['Horodatage,Utilisateur,Rôle,Action,ID Ordonnance',
-    ...logs.map(l => `${l.ts||l.created_at},${l.userId||l.user_id},${l.userRole||l.user_role},${l.action},${l.ordonnanceId||l.ordonnance_id||''}`),
+  const csv = ['Date,Heure,Poste,Utilisateur,Rôle,Action,ID Ordonnance',
+    ...logs.map(l => {
+      const d    = new Date(l.ts);
+      const date = isNaN(d) ? '' : d.toLocaleDateString('fr-FR');
+      const time = isNaN(d) ? '' : d.toLocaleTimeString('fr-FR');
+      return `${date},${time},${l.posteNom||''},${l.userId||''},${l.userRole||''},${l.action},${l.ordonnanceId||''}`;
+    }),
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

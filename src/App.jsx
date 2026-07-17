@@ -217,15 +217,36 @@ function LogsPanel({ pharmacieId, onClose }) {
         ):(
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
-              {["Heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
+              {["Date / Heure","Poste / Vendeur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
-            <tbody>{logs.map(l=>(
+            <tbody>{logs.map(l=>{
+              const d    = new Date(l.ts);
+              const date = isNaN(d) ? "—" : d.toLocaleDateString("fr-FR");
+              const time = isNaN(d) ? "—" : d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+              return (
               <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                <td style={{padding:"8px 10px",color:"#64748b"}}>{new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11}}>{l.userId}</td>
-                <td style={{padding:"8px 10px"}}><span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>{l.userRole}</span></td>
-                <td style={{padding:"8px 10px",fontWeight:600}}>{actionLabel[l.action]||l.action}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:"#94a3b8"}}>{l.ordonnanceId||"—"}</td>
+                <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
+                  <div style={{fontWeight:600,fontSize:12,color:"#1a1a1a"}}>{date}</div>
+                  <div style={{fontSize:11,color:"#94a3b8"}}>{time}</div>
+                </td>
+                <td style={{padding:"8px 10px"}}>
+                  {l.posteNom
+                    ? <><div style={{fontWeight:700,fontSize:12,color:"#1a1a1a"}}>{l.posteNom}</div><div style={{fontSize:10,color:"#94a3b8",fontFamily:"monospace"}}>{l.userId||""}</div></>
+                    : <span style={{fontFamily:"monospace",fontSize:11,color:"#475569"}}>{l.userId||"—"}</span>}
+                </td>
+                <td style={{padding:"8px 10px"}}>
+                  <span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>
+                    {l.userRole||"—"}
+                  </span>
+                </td>
+                <td style={{padding:"8px 10px",fontWeight:600,color:"#1a1a1a"}}>{actionLabel[l.action]||l.action}</td>
+                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>
+                  {l.ordonnanceId
+                    ? <span title={l.ordonnanceId}>{l.ordonnanceId.slice(0,8)}…</span>
+                    : "—"}
+                </td>
+              </tr>
+              );
               </tr>
             ))}</tbody>
           </table>
