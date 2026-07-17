@@ -1526,7 +1526,23 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
       </header>
       <BottomNav tab={tab} showLogs={showLogs} canAdmin={canAdmin} setTab={setTab} setShowLogs={setShowLogs} />
 
-      {showLogs&&canAdmin&&<LogsPanel pharmacieId={pharmacieId} onClose={()=>setShowLogs(false)}/>}
+      {showLogs&&canAdmin&&<LogsPanel
+        pharmacieId={pharmacieId}
+        onClose={()=>setShowLogs(false)}
+        onOpenOrdo={(ordoId) => {
+          setShowLogs(false);
+          setTab("ordonnances");
+          setFilterStatus("all");
+          setTimeout(() => {
+            const el = document.getElementById(`ordo-${ordoId}`);
+            if (el) {
+              el.scrollIntoView({ behavior:"smooth", block:"center" });
+              el.style.outline = "3px solid #1e40af";
+              setTimeout(() => el.style.outline = "", 2500);
+            }
+          }, 300);
+        }}
+      />}
 
       {tab==="ordonnances"&&!showLogs&&(
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
@@ -1630,7 +1646,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                 {groupedOrdos.map(o=>{
                   const accent=getOrdoAccent(o.id);
                   if (o._isGroup && o.ordonnances.length > 1) {
-                    return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)}
+                    return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)} id={`ordo-${o.ordonnances?.[0]?.id||o.id}`}
                       group={o} couleur={couleur}
                       interets={o.interets || []}
                       sonnetteActive={pharmacie?.sonnette_active !== false}
@@ -1647,7 +1663,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                       onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                       loadingId={loadingId}/>;
                   }
-                  return <OrdoCard key={o.id} ordo={o} couleur={couleur} accent={accent}
+                  return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
@@ -1758,7 +1774,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                       </div>
                     );
                   }
-                  return <OrdoRow key={o.id} ordo={o} couleur={couleur} accent={accent}
+                  return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}

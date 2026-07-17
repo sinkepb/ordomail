@@ -198,7 +198,7 @@ const MOCK_INVOICES = [
 ];
 
 // ─── LogsPanel ─────────────────────────────────────────────────────────────────
-function LogsPanel({ pharmacieId, onClose }) {
+function LogsPanel({ pharmacieId, onClose, onOpenOrdo }) {
   const [logs, setLogs] = useState([]);
   useEffect(() => { getAuditLogs(pharmacieId).then(setLogs); }, [pharmacieId]);
   const actionLabel = { view:"Consultation", print:"Impression", upload:"Import", reopen:"Remise en file", login:"Connexion", logout:"Déconnexion" };
@@ -220,9 +220,10 @@ function LogsPanel({ pharmacieId, onClose }) {
               {["Date / Heure","Poste / Vendeur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>{logs.map(l=>{
-              const d    = new Date(l.ts);
-              const date = isNaN(d) ? "—" : d.toLocaleDateString("fr-FR");
-              const time = isNaN(d) ? "—" : d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+              const ts   = l.ts || l.created_at;
+              const d    = ts ? new Date(ts) : null;
+              const date = d && !isNaN(d) ? d.toLocaleDateString("fr-FR") : "—";
+              const time = d && !isNaN(d) ? d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—";
               return (
               <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
                 <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
@@ -240,10 +241,17 @@ function LogsPanel({ pharmacieId, onClose }) {
                   </span>
                 </td>
                 <td style={{padding:"8px 10px",fontWeight:600,color:"#1a1a1a"}}>{actionLabel[l.action]||l.action}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>
+                <td style={{padding:"8px 10px"}}>
                   {l.ordonnanceId
-                    ? <span title={l.ordonnanceId}>{l.ordonnanceId.slice(0,8)}…</span>
-                    : "—"}
+                    ? <button
+                        onClick={() => { onClose(); onOpenOrdo && onOpenOrdo(l.ordonnanceId); }}
+                        title={l.ordonnanceId}
+                        style={{fontFamily:"monospace",fontSize:10,color:"#1e40af",background:"#eff6ff",
+                          border:"1px solid #bfdbfe",borderRadius:6,padding:"2px 8px",cursor:"pointer",
+                          fontWeight:700,textDecoration:"none"}}>
+                        {l.ordonnanceId.slice(0,8)}…
+                      </button>
+                    : <span style={{color:"#94a3b8"}}>—</span>}
                 </td>
               </tr>
               );
