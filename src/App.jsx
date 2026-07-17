@@ -247,8 +247,7 @@ function LogsPanel({ pharmacieId, onClose }) {
                 </td>
               </tr>
               );
-              </tr>
-            ))}</tbody>
+            })}</tbody>
           </table>
         )}
       </div>
