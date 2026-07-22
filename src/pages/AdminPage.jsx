@@ -62,6 +62,9 @@ const MOCK_SUBSCRIPTIONS = [
 ];
 
 
+// Jeu de données démo (mode VITE_DEMO_MODE=true uniquement — voir authenticate() ci-dessous).
+// ⚠️ Ne JAMAIS utiliser DB.admin comme repli d'authentification hors mode démo strict :
+// c'était la porte dérobée corrigée le 23/07/2026 (voir dossier d'audit sécurité).
 const DB = {
   pharmacies: [
     {
@@ -95,11 +98,12 @@ const DB = {
 
 
 function BackofficeAdmin({ onBack }) {
-  const [authed,    setAuthed]    = useState(false);
-  const [email,     setEmail]     = useState("");
-  const [pwd,       setPwd]       = useState("");
-  const [err,       setErr]       = useState("");
-  const [loading,   setLoading]   = useState(false);
+  const [authed,     setAuthed]     = useState(false);
+  const [adminToken, setAdminToken] = useState(null);
+  const [email,      setEmail]      = useState("");
+  const [pwd,        setPwd]        = useState("");
+  const [err,        setErr]        = useState("");
+  const [loading,    setLoading]    = useState(false);
 
   async function authenticate() {
     if (!email || !pwd) return;
@@ -112,12 +116,21 @@ function BackofficeAdmin({ onBack }) {
         body: JSON.stringify({ email, password: pwd }),
       });
       const data = await res.json();
-      if (data.success) setAuthed(true);
+      if (data.success) { setAdminToken(data.token || null); setAuthed(true); }
       else setErr(data.error || "Identifiants incorrects");
     } catch(e) {
-      // Fallback mode démo
-      if (email === DB.admin.email && pwd === DB.admin.password) setAuthed(true);
-      else setErr("Erreur de connexion");
+      // Le service verify-admin est indisponible (réseau, fonction non déployée, config manquante).
+      // ⚠️ SÉCURITÉ : ce repli ne doit JAMAIS authentifier en production. Avant le 23/07/2026, ce
+      // bloc comparait à un identifiant codé en dur (admin@ordomail.fr / admin2025) shipé dans le
+      // bundle JS — une porte dérobée exploitable par quiconque lisait le code source. Il n'est
+      // désormais accepté qu'en mode démo explicite (VITE_DEMO_MODE=true), jamais sur un simple
+      // échec réseau.
+      if (isDemoMode && email === DB.admin.email && pwd === DB.admin.password) {
+        setAdminToken(null);
+        setAuthed(true);
+      } else {
+        setErr("Service d'authentification indisponible — réessayez ou contactez le support");
+      }
     }
     setLoading(false);
   }
@@ -161,10 +174,10 @@ function BackofficeAdmin({ onBack }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,0.07)",border:"1px solid #334155",color:"#94a3b8",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-          <button onClick={()=>setAuthed(false)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+          <button onClick={()=>{ setAuthed(false); setAdminToken(null); }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
         </div>
       </header>
-      <AdminDashboardLive/>
+      <AdminDashboardLive adminToken={adminToken}/>
     </div>
   );
 }
@@ -541,7 +554,7 @@ function HistoriqueSparkline({ pharmacieId }) {
   );
 }
 
-function AdminDashboardLive() {
+function AdminDashboardLive({ adminToken } = {}) {
   const [tab,      setTab]      = useState("clients");
   const [clients,  setClients]  = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -590,68 +603,23 @@ function AdminDashboardLive() {
       return;
     }
     try {
-      const sb = getSupabaseClient();
-      const { data: pharmacies } = await sb
-        .from("pharmacies")
-        .select("*, postes(*)")
-        .order("created_at", { ascending: false });
-      if (!pharmacies) { setLoading(false); return; }
-
-      const now30 = new Date(Date.now() - 30*86400000).toISOString();
-      const now7  = new Date(Date.now() - 7*86400000).toISOString();
-      const now24 = new Date(Date.now() - 86400000).toISOString();
-
-      const enriched = await Promise.all(pharmacies.map(async ph => {
-        const [
-          { count: total },
-          { count: mois },
-          { count: semaine },
-          { count: attente },
-          { data: canaux },
-          { data: offres },
-        ] = await Promise.all([
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now30),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now7),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("status","nouveau").lte("received_at",now24),
-          sb.from("ordonnances").select("source").eq("pharmacie_id",ph.id).gte("received_at",now30),
-          sb.from("offres_stories").select("id",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("actif",true),
-        ]);
-
-        // Calcul canaux
-        const total_canaux = canaux?.length || 0;
-        const qr_count = canaux?.filter(o=>o.source==="qrcode").length || 0;
-        const email_count = canaux?.filter(o=>o.source==="email").length || 0;
-        const canal_qr_pct    = total_canaux ? Math.round(qr_count/total_canaux*100) : 0;
-        const canal_email_pct = total_canaux ? Math.round(email_count/total_canaux*100) : 0;
-
-        // Score activité 0-100
-        const score = Math.min(100, Math.round(
-          (mois||0)*0.4 +
-          (semaine||0)*2 +
-          (canal_qr_pct)*0.2 +
-          ((ph.postes||[]).filter(p=>p.actif&&p.pin_hash).length)*5
-        ));
-
-        // Pins configurés
-        const pins_configures = (ph.postes||[]).filter(p=>p.pin_hash).length;
-
-        return {
-          ...ph,
-          postesActifs:    (ph.postes||[]).filter(p=>p.actif).length,
-          postesTotal:     (ph.postes||[]).length,
-          ordos_total:     total || 0,
-          ordos_mois:      mois  || 0,
-          ordos_semaine:   semaine || 0,
-          ordos_attente:   attente || 0,
-          canal_qr_pct,
-          canal_email_pct,
-          offres_actives:  offres?.length || 0,
-          pins_configures,
-          score_activite:  score,
-          taux_traitement: total ? Math.round(((total-(attente||0))/total)*100) : 0,
-        };
-      }));
+      // Route via secure-data (jeton admin) — l'ancien .select("*, postes(*)") en clé anon
+      // renvoyait, entre autres, les PIN de vente en clair de toutes les pharmacies à
+      // quiconque savait appeler l'API REST Supabase, connecté ou non au backoffice.
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": supabaseKey,
+          "Authorization": `Bearer ${adminToken || ""}`,
+        },
+        body: JSON.stringify({ resource: "admin_pharmacies" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `secure-data ${res.status}`);
+      const enriched = body.data || [];
 
       setClients(enriched);
       computeGlobalMetrics(enriched);
@@ -801,9 +769,22 @@ function AdminDashboardLive() {
               plans={PLANS}
               onSave={async (id,plan,postes)=>{
                 setSaving(true);
-                const sb = getSupabaseClient();
-                await sb.from("pharmacies").update({plan}).eq("id",id);
-                setMsg("✅ Contrat mis à jour");
+                try {
+                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                  await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "apikey": supabaseKey,
+                      "Authorization": `Bearer ${adminToken || ""}`,
+                    },
+                    body: JSON.stringify({ resource: "admin_update_plan", params: { pharmacieId: id, plan } }),
+                  });
+                  setMsg("✅ Contrat mis à jour");
+                } catch(e) {
+                  setMsg("❌ Erreur : " + e.message);
+                }
                 setSaving(false);
                 setTimeout(()=>setMsg(""),3000);
                 loadClients();

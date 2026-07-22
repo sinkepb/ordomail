@@ -45,6 +45,50 @@ export function registerDB(db) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// JETON VENDEUR (phase 1 sécurité)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Un poste vendeur (connexion par code pharmacie + PIN) n'a pas de session Supabase
+// Auth réelle. Depuis le durcissement du 23/07/2026, verify-pin émet un jeton signé
+// de courte durée (voir supabase/functions/_shared/jwt.ts) qu'il faut présenter à
+// l'edge function secure-data pour lire les ordonnances/offres de sa pharmacie.
+// Volontairement non persisté (mémoire du module) : comme avant, un rechargement
+// complet de page déconnecte le poste vendeur, qui doit resaisir son PIN.
+let _vendeurToken = null;
+
+export function setVendeurToken(token) { _vendeurToken = token || null; }
+export function clearVendeurToken() { _vendeurToken = null; }
+
+// Résout le jeton à présenter à secure-data : jeton vendeur en mémoire si présent,
+// sinon le jeton de session Supabase Auth du titulaire connecté.
+async function _resolveAuthToken() {
+  if (_vendeurToken) return _vendeurToken;
+  if (IS_DEMO) return null;
+  const sb = getSupabase();
+  const { data: { session } } = await sb.auth.getSession();
+  return session?.access_token || null;
+}
+
+// Appel générique à l'edge function secure-data — remplace les lectures directes
+// en clé anon (fetchOrdonnances, offre_interets…) désormais bloquées par RLS.
+async function _callSecureData(resource, params = {}) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const token = await _resolveAuthToken();
+  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${token || ''}`,
+    },
+    body: JSON.stringify({ resource, params }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `secure-data ${resource} : erreur ${res.status}`);
+  return body.data;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -124,12 +168,14 @@ export async function authSignInPIN(pin, pharmacieId) {
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
-        // PAS de Authorization header — vendeur non authentifié
+        // PAS de Authorization header — vendeur non authentifié (voir jeton retourné par verify-pin)
       },
       body: JSON.stringify({ pin, pharmacieId }),
     });
     const data = await res.json();
     if (!res.ok || !data?.success) return { error: new Error(data?.error || 'PIN incorrect') };
+    // Jeton vendeur (phase 1 sécurité) — nécessaire pour lire les ordonnances via secure-data
+    setVendeurToken(data.token);
     return { pharmacie: data.pharmacie, poste: data.poste, userRole: 'vendeur', userId: data.poste.id, posteNom: data.poste.nom };
   } catch(e) {
     return { error: new Error('Erreur de connexion: ' + e.message) };
@@ -155,6 +201,7 @@ export async function authSignInPSC() {
 }
 
 export async function authSignOut() {
+  clearVendeurToken();
   if (!IS_DEMO) {
     const sb = getSupabase();
     await sb.auth.signOut();
@@ -178,6 +225,28 @@ export async function fetchPharmacie(pharmacieId) {
     data.postes = data.pharmacie_postes;
   }
   return data;
+}
+
+// ─── Lecture publique (page patient via QR code, non authentifiée) ───────────
+// ⚠️ Ne JAMAIS remplacer par fetchPharmacie() ici : celle-ci fait un select('*, pharmacie_postes(*)')
+// et renvoyait donc — avant le 23/07/2026 — les PIN des postes vendeur en clair à
+// n'importe quel patient ouvrant le lien QR de la pharmacie. On ne sélectionne ici
+// que les colonnes strictement nécessaires au formulaire patient.
+export async function fetchPharmaciePublic(pharmacieId) {
+  if (IS_DEMO) {
+    const db = getDB();
+    const ph = db.pharmacies.find(p => p.id === pharmacieId);
+    if (!ph) return null;
+    return { id: ph.id, nom: ph.nom, couleur: ph.couleur, emailReception: ph.emailReception, sonnette_active: ph.sonnette_active };
+  }
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from('pharmacies')
+    .select('id, nom, couleur, email_reception, sonnette_active')
+    .eq('id', pharmacieId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { ...data, emailReception: data.email_reception };
 }
 
 export async function savePharmacie(pharmacieId, patch) {
@@ -230,25 +299,11 @@ export async function fetchOrdonnances(pharmacieId, days = 7) {
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
     return ph?.ordonnances || [];
   }
-  // Fetch direct REST — contourne RLS qui exige auth.uid() (vendeur non-auth Supabase)
+  // Route via secure-data — vérifie le jeton vendeur/titulaire côté serveur avant
+  // de renvoyer des ordonnances (avant le 23/07/2026, un simple appel REST avec la
+  // clé anon suffisait à lire les ordonnances de n'importe quelle pharmacie).
   try {
-    const supabaseUrl = typeof import.meta !== 'undefined'
-      ? import.meta.env.VITE_SUPABASE_URL
-      : process.env.VITE_SUPABASE_URL;
-    const supabaseKey = typeof import.meta !== 'undefined'
-      ? import.meta.env.VITE_SUPABASE_ANON_KEY
-      : process.env.VITE_SUPABASE_ANON_KEY;
-    const since = new Date(); since.setDate(since.getDate() - days);
-    const url = `${supabaseUrl}/rest/v1/ordonnances?pharmacie_id=eq.${pharmacieId}&received_at=gte.${since.toISOString()}&order=received_at.desc&select=*`;
-    const res = await fetch(url, {
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!res.ok) throw new Error(`fetchOrdonnances HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await _callSecureData('ordonnances', { days });
     return (data || []).map(normOrdo);
   } catch(e) {
     console.error('[fetchOrdonnances]', e.message);
@@ -265,11 +320,13 @@ export async function updateOrdoStatus(ordoId, pharmacieId, status) {
     );
     return;
   }
-  const sb = getSupabase();
-  await sb.from('ordonnances').update({
-    status,
-    printed_at: status === 'imprime' ? new Date().toISOString() : null
-  }).eq('id', ordoId);
+  // Route via secure-data — un poste vendeur (PIN) n'a pas de session Supabase Auth,
+  // donc pas de droit d'écriture direct sous RLS. secure-data vérifie le jeton vendeur/
+  // titulaire et que l'ordonnance appartient bien à sa pharmacie avant d'écrire.
+  await _callSecureData('ordonnances_update', {
+    ordoId,
+    patch: { status, printed_at: status === 'imprime' ? new Date().toISOString() : null },
+  });
 }
 
 export async function updateOrdoExtracted(ordoId, pharmacieId, extracted) {
@@ -279,11 +336,13 @@ export async function updateOrdoExtracted(ordoId, pharmacieId, extracted) {
     if (ph) ph.ordonnances = ph.ordonnances.map(o => o.id === ordoId ? { ...o, extracted } : o);
     return;
   }
-  const sb = getSupabase();
-  await sb.from('ordonnances').update({
-    patient_nom: extracted.nom, patient_cv: extracted.carteVitale,
-    medecin: extracted.medecin, medicaments: extracted.medicaments || [],
-  }).eq('id', ordoId);
+  await _callSecureData('ordonnances_update', {
+    ordoId,
+    patch: {
+      patient_nom: extracted.nom, patient_cv: extracted.carteVitale,
+      medecin: extracted.medecin, medicaments: extracted.medicaments || [],
+    },
+  });
 }
 
 export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
@@ -302,7 +361,7 @@ export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
   const path = `${pharmacieId}/${ordoId}/ordonnance.${ext}`;
   await sb.storage.from('ordonnances-files').upload(path, file, { upsert: true });
   const { data: signed } = await sb.storage.from('ordonnances-files').createSignedUrl(path, 3600);
-  await sb.from('ordonnances').update({ fichier_url: path, fichier_nom: file.name }).eq('id', ordoId);
+  await _callSecureData('ordonnances_update', { ordoId, patch: { fichier_url: path, fichier_nom: file.name } });
   return { dataUrl: signed?.signedUrl, path };
 }
 
@@ -583,15 +642,13 @@ export async function fetchHistoriqueMetriques(pharmacieId, jours = 30) {
 // ─── Intérêts patients pour les offres ───────────────────────────────────────
 export async function fetchInteretsParCode(pharmacieId, codePatient) {
   if (IS_DEMO) return [];
-  const sb = getSupabase();
   const today = new Date().toISOString().split("T")[0];
-  const { data } = await sb
-    .from("offre_interets")
-    .select("*")
-    .eq("pharmacie_id", pharmacieId)
-    .eq("code_patient", codePatient)
-    .eq("date_jour", today);
-  return data || [];
+  try {
+    return await _callSecureData('offre_interets', { codePatient, dateJour: today }) || [];
+  } catch(e) {
+    console.error('[fetchInteretsParCode]', e.message);
+    return [];
+  }
 }
 
 // Charger tous les intérêts du jour pour une pharmacie (pour le dashboard)
@@ -604,14 +661,13 @@ export async function fetchInteretsDuJour(pharmacieId) {
       i => i.pharmacie_id === pharmacieId && i.date_jour === today
     );
   }
-  const sb = getSupabase();
   const today = new Date().toISOString().split("T")[0];
-  const { data } = await sb
-    .from("offre_interets")
-    .select("*")
-    .eq("pharmacie_id", pharmacieId)
-    .eq("date_jour", today);
-  return data || [];
+  try {
+    return await _callSecureData('offre_interets', { dateJour: today }) || [];
+  } catch(e) {
+    console.error('[fetchInteretsDuJour]', e.message);
+    return [];
+  }
 }
 
 

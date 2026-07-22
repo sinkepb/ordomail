@@ -2,15 +2,17 @@
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl } from "../supabase.js";
-import { timeAgo, getOrdoAccent } from "../lib/utils.js";
+import { timeAgo, getOrdoAccent, escapeHtml } from "../lib/utils.js";
 
 
 function generateOrdoPDF(ordo) {
-  const nom = ordo.extracted?.nom || ordo.fromName || "Patient";
-  const cv  = ordo.extracted?.carteVitale || "Non disponible";
-  const med = ordo.extracted?.medecin || "Dr Inconnu";
-  const dat = ordo.extracted?.date || new Date().toLocaleDateString("fr-FR");
-  const meds = (ordo.extracted?.medicaments || []).join(", ") || "—";
+  // ⚠️ nom/cv/med/dat/medicaments proviennent du patient (formulaire non authentifié)
+  // ou de l'OCR — toujours échapper avant interpolation dans du HTML brut (anti-XSS).
+  const nom = escapeHtml(ordo.extracted?.nom || ordo.fromName || "Patient");
+  const cv  = escapeHtml(ordo.extracted?.carteVitale || "Non disponible");
+  const med = escapeHtml(ordo.extracted?.medecin || "Dr Inconnu");
+  const dat = escapeHtml(ordo.extracted?.date || new Date().toLocaleDateString("fr-FR"));
+  const meds = (ordo.extracted?.medicaments || []).map(escapeHtml).join(", ") || "—";
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -61,7 +63,7 @@ function generateOrdoPDF(ordo) {
 </div>
 <div class="meds">
   <div class="meds-label">Médicaments prescrits</div>
-  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${m}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
+  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${escapeHtml(m)}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
 </div>
 <div class="footer">
   <span>Imprimé le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"})}</span>
@@ -187,7 +189,7 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
-                <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank"); }}
+                <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank", "noopener,noreferrer"); }}
                   title="Voir la fiche ordonnance PDF"
                   style={{ padding: "9px 10px", border: "1.5px solid #c7d2fe", borderRadius: 9, background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                   📄

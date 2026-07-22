@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
-  fetchPharmacie, savePharmacie, savePostes,
+  fetchPharmacie, fetchPharmaciePublic, savePharmacie, savePostes,
   fetchOrdonnances, updateOrdoStatus, updateOrdoExtracted, uploadOrdoFile,
   subscribeToPharmacy, notifyPharmacy,
   addAuditLog, getAuditLogs, exportLogsCSV,
@@ -282,6 +282,7 @@ function AppInner() {
   const hashToken   = hashParams.get("access_token");
   const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
+  const qrTokenParam = urlParams.get("t"); // jeton public par pharmacie porté par le QR code (phase 1 sécurité)
   // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
   const initialRoute = isRecovery ? "reset-password" : (patientParam ? "patient" : "landing");
@@ -326,10 +327,13 @@ function AppInner() {
       else setPatientPharmacieQR(ph);
       return;
     }
-    // Mode prod : charger depuis Supabase
-    fetchPharmacie(patientParam).then(ph => {
+    // Mode prod : charger depuis Supabase — lecture publique restreinte (pas de PIN/postes,
+    // voir fetchPharmaciePublic) puisque cette page est ouverte par un patient non authentifié.
+    fetchPharmaciePublic(patientParam).then(ph => {
       if (!ph) { setRoute("landing"); return; }
-      setPatientPharmacieQR(ph);
+      // qr_token vient de l'URL (imprimé sur le QR code), pas de la base — submit-ordonnance
+      // le revérifiera côté serveur contre la valeur stockée pour cette pharmacie.
+      setPatientPharmacieQR({ ...ph, qr_token: qrTokenParam });
     }).catch(() => setRoute("landing"));
   }, []);
   const [checkoutPlan, setCheckoutPlan] = useState("standard");

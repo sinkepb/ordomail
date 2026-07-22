@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
+import { escapeHtml } from "../lib/utils.js";
 
 function ViewerModal({ att, onClose }) {
   if (!att) return null;
@@ -10,7 +11,7 @@ function ViewerModal({ att, onClose }) {
   // Pour les PDF : ouvrir dans un nouvel onglet au montage
   useEffect(() => {
     if (!isPdf || !att.dataUrl) return;
-    const win = window.open(att.dataUrl, "_blank");
+    const win = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
     // Si le navigateur bloque le popup, on reste dans la modale avec le message
     if (win) { win.focus(); onClose(); }
   }, []);
@@ -110,17 +111,24 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
     const printedTime = new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
 
     // Bandeau patient affiché dans tous les cas au-dessus du document
+    // ⚠️ nom/email/medecin/date proviennent du formulaire patient (non authentifié) ou de l'OCR —
+    // toujours échapper avant interpolation dans du HTML brut (anti-XSS).
+    const safeNom     = escapeHtml(nom);
+    const safeEmail   = escapeHtml(email);
+    const safeMedecin = escapeHtml(medecin);
+    const safeDate    = escapeHtml(date);
+
     const banner = `<div style="font-family:Arial,sans-serif;padding:10px 16px;background:#1a3a6e;color:#fff;display:flex;justify-content:space-between;align-items:center;page-break-after:avoid">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="font-size:18px;font-weight:900;letter-spacing:0.5px">OrdoMail</div>
         <div style="width:1px;height:24px;background:rgba(255,255,255,0.3)"></div>
         <div>
-          <div style="font-size:16px;font-weight:700">${nom || "—"}</div>
-          ${email ? `<div style="font-size:12px;opacity:0.8">${email}</div>` : ""}
+          <div style="font-size:16px;font-weight:700">${safeNom || "—"}</div>
+          ${safeEmail ? `<div style="font-size:12px;opacity:0.8">${safeEmail}</div>` : ""}
         </div>
       </div>
       <div style="text-align:right;font-size:11px;opacity:0.75">
-        <div>${medecin || ""} ${date ? "· " + date : ""}</div>
+        <div>${safeMedecin} ${safeDate ? "· " + safeDate : ""}</div>
         <div>Reçue le ${receivedDate} à ${receivedTime}</div>
         <div>Imprimé le ${printedDate} à ${printedTime}</div>
       </div>
@@ -146,14 +154,15 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
       // Le navigateur imprime le PDF dans son viewer natif
       printArea.innerHTML = banner + `<div style="font-family:Arial;padding:20px;text-align:center;color:#555;font-size:14px">
         <div style="font-size:32px;margin-bottom:10px">📄</div>
-        <div style="font-weight:700;margin-bottom:6px">${att.name}</div>
+        <div style="font-weight:700;margin-bottom:6px">${escapeHtml(att.name)}</div>
         <div>Le PDF s'ouvre dans un nouvel onglet pour l'impression.</div>
       </div>`;
       // Ouvrir le PDF dans un nouvel onglet — le navigateur affiche sa boîte d'impression native
-      const pdfWin = window.open("", "_blank");
+      // rel/features vides + pas de référence conservée : on évite le reverse-tabnabbing (window.opener)
+      const pdfWin = window.open("", "_blank", "noopener,noreferrer");
       if (pdfWin) {
         pdfWin.document.write(
-          '<html><head><title>' + (nom || "Ordonnance") + '</title>' +
+          '<html><head><title>' + escapeHtml(nom || "Ordonnance") + '</title>' +
           '<style>body{margin:0}embed{width:100vw;height:100vh}</style></head>' +
           '<body><embed src="' + att.dataUrl + '" type="application/pdf" /></body></html>'
         );
@@ -177,7 +186,7 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
       }
       // Fiche de synthèse simple si aucune source
       const medsHtml = medicaments.filter(Boolean).map(m =>
-        `<li style="font-size:14px;margin-bottom:5px">${m}</li>`
+        `<li style="font-size:14px;margin-bottom:5px">${escapeHtml(m)}</li>`
       ).join("");
       printArea.innerHTML = banner + `<div style="font-family:Arial,sans-serif;padding:20px 28px;max-width:620px;margin:0 auto">
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#856404">
@@ -186,11 +195,11 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
           <div style="background:#f8f9ff;padding:14px;border-radius:9px;border:1px solid #dde4f5">
             <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:5px">Médecin</div>
-            <div style="font-size:15px;font-weight:700">${medecin || "—"}</div>
+            <div style="font-size:15px;font-weight:700">${safeMedecin || "—"}</div>
           </div>
           <div style="background:#f8f9ff;padding:14px;border-radius:9px;border:1px solid #dde4f5">
             <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:5px">Date prescription</div>
-            <div style="font-size:15px;font-weight:700">${date || "—"}</div>
+            <div style="font-size:15px;font-weight:700">${safeDate || "—"}</div>
           </div>
         </div>
         ${medsHtml ? `<div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px">Médicaments</div><ul style="margin:0;padding-left:20px;line-height:1.8">${medsHtml}</ul></div>` : ""}

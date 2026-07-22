@@ -665,11 +665,17 @@ function ParametresTab({ pharmacie, onSave }) {
                             }
                           }
                         } else {
+                          // update-pin exige désormais le jeton du titulaire connecté (phase 1 sécurité)
                           const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
                           const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                          const { data: { session } } = await sb.auth.getSession();
                           await fetch(`${supabaseUrl}/functions/v1/update-pin`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey },
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'apikey': supabaseKey,
+                              'Authorization': `Bearer ${session?.access_token || ''}`,
+                            },
                             body: JSON.stringify({ posteId: poste.id, pin: v }),
                           });
                         }
@@ -1434,7 +1440,9 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   // → En prod : VITE_APP_URL = https://ordomail.fr
   // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
   const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
-  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
+  // qr_token (phase 1 sécurité) : jeton public par pharmacie exigé par submit-ordonnance
+  // pour éviter qu'un pharmacie_id deviné/énuméré permette de spammer la file d'une pharmacie.
+  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}${pharmacie?.qr_token ? `&t=${pharmacie.qr_token}` : ""}`;
   // Calendrier : jours avec ordonnances (recomputed)
   const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
 

@@ -752,6 +752,9 @@ function PatientPage({ pharmacie, onBack }) {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
       formData.append("pharmacie_id", pharmacie.id);
+      // Jeton public par pharmacie (imprimé sur le QR code) — submit-ordonnance le vérifie
+      // pour empêcher qu'un pharmacie_id deviné suffise à déposer de fausses ordonnances.
+      formData.append("qr_token", pharmacie.qr_token || "");
       formData.append("from_name",    nom.toUpperCase());
       formData.append("patient_nom",  extracted?.nom || nom.toUpperCase());
       formData.append("patient_cv",   "");

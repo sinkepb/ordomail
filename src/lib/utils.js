@@ -1,5 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 
+// ─── Échappement HTML (anti-XSS) ──────────────────────────────────────────────
+// À utiliser systématiquement avant d'interpoler une valeur utilisateur/patient
+// (nom, email, médicaments…) dans une chaîne HTML brute (innerHTML, window.open).
+export function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ─── Utilitaires temporels ────────────────────────────────────────────────────
 export function timeAgo(date) {
   if (!date) return "";
