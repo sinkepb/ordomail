@@ -32,7 +32,15 @@ export function isSameDay(a, b) {
 
 export function toDateKey(date) {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toISOString().split("T")[0];
+  // ⚠️ Ne pas utiliser toISOString() ici : elle convertit en UTC avant de
+  // formater, donc dans un fuseau en avance sur UTC (ex. Europe l'été), les
+  // premières heures de la journée locale sont encore la veille en UTC — le
+  // calendrier affichait alors "hier" comme date du jour. On construit la clé
+  // à partir des composants de date LOCAUX du navigateur à la place.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function formatDateLabel(key) {
