@@ -9,9 +9,26 @@
 // Pour activer Supabase : mettre VITE_DEMO_MODE=false dans .env.local
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true' ||
-                !import.meta.env.VITE_SUPABASE_URL ||
-                import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co';
+const _DEMO_EXPLICIT = import.meta.env.VITE_DEMO_MODE === 'true';
+const _SUPABASE_URL_MISSING = !import.meta.env.VITE_SUPABASE_URL ||
+                               import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co';
+
+// ⚠️ Avant le 24/07/2026, une config Supabase manquante en production basculait
+// SILENCIEUSEMENT en mode démo — dont les identifiants (admin2025, PIN 1234/5678…)
+// sont codés en dur et lisibles dans le bundle JS. En build de production
+// (import.meta.env.PROD), on refuse désormais de démarrer dans cet état plutôt que
+// de tourner avec des identifiants de démo sans que personne ne s'en aperçoive.
+// VITE_DEMO_MODE=true reste le seul moyen légitime de déployer une démo.
+if (!_DEMO_EXPLICIT && _SUPABASE_URL_MISSING && import.meta.env.PROD) {
+  throw new Error(
+    'Configuration Supabase manquante (VITE_SUPABASE_URL absent ou placeholder) sur un build de ' +
+    'production — démarrage refusé pour éviter un repli silencieux en mode démo. Définissez ' +
+    'VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY, ou VITE_DEMO_MODE=true si ce déploiement est ' +
+    'volontairement une démonstration.'
+  );
+}
+
+const IS_DEMO = _DEMO_EXPLICIT || (_SUPABASE_URL_MISSING && !import.meta.env.PROD);
 
 // ─── Client Supabase (initialisé en mode prod uniquement) ────────────────────
 import { createClient } from '@supabase/supabase-js';

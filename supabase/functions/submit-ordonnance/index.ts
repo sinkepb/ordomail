@@ -31,6 +31,12 @@ serve(async (req) => {
     const medecin      = form.get("medecin")?.toString() || null;
     const medicaments  = JSON.parse(form.get("medicaments")?.toString() || "[]");
     const file         = form.get("file") as File | null;
+    // Code patient (3 chiffres) généré côté client (crypto-random, voir PatientPage.jsx) —
+    // même code pour tous les fichiers d'une même session d'envoi. Avant le 24/07/2026 ce
+    // champ était envoyé par le client mais jamais lu ici : les ordonnances déposées par QR
+    // code n'obtenaient jamais de code_patient, contrairement à celles reçues par email.
+    const sessionCodeRaw = form.get("session_code")?.toString() || "";
+    const code_patient   = /^\d{3}$/.test(sessionCodeRaw) ? sessionCodeRaw : null;
 
     if (!pharmacie_id) {
       return new Response(JSON.stringify({ error: "pharmacie_id requis" }),
@@ -74,6 +80,7 @@ serve(async (req) => {
       patient_cv:   patient_cv || null,
       medecin:      medecin    || null,
       medicaments:  medicaments,
+      code_patient,
     }).select().single();
 
     if (ordoErr) throw new Error(ordoErr.message);
@@ -99,7 +106,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, id: ordo.id }),
+      JSON.stringify({ success: true, id: ordo.id, code_patient }),
       { headers: { ...CORS, "Content-Type": "application/json" } }
     );
 

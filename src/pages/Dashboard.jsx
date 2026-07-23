@@ -78,9 +78,9 @@ function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
     if (!url) return;
     setDataUrl(null); setError(false);
 
-    // qrcode via esm.sh — transforme le package npm en ESM navigateur natif
+    // qrcode — paquet npm local bundlé par Vite (plus de CDN esm.sh)
     // toDataURL retourne une Promise avec le PNG en base64
-    import("https://esm.sh/qrcode@1.5.4")
+    import("qrcode")
       .then(mod => {
         const QR = mod.default || mod;
         return QR.toDataURL(url, {
@@ -399,6 +399,7 @@ function AbonnementSection({ pharmacie, onUpgrade }) {
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
+  const [pwdLoading,setPwdLoading]=useState(false);
   const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
   const plan=planInfo||PLAN_LIMITS[pharmacie.plan]||PLAN_LIMITS.starter;
   const postesActifs=(postes||[]).filter(p=>p.actif).length;
@@ -430,11 +431,29 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
             <Input label="Actuel" value={pwdOld} onChange={setPwdOld} type="password" placeholder="••••••••" icon="🔒"/>
             <Input label="Nouveau" value={pwdNew} onChange={setPwdNew} type="password" placeholder="••••••••" icon="🔒"/>
           </div>
-          <Btn variant="secondary" small onClick={()=>{
+          <Btn variant="secondary" small disabled={pwdLoading} onClick={async ()=>{
             if(!pwdOld||!pwdNew){setPwdMsg({ok:false,text:"Remplissez les deux champs"});return;}
             if(pwdNew.length<6){setPwdMsg({ok:false,text:"6 caractères minimum"});return;}
-            setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓"});setPwdOld("");setPwdNew("");setTimeout(()=>setPwdMsg(null),3000);
-          }}>Mettre à jour</Btn>
+            if(isDemoMode){
+              setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓ (démo — non persisté)"});setPwdOld("");setPwdNew("");setTimeout(()=>setPwdMsg(null),3000);
+              return;
+            }
+            setPwdLoading(true); setPwdMsg(null);
+            try {
+              const sb = getSupabaseClient();
+              // Ré-authentifier avec l'ancien mot de passe pour le vérifier — Supabase Auth
+              // n'a pas d'endpoint dédié "vérifier le mot de passe actuel" séparé du login.
+              const { error: reauthErr } = await sb.auth.signInWithPassword({ email: pharmacie.email, password: pwdOld });
+              if (reauthErr) { setPwdMsg({ok:false,text:"Mot de passe actuel incorrect"}); setPwdLoading(false); return; }
+              const { error: updErr } = await sb.auth.updateUser({ password: pwdNew });
+              if (updErr) { setPwdMsg({ok:false,text:updErr.message || "Erreur lors de la mise à jour"}); setPwdLoading(false); return; }
+              setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓"});setPwdOld("");setPwdNew("");
+            } catch(e) {
+              setPwdMsg({ok:false,text:"Erreur : " + e.message});
+            }
+            setPwdLoading(false);
+            setTimeout(()=>setPwdMsg(null),3000);
+          }}>{pwdLoading?"Mise à jour…":"Mettre à jour"}</Btn>
           {pwdMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:pwdMsg.ok?"#15803d":"#dc2626",padding:"6px 10px",background:pwdMsg.ok?"#dcfce7":"#fee2e2",borderRadius:7}}>{pwdMsg.text}</div>}
         </div>
       </div>
@@ -806,7 +825,7 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
     // Générer si pas encore chargé
     if (!qrSrc || !qrSrc.startsWith("data:")) {
       try {
-        const mod = await import("https://esm.sh/qrcode@1.5.4");
+        const mod = await import("qrcode");
         const QR = mod.default || mod;
         qrSrc = await QR.toDataURL(qrUrl, {
           errorCorrectionLevel: "H",

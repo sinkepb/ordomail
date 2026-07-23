@@ -638,7 +638,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -715,6 +715,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           )
         ) : tab === "stories" ? (
           <StoriesContentAdmin/>
+        ) : tab === "tarifs" ? (
+          <PricingEditor adminToken={adminToken}/>
         ) : (
           selected ? (
             <ContratEditor
@@ -1346,17 +1348,72 @@ function BillingModule({ initialView, planId, billing, onBack }) {
   );
 }
 
-function PricingEditor() {
+// pricing_plans (Supabase) est la source de vérité durable pour cet éditeur — avant le
+// 24/07/2026, "Sauvegarder" ne faisait que muter PLAN_LIMITS en mémoire : un rechargement
+// de page perdait tout changement, alors que l'écran affichait "✅ Sauvegardé".
+function PricingEditor({ adminToken } = {}) {
   const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
   const [saved,setSaved]=useState(false);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+
+  async function callSecureData(resource, params) {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json", "apikey":supabaseKey, "Authorization":`Bearer ${adminToken||""}` },
+      body: JSON.stringify({ resource, params }),
+    });
+    const body = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(body?.error || `secure-data ${resource} : erreur ${res.status}`);
+    return body;
+  }
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await callSecureData("admin_pricing");
+        if (data && data.length) {
+          setPlans(data.map(p => ({
+            id: p.id, label: p.label, icon: p.icon, color: p.color,
+            price: p.price, priceAnnual: p.price_annual,
+            maxPostes: p.max_postes, maxOrdos: p.max_ordos,
+          })));
+        }
+        // Si la table est vide (première utilisation), on garde les valeurs par défaut
+        // de PLAN_LIMITS déjà chargées dans le state initial — rien à faire.
+      } catch(e) {
+        setErr("Chargement impossible — valeurs par défaut affichées (" + e.message + ")");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
   function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
-  function save(){plans.forEach(p=>{PLAN_LIMITS[p.id]={...p};});setSaved(true);setTimeout(()=>setSaved(false),3000);}
+
+  async function save(){
+    setSaving(true); setErr("");
+    try {
+      await callSecureData("admin_update_pricing", { plans });
+      // Répercuter immédiatement dans PLAN_LIMITS pour le reste de l'app dans cette session
+      // (dashboard pharmacie, page tarifs) — sans attendre un rechargement.
+      plans.forEach(p=>{ PLAN_LIMITS[p.id]={...p}; });
+      setSaved(true); setTimeout(()=>setSaved(false),3000);
+    } catch(e) {
+      setErr("Échec de la sauvegarde : " + e.message);
+    }
+    setSaving(false);
+  }
+
   return (
     <div style={{maxWidth:900,margin:"0 auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>Modifications en temps réel</div></div>
-        <button onClick={save} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{saved?"✅ Sauvegardé":"💾 Sauvegarder"}</button>
+        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>{loading?"Chargement…":"Persisté en base — visible par tous les admins"}</div></div>
+        <button onClick={save} disabled={loading||saving} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:loading||saving?"default":"pointer",fontFamily:"inherit",opacity:loading||saving?0.6:1}}>{saved?"✅ Sauvegardé":saving?"Sauvegarde…":"💾 Sauvegarder"}</button>
       </div>
+      {err && <div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"8px 12px",color:"#fca5a5",fontSize:12,marginBottom:16}}>{err}</div>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:24}}>
         {plans.map(plan=>(
           <div key={plan.id} style={{background:"#1e293b",borderRadius:14,padding:20,border:`2px solid #334155`}}>

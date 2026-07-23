@@ -221,6 +221,43 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: enriched }), { headers: CORS });
     }
 
+    if (resource === "admin_pricing") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { data, error } = await sb.from("pricing_plans").select("*").order("sort_order", { ascending: true });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_update_pricing") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { plans } = params || {};
+      if (!Array.isArray(plans) || !plans.length) {
+        return new Response(JSON.stringify({ error: "plans requis (tableau)" }),
+          { status: 400, headers: CORS });
+      }
+      const rows = plans.map((p: any, i: number) => ({
+        id: p.id,
+        label: p.label,
+        icon: p.icon,
+        color: p.color,
+        price: Number(p.price) || 0,
+        price_annual: Number(p.priceAnnual) || 0,
+        max_postes: Number(p.maxPostes) || 0,
+        max_ordos: Number(p.maxOrdos) || 0,
+        sort_order: i,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await sb.from("pricing_plans").upsert(rows, { onConflict: "id" });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     if (resource === "admin_update_plan") {
       if (!isAdmin) {
         return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),

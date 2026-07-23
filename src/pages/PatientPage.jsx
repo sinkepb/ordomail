@@ -682,8 +682,17 @@ function PatientPage({ pharmacie, onBack }) {
   }
 
   // Génère le code email (même algo que sessionCode)
+  // Code à 3 chiffres utilisé dans l'adresse email dynamique (pharmacie-247@in.ordomail.fr) —
+  // doit être généré côté client car il est intégré à l'adresse AVANT tout appel serveur.
+  // ⚠️ Avant le 24/07/2026, ce code était dérivé de l'heure système (minutes/secondes),
+  // donc prévisible par quiconque lisait le code source — remplacé par un tirage
+  // cryptographique. Le format reste 3 chiffres (contrainte du parsing regex côté
+  // send-email/receive-email), donc les collisions restent possibles dans le même
+  // créneau mais ne sont plus devinables à l'avance.
   function generateCode() {
-    return String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    return String(100 + (arr[0] % 900)).padStart(3, "0");
   }
 
   // Construit l'adresse email avec le code patient intégré

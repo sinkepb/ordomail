@@ -1,5 +1,16 @@
 // ─── OCR Tesseract — traitement local HDS ────────────────────────────────────
 // Conforme HDS : traitement 100% navigateur, aucune donnée envoyée à un tiers
+//
+// @phase3 24/07/2026 — tesseract.js et pdfjs-dist sont désormais de vraies
+// dépendances npm (package-lock.json), bundlées par Vite au lieu d'être chargées
+// à l'exécution depuis esm.sh/jsdelivr (code tiers non pinné, exécuté dans le
+// tableau de bord où transitent des images d'ordonnances).
+// ⚠️ Résiduel : tesseract.js télécharge par défaut son cœur WASM et les données
+// de langue depuis un CDN jsdelivr (comportement par défaut de la librairie, pas
+// de ce fichier) — seul le module JS lui-même est désormais local. Le self-host
+// complet du cœur WASM + lang-data est un chantier séparé (assets binaires
+// volumineux), pas traité ici.
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 let _tesseractWorker  = null;
 let _tesseractLoading = false;
@@ -15,8 +26,8 @@ async function getTesseractWorker() {
   }
   _tesseractLoading = true;
   try {
-    // Tesseract.js v5 — import ESM depuis esm.sh (même CDN que qrcode, déjà autorisé)
-    const { createWorker } = await import('https://esm.sh/tesseract.js@5');
+    // Import du paquet npm local (bundlé par Vite) — plus de CDN pour le module JS.
+    const { createWorker } = await import('tesseract.js');
     _tesseractWorker = await createWorker('fra', 1, {
       logger: () => {}, // silencieux
     });
@@ -65,8 +76,8 @@ async function preprocessImage(base64, mimeType) {
 // Conversion PDF page 1 → image PNG via pdf.js
 async function pdfToImage(base64) {
   try {
-    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.min.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.worker.min.mjs';
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     const pdf    = await (await pdfjsLib.getDocument({ data: atob(base64) }).promise);
     const page   = await pdf.getPage(1);
     const vp     = page.getViewport({ scale: 2.5 });
