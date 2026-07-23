@@ -258,6 +258,43 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    if (resource === "admin_stories") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { data, error } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_stories_write") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { action, id, payload } = params || {};
+      if (action === "create") {
+        if (!payload) return new Response(JSON.stringify({ error: "payload requis" }), { status: 400, headers: CORS });
+        const { data, error } = await sb.from("stories_content").insert(payload).select().single();
+        if (error) throw new Error(error.message);
+        return new Response(JSON.stringify({ data }), { headers: CORS });
+      }
+      if (action === "update") {
+        if (!id || !payload) return new Response(JSON.stringify({ error: "id et payload requis" }), { status: 400, headers: CORS });
+        const { error } = await sb.from("stories_content").update(payload).eq("id", id);
+        if (error) throw new Error(error.message);
+        return new Response(JSON.stringify({ success: true }), { headers: CORS });
+      }
+      if (action === "delete") {
+        if (!id) return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
+        const { error } = await sb.from("stories_content").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+        return new Response(JSON.stringify({ success: true }), { headers: CORS });
+      }
+      return new Response(JSON.stringify({ error: `action inconnue: ${action}` }), { status: 400, headers: CORS });
+    }
+
     if (resource === "admin_update_plan") {
       if (!isAdmin) {
         return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),

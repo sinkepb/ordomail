@@ -1,6 +1,14 @@
 // Edge Function : snapshot-metriques
 // Appelée chaque nuit par pg_cron à 2h00
 // Calcule et persiste toutes les métriques de chaque pharmacie
+//
+// @phase4-security 25/07/2026 — cette fonction recalcule les métriques de
+// TOUTES les pharmacies à chaque appel (coûteux) et n'était protégée par
+// aucune vérification d'appelant : n'importe qui pouvait la déclencher à
+// volonté. Elle exige désormais un secret partagé transmis par pg_cron dans
+// l'en-tête x-cron-secret — voir DEPLOIEMENT_PHASE4.md pour la mise à jour du
+// job pg_cron côté base de données (à faire manuellement, hors du périmètre
+// de ce qui peut être automatisé depuis ce dépôt).
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -12,6 +20,11 @@ const CORS = {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
+  }
+
+  const cronSecret = Deno.env.get("SNAPSHOT_CRON_SECRET");
+  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response(JSON.stringify({ error: "Non autorisé" }), { status: 401, headers: CORS });
   }
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

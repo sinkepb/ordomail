@@ -1,9 +1,31 @@
 // Extrait de AdminPage.jsx (phase 2) — composant autonome (état local uniquement),
 // découpage des gros fichiers. Voir DEPLOIEMENT_PHASE2.md.
+//
+// @phase4-security 25/07/2026 — lisait/écrivait stories_content directement avec
+// la clé anon : le backoffice n'a pas de session Supabase Auth réelle (même
+// architecture que le vendeur, voir phase 1), donc RLS ne pouvait pas distinguer
+// un admin authentifié d'un visiteur anonyme muni de la clé anon publique.
+// Routé via secure-data (jeton admin) comme le reste du backoffice.
 import { useState, useEffect } from "react";
-import { getSupabaseClient } from "../supabase.js";
 
-function StoriesContentAdmin() {
+async function callSecureData(resource, params, adminToken) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": supabaseKey,
+      "Authorization": `Bearer ${adminToken || ""}`,
+    },
+    body: JSON.stringify({ resource, params }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `secure-data ${resource} : erreur ${res.status}`);
+  return body;
+}
+
+function StoriesContentAdmin({ adminToken } = {}) {
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -14,7 +36,7 @@ function StoriesContentAdmin() {
   });
   const [saving, setSaving]     = useState(false);
   const [search, setSearch]     = useState("");
-  const sb = getSupabaseClient();
+  const [error, setError]       = useState("");
 
   const TYPES = [
     { id:"info",    label:"Information",  emoji:"💡", color:"#1a3a6e" },
@@ -26,9 +48,13 @@ function StoriesContentAdmin() {
 
   async function loadItems() {
     setLoading(true);
-    if (!sb) { setLoading(false); return; }
-    const { data } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
-    if (data) setItems(data);
+    setError("");
+    try {
+      const { data } = await callSecureData("admin_stories", {}, adminToken);
+      if (data) setItems(data);
+    } catch(e) {
+      setError(e.message);
+    }
     setLoading(false);
   }
 
@@ -52,30 +78,44 @@ function StoriesContentAdmin() {
   async function saveItem() {
     if (!form.titre.trim()) return;
     setSaving(true);
+    setError("");
     const payload = {
       type: form.type, titre: form.titre, contenu: form.contenu,
       emoji: form.emoji, question: form.question,
       reponses: form.reponses, explication: form.explication, actif: form.actif,
     };
-    if (editing) {
-      await sb.from("stories_content").update(payload).eq("id", editing);
-      setItems(prev => prev.map(x => x.id === editing ? { ...x, ...payload } : x));
-    } else {
-      const { data } = await sb.from("stories_content").insert(payload).select().single();
-      if (data) setItems(prev => [data, ...prev]);
+    try {
+      if (editing) {
+        await callSecureData("admin_stories_write", { action: "update", id: editing, payload }, adminToken);
+        setItems(prev => prev.map(x => x.id === editing ? { ...x, ...payload } : x));
+      } else {
+        const { data } = await callSecureData("admin_stories_write", { action: "create", payload }, adminToken);
+        if (data) setItems(prev => [data, ...prev]);
+      }
+      setShowForm(false); setEditing(null);
+    } catch(e) {
+      setError(e.message);
     }
-    setShowForm(false); setSaving(false); setEditing(null);
+    setSaving(false);
   }
 
   async function deleteItem(id) {
     if (!window.confirm("Supprimer ce contenu ?")) return;
-    await sb.from("stories_content").delete().eq("id", id);
-    setItems(prev => prev.filter(x => x.id !== id));
+    try {
+      await callSecureData("admin_stories_write", { action: "delete", id }, adminToken);
+      setItems(prev => prev.filter(x => x.id !== id));
+    } catch(e) {
+      setError(e.message);
+    }
   }
 
   async function toggleActif(id, actif) {
-    await sb.from("stories_content").update({ actif: !actif }).eq("id", id);
-    setItems(prev => prev.map(x => x.id === id ? { ...x, actif: !actif } : x));
+    try {
+      await callSecureData("admin_stories_write", { action: "update", id, payload: { actif: !actif } }, adminToken);
+      setItems(prev => prev.map(x => x.id === id ? { ...x, actif: !actif } : x));
+    } catch(e) {
+      setError(e.message);
+    }
   }
 
   const filtered = items.filter(x =>
@@ -96,6 +136,12 @@ function StoriesContentAdmin() {
           + Ajouter
         </button>
       </div>
+
+      {error && (
+        <div style={{ background:"#fee2e2", border:"1px solid #fecaca", borderRadius:8, padding:"9px 12px", marginBottom:14, fontSize:13, color:"#dc2626" }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Barre recherche */}
       <input value={search} onChange={e=>setSearch(e.target.value)}

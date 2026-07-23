@@ -482,7 +482,7 @@ function AdminDashboardLive({ adminToken } = {}) {
             </div>
           )
         ) : tab === "stories" ? (
-          <StoriesContentAdmin/>
+          <StoriesContentAdmin adminToken={adminToken}/>
         ) : tab === "tarifs" ? (
           <PricingEditor adminToken={adminToken}/>
         ) : (
