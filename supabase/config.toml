@@ -10,3 +10,11 @@
 # c'est un JWT Supabase valide, il passe la vérification native comme avant.
 [functions.secure-data]
 verify_jwt = false
+
+# create-checkout-session est appelée juste après l'inscription (sb.auth.signUp +
+# register-pharmacie), au même moment où la confirmation email peut être encore en
+# attente — donc potentiellement sans session Supabase Auth active, comme
+# register-pharmacie (déjà en verify_jwt=false). Explicité ici plutôt que de
+# dépendre d'un défaut de plateforme non documenté dans ce repo.
+[functions.create-checkout-session]
+verify_jwt = false
