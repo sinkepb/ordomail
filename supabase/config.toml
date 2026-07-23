@@ -18,3 +18,10 @@ verify_jwt = false
 # dépendre d'un défaut de plateforme non documenté dans ce repo.
 [functions.create-checkout-session]
 verify_jwt = false
+
+# stripe-webhook est appelée par Stripe lui-même, qui n'envoie jamais de JWT
+# Supabase — seulement un header stripe-signature vérifié par le code. Repéré
+# le 24/07/2026 : cette fonction avait verify_jwt=true, ce qui aurait rejeté
+# tous les webhooks Stripe avant même d'atteindre la vérification de signature.
+[functions.stripe-webhook]
+verify_jwt = false
