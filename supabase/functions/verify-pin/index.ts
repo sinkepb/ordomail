@@ -76,7 +76,9 @@ Deno.serve(async (req) => {
     let matched: any = null;
     for (const poste of postes || []) {
       if (!poste.pin_hash) continue; // poste pas encore migré vers pin_hash — ignoré, pas de repli en clair
-      if (await bcrypt.compare(pin, poste.pin_hash)) { matched = poste; break; }
+      // compareSync (pas compare async) : la version async spawn un Worker, indisponible
+      // dans le runtime des Edge Functions Supabase ("Worker is not defined").
+      if (bcrypt.compareSync(pin, poste.pin_hash)) { matched = poste; break; }
     }
 
     if (!matched) {

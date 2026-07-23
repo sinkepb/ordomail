@@ -81,7 +81,9 @@ Deno.serve(async (req) => {
     }
 
     // 4. Hasher le nouveau PIN et l'enregistrer — jamais en clair
-    const pinHash = await bcrypt.hash(pin);
+    // hashSync (pas hash async) : la version async de ce package spawn un Worker,
+    // indisponible dans le runtime des Edge Functions Supabase ("Worker is not defined").
+    const pinHash = bcrypt.hashSync(pin);
     const res = await fetch(
       `${supabaseUrl}/rest/v1/pharmacie_postes?id=eq.${posteId}`,
       {

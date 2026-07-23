@@ -51,7 +51,10 @@ serve(async (req) => {
       );
     }
 
-    const valid = await bcrypt.compare(password, admin.password_hash);
+    // compareSync (pas compare async) : la version async de ce package spawn un Worker,
+    // indisponible dans le runtime des Edge Functions Supabase ("Worker is not defined").
+    // C'est probablement la cause du repli fréquent sur la porte dérobée avant son retrait.
+    const valid = bcrypt.compareSync(password, admin.password_hash);
     if (!valid) {
       return new Response(
         JSON.stringify({ success: false, error: "Identifiants incorrects" }),
