@@ -9,6 +9,8 @@ import { OrdoCard, OrdoRow, AttachmentThumb, OrdoGroup } from "../components/Ord
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
 import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { LogsPanel } from "../components/LogsPanel.jsx";
+import { QRCode } from "../components/QRCode.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
@@ -19,8 +21,6 @@ import {
   uploadOrdoFile,
   subscribeToPharmacy,
   addAuditLog,
-  getAuditLogs,
-  exportLogsCSV,
   fetchAbonnement,
   fetchFactures,
   changePlan,
@@ -34,98 +34,6 @@ import {
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
-
-function LogsPanel({ pharmacieId, onClose }) {
-  const [logs, setLogs] = useState([]);
-  useEffect(() => { getAuditLogs(pharmacieId).then(setLogs); }, [pharmacieId]);
-  const actionLabel = { view:"Consultation", print:"Impression", upload:"Import", reopen:"Remise en file", login:"Connexion", logout:"Déconnexion" };
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:500,display:"flex",flexDirection:"column"}}>
-      <div style={{background:"#fff",flex:1,overflow:"auto",marginTop:52,padding:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#1a3a6e"}}>🗒️ Journal d'activité</div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>exportLogsCSV(pharmacieId).catch(()=>{})} style={{padding:"6px 14px",border:"1px solid #e2e8f0",borderRadius:8,background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⬇️ Export CSV</button>
-            <button onClick={onClose} style={{padding:"6px 14px",border:"none",borderRadius:8,background:"#1a3a6e",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕ Fermer</button>
-          </div>
-        </div>
-        {logs.length===0?(
-          <div style={{textAlign:"center",padding:"40px 0",color:"#bbb"}}><div style={{fontSize:32,marginBottom:8}}>📋</div><div>Aucune action enregistrée</div></div>
-        ):(
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
-              {["Heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
-            </tr></thead>
-            <tbody>{logs.map(l=>(
-              <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                <td style={{padding:"8px 10px",color:"#64748b"}}>{new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11}}>{l.userId}</td>
-                <td style={{padding:"8px 10px"}}><span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>{l.userRole}</span></td>
-                <td style={{padding:"8px 10px",fontWeight:600}}>{actionLabel[l.action]||l.action}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:"#94a3b8"}}>{l.ordonnanceId||"—"}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
-  const [dataUrl, setDataUrl] = useState(null);
-  const [error, setError]     = useState(false);
-
-  useEffect(() => {
-    if (!url) return;
-    setDataUrl(null); setError(false);
-
-    // qrcode — paquet npm local bundlé par Vite (plus de CDN esm.sh)
-    // toDataURL retourne une Promise avec le PNG en base64
-    import("qrcode")
-      .then(mod => {
-        const QR = mod.default || mod;
-        return QR.toDataURL(url, {
-          errorCorrectionLevel: "M",
-          margin: 2,
-          width: size,
-          color: { dark: "#000000", light: "#ffffff" },
-          type: "image/png",
-        });
-      })
-      .then(dataURL => setDataUrl(dataURL))
-      .catch(err => {
-        console.error("[QRCode]", err);
-        setError(true);
-      });
-  }, [url, color, size]);
-
-  if (error) return (
-    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
-      ⚠️ Erreur génération QR
-    </div>
-  );
-
-  if (!dataUrl) return (
-    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc",borderRadius:8}}>
-      <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
-        <div style={{animation:"spin 1s linear infinite",fontSize:22,marginBottom:4}}>⏳</div>
-        Génération QR…
-      </div>
-    </div>
-  );
-
-  return (
-    <img
-      id={printId || undefined}
-      src={dataUrl}
-      width={size}
-      height={size}
-      style={{display:"block",borderRadius:4}}
-      alt="QR Code"
-    />
-  );
-}
 
 function OffresSection({ pharmacie, planInfo }) {
   const [offres, setOffres]       = useState([]);
