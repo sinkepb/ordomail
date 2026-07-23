@@ -3,6 +3,7 @@ import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 import { updateSonnetteActive } from "../supabase.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { PLANS } from "../lib/utils.js";
+import { generateInvoiceHTML } from "../lib/print.jsx";
 
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
@@ -927,6 +928,10 @@ function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
 function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg }) {
   const [plan,        setPlan]        = useState(pharmacie.plan || "starter");
   const [postesActifs, setPostesActifs] = useState(pharmacie.postesActifs || 1);
+  // Repéré par le linter (phase 2) : ce bouton mutait directement la prop `pharmacie`
+  // (sans effet sur le rendu) puis appelait un onRefresh inexistant dans les props de
+  // ce composant — ReferenceError garantie au clic. État local à la place.
+  const [sonnetteActive, setSonnetteActive] = useState(pharmacie.sonnette_active !== false);
 
   const currentPlan = plans[plan];
   const maxPostes   = currentPlan?.maxPostes || 1;
@@ -1028,15 +1033,14 @@ function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClear
         </div>
         <button
           onClick={async()=>{
-            const newVal = pharmacie.sonnette_active === false ? true : false;
+            const newVal = !sonnetteActive;
             await updateSonnetteActive(pharmacie.id, newVal);
-            pharmacie.sonnette_active = newVal;
-            onRefresh();
+            setSonnetteActive(newVal);
           }}
           style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,
-            background:pharmacie.sonnette_active!==false?"#14532d":"#450a0a",
-            color:pharmacie.sonnette_active!==false?"#86efac":"#fca5a5"}}>
-          {pharmacie.sonnette_active!==false?"✅ Activée":"❌ Désactivée"}
+            background:sonnetteActive?"#14532d":"#450a0a",
+            color:sonnetteActive?"#86efac":"#fca5a5"}}>
+          {sonnetteActive?"✅ Activée":"❌ Désactivée"}
         </button>
       </div>
 

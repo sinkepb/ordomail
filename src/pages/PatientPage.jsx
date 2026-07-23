@@ -85,7 +85,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.3);
           osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.3);
         });
-      } catch(e) {}
+      } catch(e) { /* AudioContext indisponible/bloqué — le bip est un bonus, pas bloquant */ }
       setAppele(true);
       setTimeout(() => setAppele(false), 8000);
     });

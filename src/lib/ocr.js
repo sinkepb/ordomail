@@ -98,19 +98,19 @@ const OCR_PARSERS = {
     return r.replace(/^(\d)(\d{2})(\d{2})(\d{2})(\d{3})(\d{3})(\d{2})$/, '$1 $2 $3 $4 $5 $6 $7') || null;
   },
   medecin(txt) {
-    const m = txt.match(/(?:Dr\.?|Docteur)\s+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-záàâéèêëîïôùûüç\s\-]{2,30})/i)
+    const m = txt.match(/(?:Dr\.?|Docteur)\s+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-záàâéèêëîïôùûüç\s-]{2,30})/i)
            || txt.match(/Prescripteur\s*[:]\s*(.+)/i);
     return m ? ('Dr ' + m[1].trim().slice(0, 40)) : null;
   },
   nom(txt) {
-    const m = txt.match(/(?:Patient|Nom|Assuré)\s*[:]\s*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-záàâéèêëîïôùûüç\s\-]{2,40})/i)
+    const m = txt.match(/(?:Patient|Nom|Assuré)\s*[:]\s*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-záàâéèêëîïôùûüç\s-]{2,40})/i)
            || txt.match(/^([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,}(?:\s+[A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-z]{1,20}){1,2})/m);
     if (!m) return null;
     const excluded = ['ORDONNANCE','MEDICALE','PRESCRIPTION','REPUBLIQUE','CABINET','MEDECIN'];
     return excluded.includes(m[1].trim().toUpperCase()) ? null : m[1].trim().slice(0, 50);
   },
   date(txt) {
-    const m = txt.match(/(\d{1,2})[\/\-.·](\d{1,2})[\/\-.·](\d{2,4})/);
+    const m = txt.match(/(\d{1,2})[/\-.·](\d{1,2})[/\-.·](\d{2,4})/);
     if (!m) return null;
     const y = m[3].length === 2 ? '20' + m[3] : m[3];
     return `${m[1].padStart(2,'0')}/${m[2].padStart(2,'0')}/${y}`;

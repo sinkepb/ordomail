@@ -15,6 +15,8 @@ import {
   savePostes,
   fetchOrdonnances,
   updateOrdoStatus,
+  updateOrdoExtracted,
+  uploadOrdoFile,
   subscribeToPharmacy,
   addAuditLog,
   getAuditLogs,
@@ -507,7 +509,7 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
   );
 }
 
-function ParametresTab({ pharmacie, onSave }) {
+function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
   const [section, setSection] = useState("pharmacie");
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
@@ -634,7 +636,7 @@ function ParametresTab({ pharmacie, onSave }) {
                           // Mode démo : sauvegarder le PIN dans la DB mémoire
                           const db = window._ordomailDB || window.__ordomailDB;
                           if (db) {
-                            const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                            const ph = db.pharmacies?.find(p => p.id === pharmacie.id);
                             if (ph) {
                               const posteIdx = (ph.postes || []).findIndex(p => p.id === poste.id);
                               if (posteIdx !== -1) ph.postes[posteIdx].pin = v;
@@ -674,7 +676,7 @@ function ParametresTab({ pharmacie, onSave }) {
                           if (isDemoMode) {
                             const db = window._ordomailDB || window.__ordomailDB;
                             if (db) {
-                              const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                              const ph = db.pharmacies?.find(p => p.id === pharmacie.id);
                               if (ph) {
                                 const idx = (ph.postes||[]).findIndex(p => p.id === poste.id);
                                 if (idx !== -1) ph.postes[idx].pin = v;
@@ -741,17 +743,9 @@ function ParametresTab({ pharmacie, onSave }) {
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              // Recharger la pharmacie depuis Supabase pour avoir le bon plan
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) {
-                  setPharmacie(ph);
-                  setPostes(ph.postes || []);
-                }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              // Recharger la pharmacie (plan à jour) depuis le parent, qui possède l'état
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
             } catch(e) {
               console.error("[changePlan]", e.message);
             }
@@ -762,13 +756,8 @@ function ParametresTab({ pharmacie, onSave }) {
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
             } catch(e) { console.error("[changePlan]", e.message); }
           }}/>
         )}
@@ -781,14 +770,8 @@ function ParametresTab({ pharmacie, onSave }) {
             try {
               await changePlan(pharmacie.id, newPlan);
               setShowUpgrade(null);
-              // Recharger depuis Supabase
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
               await addPoste();
             } catch(e) {
               console.error("[upgrade]", e.message);
@@ -1337,6 +1320,15 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
     setPharmacie(p=>({...p,...patch}));
   }
 
+  // Repéré par le linter (phase 2) : ParametresTab appelait un setPharmacie qui
+  // n'existe que dans ce composant-ci (PharmacieDashboard), pas dans le sien —
+  // ReferenceError garantie après un changement de plan. Passé en prop à la place.
+  async function refreshPharmacie() {
+    const ph = await fetchPharmacie(pharmacieId);
+    if (ph) setPharmacie(ph);
+    return ph;
+  }
+
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f0f2f8",display:"flex",flexDirection:"column"}}>
       <header style={{background:couleur,color:"#fff",height:52,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.2)"}}>
@@ -1631,7 +1623,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
       )}
 
       {tab==="qrcode"&&canAdmin&&!showLogs&&<QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>}
-      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams}/>}
+      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}/>}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}

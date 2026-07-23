@@ -4,17 +4,22 @@ import { generateOrdoPDF } from "../lib/print.jsx";
 import { escapeHtml } from "../lib/utils.js";
 
 function ViewerModal({ att, onClose }) {
-  if (!att) return null;
-
-  const isPdf = att.type === "pdf";
+  // Repéré par le linter (phase 2) : le useEffect ci-dessous était placé après un
+  // retour anticipé (if (!att) return null) — un Hook appelé de façon conditionnelle
+  // selon les rendus, en violation des Rules of Hooks (source d'erreurs React "fewer
+  // hooks than expected"). Le retour anticipé est déplacé après tous les Hooks.
+  const isPdf = att?.type === "pdf";
 
   // Pour les PDF : ouvrir dans un nouvel onglet au montage
   useEffect(() => {
-    if (!isPdf || !att.dataUrl) return;
+    if (!att || !isPdf || !att.dataUrl) return;
     const win = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
     // Si le navigateur bloque le popup, on reste dans la modale avec le message
     if (win) { win.focus(); onClose(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- comportement au montage uniquement, inchangé
   }, []);
+
+  if (!att) return null;
 
   // Pour les images : affichage inline dans la modale
   if (!isPdf) {

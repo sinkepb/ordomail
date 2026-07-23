@@ -49,10 +49,11 @@ function getSupabase() {
 // ─── Référence à la DB mock via pont global window._ordomailDB ───────────────
 // App.jsx expose la DB via window._ordomailDB = DB après son initialisation
 function getDB() {
-  // Essayer le pont global (App.jsx expose window._ordomailDB = DB)
+  // Pont global (App.jsx expose window._ordomailDB = DB après son initialisation)
   if (typeof window !== 'undefined' && window._ordomailDB) return window._ordomailDB;
-  // Fallback : DB globale si accessible
-  if (typeof DB !== 'undefined') return DB;
+  // Repéré par le linter (phase 2) : il n'y a jamais eu de variable globale `DB` en
+  // dehors de window._ordomailDB — ce second repli référençait un identifiant non
+  // déclaré et aurait levé une ReferenceError s'il avait jamais été atteint.
   throw new Error('DB non disponible — vérifiez que App.jsx est chargé');
 }
 
