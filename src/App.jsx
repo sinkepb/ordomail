@@ -18,7 +18,10 @@ import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/prin
 import { LandingPage, PersistentNav } from "./pages/LandingPage.jsx";
 import { AppLogin, LoginPage, LoginTabContent, BoutonProSanteConnect, ResetPasswordPage } from "./pages/LoginPage.jsx";
 import { PatientPage, PatientStories } from "./pages/PatientPage.jsx";
-import { PharmacieDashboard, QRNFCTab, BottomNav, OffresSection, AbonnementSection, CompteSection, ParametresTab } from "./pages/Dashboard.jsx";
+// Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
+// (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
+// lui-même, pas besoin de les réimporter ici (même remarque que pour AdminPage.jsx).
+import { PharmacieDashboard } from "./pages/Dashboard.jsx";
 // Seuls BillingModule et BackofficeAdmin sont utilisés ici — les autres exports de
 // AdminPage.jsx (AdminDashboardLive, ClientDetail, ContratEditor…) sont consommés en
 // interne par BackofficeAdmin lui-même, pas besoin de les réimporter ici.
