@@ -217,6 +217,13 @@ export async function fetchPharmacie(pharmacieId) {
     const db = getDB();
     return db.pharmacies.find(p => p.id === pharmacieId) || null;
   }
+  // Un poste vendeur (jeton, pas de session Supabase Auth) n'a plus le droit de lire
+  // pharmacies/pharmacie_postes en direct avec la clé anon (RLS phase 1) — et n'a de
+  // toute façon pas besoin des postes/PIN, réservés aux écrans titulaire.
+  if (_vendeurToken) {
+    const data = await _callSecureData('pharmacie_info', {});
+    return data ? { ...data, postes: [] } : null;
+  }
   const sb = getSupabase();
   const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*)').eq('id', pharmacieId).single();
   if (error) throw error;

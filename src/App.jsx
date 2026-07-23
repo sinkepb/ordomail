@@ -18,7 +18,10 @@ import { LandingPage, PersistentNav } from "./pages/LandingPage.jsx";
 import { AppLogin, LoginPage, LoginTabContent, BoutonProSanteConnect, ResetPasswordPage } from "./pages/LoginPage.jsx";
 import { PatientPage, PatientStories } from "./pages/PatientPage.jsx";
 import { PharmacieDashboard, QRNFCTab, BottomNav, OffresSection, AbonnementSection, CompteSection, ParametresTab } from "./pages/Dashboard.jsx";
-import { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin, HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin } from "./pages/AdminPage.jsx";
+// Seuls BillingModule et BackofficeAdmin sont utilisés ici — les autres exports de
+// AdminPage.jsx (AdminDashboardLive, ClientDetail, ContratEditor…) sont consommés en
+// interne par BackofficeAdmin lui-même, pas besoin de les réimporter ici.
+import { BillingModule, BackofficeAdmin } from "./pages/AdminPage.jsx";
 import { OrdoCard, OrdoRow, AttachmentThumb } from "./components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "./components/PrintModal.jsx";
 import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "./components/UpgradeModal.jsx";
@@ -368,7 +371,6 @@ function AppInner() {
           onLogout={()=>setRoute("landing")}
           onGoToPricing={()=>setRoute("pricing")}
           DashboardComponent={PharmacieDashboard}
-          AdminComponent={AdminDashboard}
           PatientComponent={PatientPage}
         />}
     </>

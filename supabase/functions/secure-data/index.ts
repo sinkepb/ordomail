@@ -121,6 +121,23 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    if (resource === "pharmacie_info") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      // Utilisé par le dashboard vendeur (jeton, pas de session Supabase Auth) à la place
+      // d'un select('*') direct — jamais de postes/pin_hash ici, un vendeur n'en a pas besoin
+      // (les écrans postes/PIN sont réservés au titulaire, qui utilise fetchPharmacie normal).
+      const { data, error } = await sb
+        .from("pharmacies")
+        .select("id, nom, couleur, plan, plan_status, sonnette_active, code_vendeur, email_reception")
+        .eq("id", pharmacieId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "offre_interets") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),

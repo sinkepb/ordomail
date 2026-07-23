@@ -4,29 +4,6 @@ import { updateSonnetteActive } from "../supabase.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { PLANS } from "../lib/utils.js";
 
-function makeOrdos(days=3, perDay=15) {
-  const items = [];
-  const meds = [["Doliprane 1000mg","Amoxicilline 500mg","Ibuprofène 400mg"],["Metformine 850mg","Paracétamol 500mg"],["Levothyrox 50µg","Oméprazole 20mg","Vitamine D3"],["Aspirine 100mg","Lisinopril 5mg"]];
-  const names = [["MARTIN","Pierre","1 75 04 75 118 042 18","email"],["DUBOIS","Sophie","2 82 11 75 063 014 22","qrcode"],["LEFEBVRE","Jean","1 60 03 75 042 118 08","email"],["ROUX","Anne","2 91 03 69 215 088 45","qrcode"],["THOMAS","Isabelle","2 77 06 13 042 118 31","email"],["BERNARD","Paul","1 55 08 31 042 118 09","email"],["MOREAU","Claire","2 68 05 75 042 118 44","qrcode"],["RICHARD","Lucas","1 88 12 93 042 118 77","email"],["PETIT","Emma","2 95 03 75 042 118 55","email"],["SIMON","Marc","1 72 07 69 042 118 33","qrcode"],["LEROY","Julie","2 85 09 75 042 118 66","email"],["DURAND","Pierre","1 63 01 13 042 118 22","email"],["GARCIA","Marie","2 78 04 75 042 118 88","qrcode"],["MARTINEZ","Thomas","1 91 06 75 042 118 11","email"],["FOURNIER","Alice","2 87 11 75 042 118 99","email"]];
-  const docs = ["Dr Bernard","Dr Leclerc","Dr Moreau","Dr Petit","Dr Gautier","Dr Lambert"];
-  for (let d=0;d<days;d++) {
-    const date = new Date(); date.setDate(date.getDate()-d);
-    for (let i=0;i<(d===0?perDay:10);i++) {
-      const n = names[i%names.length];
-      const mins = Math.floor(Math.random()*120)+1;
-      const recv = new Date(date); recv.setHours(8+Math.floor(i/2),mins%60,0,0);
-      items.push({
-        id:`ordo-${d}-${i}`, fromName:`${n[0]} ${n[1]}`, source:n[3],
-        status: d===0?"nouveau":"imprime", receivedAt:recv.toISOString(),
-        attachments:[], extracted:{ nom:`${n[0]} ${n[1]}`, carteVitale:n[2],
-          medecin:docs[i%docs.length], date:date.toLocaleDateString("fr-FR"),
-          medicaments:meds[i%meds.length] }
-      });
-    }
-  }
-  return items;
-}
-
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
@@ -62,37 +39,13 @@ const MOCK_SUBSCRIPTIONS = [
 ];
 
 
-// Jeu de données démo (mode VITE_DEMO_MODE=true uniquement — voir authenticate() ci-dessous).
+// Identifiant démo (mode VITE_DEMO_MODE=true uniquement — voir authenticate() ci-dessous).
 // ⚠️ Ne JAMAIS utiliser DB.admin comme repli d'authentification hors mode démo strict :
 // c'était la porte dérobée corrigée le 23/07/2026 (voir dossier d'audit sécurité).
+// Note : contrairement à App.jsx, ce fichier n'a plus besoin d'un jeu de pharmacies
+// factices — AdminDashboardLive lit window._ordomailDB (exposé par App.jsx) en mode
+// démo, pas une copie locale. Seul DB.admin sert encore ici (repli démo du login).
 const DB = {
-  pharmacies: [
-    {
-      id: "ph1", nom: "Pharmacie Centrale", couleur: "#1a3a6e",
-      email: "contact@pharmaciecentrale.fr", password: "demo123",
-      adresse: "12 rue de la Paix, 75001 Paris",
-      emailReception: "ph1@in.ordomail.fr",
-      plan: "starter", createdAt: "2025-01-15T10:00:00Z",
-      postes: [
-        { id:"p1", nom:"Poste Accueil",     actif:true,  pin:"1234" },
-        { id:"p2", nom:"Poste Caisse",      actif:true,  pin:"5678" },
-        { id:"p3", nom:"Poste Préparation", actif:false, pin:"9012" },
-      ],
-      ordonnances: makeOrdos(3,15),
-    },
-    {
-      id: "ph2", nom: "Pharmacie du Soleil", couleur: "#15623a",
-      email: "pharma@soleil.fr", password: "demo123",
-      adresse: "45 avenue du Soleil, 69001 Lyon",
-      emailReception: "ph2@in.ordomail.fr",
-      plan: "standard", createdAt: "2025-02-01T10:00:00Z",
-      postes: [
-        { id:"p1", nom:"Poste 1", actif:true, pin:"1111" },
-        { id:"p2", nom:"Poste 2", actif:true, pin:"2222" },
-      ],
-      ordonnances: makeOrdos(2,10),
-    },
-  ],
   admin: { email: "admin@ordomail.fr", password: "admin2025" },
 };
 
@@ -1447,29 +1400,6 @@ function PricingEditor() {
   );
 }
 
-function AdminDashboard({ onLogout }) {
-  return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f0f2f8"}}>
-      <header style={{background:"#0f172a",color:"#fff",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}><span>💊</span><span style={{fontWeight:800}}>OrdoMail Admin</span></div>
-        <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.3)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Déconnexion</button>
-      </header>
-      <div style={{padding:24}}>
-        <div style={{fontWeight:800,fontSize:18,color:"#1a3a6e",marginBottom:16}}>Pharmacies</div>
-        {DB.pharmacies.map(ph=>(
-          <div key={ph.id} style={{background:"#fff",borderRadius:12,padding:"14px 18px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:15}}>{ph.nom}</div>
-              <div style={{fontSize:12,color:"#94a3b8"}}>{ph.email} · Plan {ph.plan}</div>
-            </div>
-            <div style={{fontSize:12,color:"#64748b"}}>{(ph.ordonnances||[]).length} ordonnances</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin,
+export { AdminDashboardLive, ClientDetail, StoriesContentAdmin,
   HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin };
 export default AdminDashboardLive;

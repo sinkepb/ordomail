@@ -1,0 +1,12 @@
+# OrdoMail — configuration Supabase CLI
+#
+# verify_jwt = false sur secure-data : cette fonction reçoit ses propres jetons signés
+# (voir supabase/functions/_shared/jwt.ts — jeton vendeur émis par verify-pin, jeton admin
+# émis par verify-admin), pas des JWT Supabase Auth. Par défaut, la plateforme valide le
+# header Authorization comme un JWT Supabase AVANT même d'exécuter le code de la fonction,
+# ce qui rejetait ces jetons avec 401 sans jamais atteindre la vérification interne
+# (verifyToken) — confirmé en test le 23/07/2026.
+# La session titulaire (vraie session Supabase Auth) continue de fonctionner normalement :
+# c'est un JWT Supabase valide, il passe la vérification native comme avant.
+[functions.secure-data]
+verify_jwt = false
