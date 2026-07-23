@@ -11,6 +11,7 @@ import {
   snapshotMetriquesJournalieres, fetchHistoriqueMetriques,
 } from "./supabase.js";
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, getPrevPlan, computeImpact, canAddPoste } from "./lib/plans.js";
+import { reportError } from "./lib/monitoring.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "./lib/utils.js";
 import { getTesseractWorker, extractFromFile, prewarmTesseract } from "./lib/ocr.js";
 import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/print.jsx";
@@ -61,6 +62,7 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info);
+    reportError(error, { componentStack: info?.componentStack }); // no-op sans VITE_SENTRY_DSN
     this.setState({ info });
   }
   render() {
