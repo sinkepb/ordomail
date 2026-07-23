@@ -1150,12 +1150,27 @@ function BillingModule({ initialView, planId, billing, onBack }) {
   const [checkoutBilling, setCheckoutBilling] = useState(billing||"monthly");
   const [billingTab, setBillingTab] = useState("monthly");
   const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:""});
-  const [cardData, setCardData] = useState({number:"",expiry:"",cvc:"",name:""});
   const [errors, setErrors] = useState({});
   const [createError, setCreateError] = useState("");
+  const [redirecting, setRedirecting] = useState(false);
   const [createdEmail, setCreatedEmail] = useState("");
   const [createdEmailReception, setCreatedEmailReception] = useState("");
   const [createdPlan, setCreatedPlan] = useState("");
+
+  // Retour depuis Stripe Checkout (redirection pleine page — le state React d'avant
+  // le départ vers Stripe est perdu, on lit juste le paramètre de retour).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (checkout === "success") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setView("success");
+    } else if (checkout === "cancelled") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setCreateError("Paiement annulé — votre compte a été créé mais l'abonnement n'a pas démarré. Réessayez ci-dessous.");
+      setView("checkout"); setStep("card");
+    }
+  }, []);
 
   const plan = PLAN_LIMITS[checkoutPlan]||PLAN_LIMITS.standard;
   const price = checkoutBilling==="annual"?plan.priceAnnual:plan.price;
@@ -1219,22 +1234,14 @@ function BillingModule({ initialView, planId, billing, onBack }) {
             <>
               <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:6,marginTop:0}}>Paiement</h3>
               <p style={{fontSize:13,color:"#94a3b8",marginBottom:18}}>Débitée uniquement après les 30 jours.</p>
-              <div style={{marginBottom:12}}>
-                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Numéro de carte</label>
-                <input placeholder="1234 5678 9012 3456" value={cardData.number} onChange={e=>setCardData(c=>({...c,number:e.target.value.replace(/\s/g,"").replace(/(.{4})/g,"$1 ").trim().slice(0,19)}))}
-                  style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:9,padding:"12px 14px",marginBottom:16,fontSize:13,color:"#166534",display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:20}}>🔒</span>
+                <span>Le numéro de carte est saisi sur la page sécurisée de Stripe — il ne transite jamais par nos serveurs.</span>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                {[["expiry","MM/AA"],["cvc","CVC"]].map(([k,ph])=>(
-                  <div key={k}><input placeholder={ph} value={cardData[k]} onChange={e=>setCardData(c=>({...c,[k]:e.target.value}))}
-                    style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/></div>
-                ))}
-              </div>
-              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:9,padding:"9px 12px",marginBottom:16,fontSize:12,color:"#166534"}}>🔒 Données chiffrées par Stripe</div>
               {createError && (
                 <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
               )}
-              <button onClick={async ()=>{
+              <button disabled={redirecting} onClick={async ()=>{
                 const e={};
                 if(!form.nom) e.nom="Requis";
                 if(!form.email||!form.email.includes("@")) e.email="Email invalide";
@@ -1257,8 +1264,6 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                     .normalize("NFD").replace(/[̀-ͯ]/g,"")
                     .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
                   const emailReception = slug + "@in.ordomail.fr";
-                  // Code vendeur 6 chiffres unique
-                  const codeVendeur = String(Math.floor(100000 + Math.random() * 900000));
 
                   // 3. Créer la pharmacie via Edge Function (service_role)
                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -1287,16 +1292,33 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                     throw new Error(regData.error || "Erreur création pharmacie");
                   }
 
+                  // 4. Rediriger vers Stripe Checkout (carte réelle, essai 30 jours)
+                  setRedirecting(true);
+                  const ckRes = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({
+                      pharmacieId: regData.pharmacie_id,
+                      plan: checkoutPlan,
+                      billing: checkoutBilling,
+                      email: form.email,
+                      appUrl: window.location.origin,
+                    }),
+                  });
+                  const ckData = await ckRes.json();
+                  if (!ckRes.ok || !ckData.url) throw new Error(ckData.error || "Erreur lors de la préparation du paiement");
+
                   setCreatedEmail(form.email);
                   setCreatedEmailReception(emailReception);
                   setCreatedPlan(checkoutPlan);
-                  setView("success");
+                  window.location.href = ckData.url; // quitte l'app vers Stripe Checkout
                 } catch(err) {
                   setCreateError(err.message || "Erreur lors de la création");
+                  setRedirecting(false);
                   setView("checkout");
                 }
-              }} style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
-                Créer mon compte — essai gratuit 30j →
+              }} style={{width:"100%",padding:12,border:"none",borderRadius:11,background:redirecting?"#94a3b8":"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:redirecting?"default":"pointer",fontFamily:"inherit"}}>
+                {redirecting ? "Redirection vers Stripe…" : "Continuer vers le paiement sécurisé →"}
               </button>
             </>
           )}

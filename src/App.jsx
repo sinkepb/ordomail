@@ -286,9 +286,12 @@ function AppInner() {
   const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
   const qrTokenParam = urlParams.get("t"); // jeton public par pharmacie porté par le QR code (phase 1 sécurité)
+  // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
+  // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
+  const checkoutReturn = urlParams.get("checkout");
   // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const initialRoute = isRecovery ? "reset-password" : (patientParam ? "patient" : "landing");
+  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : (patientParam ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam);
