@@ -1,0 +1,35 @@
+name: CI
+
+# Bloque le merge si le build ou le lint échoue — répond directement à un
+# problème visible dans l'historique du projet : plusieurs commits consécutifs
+# de type "fix build error" faute d'un filet avant merge (voir dossier d'audit,
+# phase 2). N'exécute ni tests ni déploiement Supabase — voir vitest.config.js
+# pour les tests et DEPLOIEMENT_PHASE1.md pour le déploiement manuel.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
