@@ -120,6 +120,7 @@ function FeaturesSection() {
     { icon: "✉️", title: "Transfert email simplifié", desc: "Si le médecin envoie l'ordonnance par email, le patient transfère d'un clic à l'adresse dédiée de la pharmacie. Zéro ressaisie.", accent: "#0369a1" },
     { icon: "🖨️", title: "Impression avec confirmation", desc: "Un clic → boîte d'impression → confirmation que le papier est sorti. L'ordonnance est marquée traitée uniquement après validation.", accent: C.amber },
     { icon: "🗒️", title: "Journal d'audit complet", desc: "Chaque consultation, chaque impression, chaque connexion est tracée. Export CSV pour les contrôles. Aucune donnée médicale dans les logs.", accent: "#15803d" },
+    { icon: "🎁", title: "Offres & promotions patient", desc: "Diffusez vos promotions et offres de fidélité dans la salle d'attente numérique pendant que le patient patiente. Plan Premium.", accent: "#b45309" },
   ];
   return (
     <section ref={ref} style={{ padding:"52px 16px", background:"#fff" }}>
