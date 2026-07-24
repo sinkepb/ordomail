@@ -1,0 +1,240 @@
+// Extrait de AdminPage.jsx (phase 4) — composant autonome (props + état local
+// uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
+//
+// ⚠️ Copié verbatim (aucun changement de logique) — ce composant gère l'inscription
+// + le paiement Stripe Checkout réel (phase 3), déjà testé de bout en bout le
+// 24/07/2026. Ne pas modifier son comportement lors d'un futur refactor sans retester.
+import { useState, useEffect } from "react";
+import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
+import { PersistentNav } from "../pages/LandingPage.jsx";
+import { getSupabaseClient } from "../supabase.js";
+
+function BillingModule({ initialView, planId, billing, onBack }) {
+  const [view, setView] = useState(initialView||"pricing");
+  const [step, setStep] = useState("details");
+  const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
+  const [checkoutBilling, setCheckoutBilling] = useState(billing||"monthly");
+  const [billingTab, setBillingTab] = useState("monthly");
+  const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:""});
+  const [errors, setErrors] = useState({});
+  const [createError, setCreateError] = useState("");
+  const [redirecting, setRedirecting] = useState(false);
+  const [createdEmail, setCreatedEmail] = useState("");
+  const [createdEmailReception, setCreatedEmailReception] = useState("");
+  const [createdPlan, setCreatedPlan] = useState("");
+
+  // Retour depuis Stripe Checkout (redirection pleine page — le state React d'avant
+  // le départ vers Stripe est perdu, on lit juste le paramètre de retour).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (checkout === "success") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setView("success");
+    } else if (checkout === "cancelled") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setCreateError("Paiement annulé — votre compte a été créé mais l'abonnement n'a pas démarré. Réessayez ci-dessous.");
+      setView("checkout"); setStep("card");
+    }
+  }, []);
+
+  const plan = PLAN_LIMITS[checkoutPlan]||PLAN_LIMITS.standard;
+  const price = checkoutBilling==="annual"?plan.priceAnnual:plan.price;
+
+  if (view==="creating") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontSize:48,marginBottom:20,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+        <div style={{fontWeight:900,fontSize:22,color:"#0f172a",marginBottom:8}}>Création en cours…</div>
+        <div style={{fontSize:14,color:"#64748b"}}>Votre espace est en cours de configuration</div>
+      </div>
+    </div>
+  );
+
+  if (view==="success") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontSize:64,marginBottom:16}}>🎉</div>
+        <h2 style={{fontWeight:900,fontSize:24,color:"#0f172a",marginBottom:8}}>Compte créé !</h2>
+        <p style={{color:"#64748b",fontSize:14,marginBottom:16,lineHeight:1.7}}>
+          Essai gratuit 30 jours démarré.<br/>
+          Un email de confirmation a été envoyé à<br/>
+          <strong style={{color:"#1a3a6e"}}>{createdEmail}</strong>
+        </p>
+        {createdEmailReception && (
+          <div style={{background:"#f0f7ff",border:"1px solid #dbeafe",borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",fontSize:13}}>
+            <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:6}}>📋 Vos informations</div>
+            <div style={{color:"#475569",marginBottom:4}}>✉️ Adresse ordonnances :<br/><strong style={{fontFamily:"monospace",fontSize:12}}>{createdEmailReception}</strong></div>
+            <div style={{color:"#475569"}}>💳 Plan : <strong>{createdPlan}</strong> — 30 jours gratuits</div>
+          </div>
+        )}
+        <div style={{background:"#fef9c3",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e",marginBottom:16,textAlign:"left"}}>
+          ⚠️ Cliquez le lien dans l'email pour activer votre compte avant de vous connecter.
+        </div>
+        <button onClick={onBack} style={{width:"100%",padding:14,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>Aller à la connexion →</button>
+      </div>
+    </div>
+  );
+
+  if (view==="checkout") return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <PersistentNav onBack={onBack} currentPage="checkout" secure/>
+      <div style={{maxWidth:840,margin:"0 auto",padding:"24px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:18}}>
+        <div style={{background:"#fff",borderRadius:16,padding:28,boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+          {step==="details"&&(
+            <>
+              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse","text","12 rue..."]].map(([k,l,t,ph])=>(
+                <div key={k} style={{marginBottom:14}}>
+                  <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
+                  <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
+                    style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors[k]?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
+                </div>
+              ))}
+              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
+                style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
+            </>
+          )}
+          {step==="card"&&(
+            <>
+              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:6,marginTop:0}}>Paiement</h3>
+              <p style={{fontSize:13,color:"#94a3b8",marginBottom:18}}>Débitée uniquement après les 30 jours.</p>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:9,padding:"12px 14px",marginBottom:16,fontSize:13,color:"#166534",display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:20}}>🔒</span>
+                <span>Le numéro de carte est saisi sur la page sécurisée de Stripe — il ne transite jamais par nos serveurs.</span>
+              </div>
+              {createError && (
+                <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
+              )}
+              <button disabled={redirecting} onClick={async ()=>{
+                const e={};
+                if(!form.nom) e.nom="Requis";
+                if(!form.email||!form.email.includes("@")) e.email="Email invalide";
+                if(!form.password||form.password.length<8) e.password="8 caractères minimum";
+                if(!form.pharmacie) e.pharmacie="Requis";
+                if(Object.keys(e).length){setErrors(e);return;}
+                setView("creating");
+                try {
+                  const sb = getSupabaseClient();
+                  // 1. Créer le compte Supabase Auth
+                  const { data: authData, error: authErr } = await sb.auth.signUp({
+                    email: form.email,
+                    password: form.password,
+                    options: { emailRedirectTo: window.location.origin }
+                  });
+                  if (authErr) throw authErr;
+
+                  // 2. Générer slug email réception
+                  const slug = form.pharmacie.toLowerCase()
+                    .normalize("NFD").replace(/[̀-ͯ]/g,"")
+                    .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
+                  const emailReception = slug + "@in.ordomail.fr";
+
+                  // 3. Créer la pharmacie via Edge Function (service_role)
+                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                  const session = authData?.session;
+                  const token = session?.access_token || "";
+
+                  const regRes = await fetch(`${supabaseUrl}/functions/v1/register-pharmacie`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({
+                      nom: form.nom,
+                      pharmacie: form.pharmacie,
+                      adresse: form.adresse || "",
+                      email: form.email,
+                      plan: checkoutPlan,
+                      emailReception,
+                    }),
+                  });
+
+                  const regData = await regRes.json();
+                  if (!regRes.ok && regRes.status !== 409) {
+                    // 409 = pharmacie déjà créée (email confirmation pending) = OK
+                    throw new Error(regData.error || "Erreur création pharmacie");
+                  }
+
+                  // 4. Rediriger vers Stripe Checkout (carte réelle, essai 30 jours)
+                  setRedirecting(true);
+                  const ckRes = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({
+                      pharmacieId: regData.pharmacie_id,
+                      plan: checkoutPlan,
+                      billing: checkoutBilling,
+                      email: form.email,
+                      appUrl: window.location.origin,
+                    }),
+                  });
+                  const ckData = await ckRes.json();
+                  if (!ckRes.ok || !ckData.url) throw new Error(ckData.error || "Erreur lors de la préparation du paiement");
+
+                  setCreatedEmail(form.email);
+                  setCreatedEmailReception(emailReception);
+                  setCreatedPlan(checkoutPlan);
+                  window.location.href = ckData.url; // quitte l'app vers Stripe Checkout
+                } catch(err) {
+                  setCreateError(err.message || "Erreur lors de la création");
+                  setRedirecting(false);
+                  setView("checkout");
+                }
+              }} style={{width:"100%",padding:12,border:"none",borderRadius:11,background:redirecting?"#94a3b8":"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:redirecting?"default":"pointer",fontFamily:"inherit"}}>
+                {redirecting ? "Redirection vers Stripe…" : "Continuer vers le paiement sécurisé →"}
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{background:"#fff",borderRadius:16,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",alignSelf:"start"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,marginBottom:12}}>RÉCAPITULATIF</div>
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #f1f5f9"}}>
+            <div style={{width:36,height:36,borderRadius:9,background:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{plan.icon}</div>
+            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (−20%)":"Mensuel"}</div></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <PersistentNav onBack={onBack} currentPage="pricing"/>
+      <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
+          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
+          <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
+            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:14,marginBottom:32}}>
+          {PLAN_ORDER.map(pid=>{
+            const p=PLAN_LIMITS[pid]; const pr=billingTab==="annual"?p.priceAnnual:p.price; const isPopular=pid==="standard";
+            return (
+              <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
+                {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>LE PLUS CHOISI</div>}
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:20}}>{p.icon}</span><span style={{fontWeight:800,fontSize:17,color:"#0f172a"}}>{p.label}</span></div>
+                <div style={{marginBottom:14}}><span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span></div>
+                <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep("details");setView("checkout");}}
+                  style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+                  Commencer gratuitement</button>
+                <div style={{fontSize:12,color:"#475569"}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { BillingModule };
+export default BillingModule;
