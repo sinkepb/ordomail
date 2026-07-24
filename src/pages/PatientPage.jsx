@@ -134,21 +134,29 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     if (!codePatient) return;
     const sb = getSupabaseClient();
     if (!sb) return;
+    let error;
     if (isOn) {
-      await sb.from('offre_interets').upsert({
+      ({ error } = await sb.from('offre_interets').upsert({
         pharmacie_id: pharmacie?.id,
         code_patient: codePatient,
         offre_id:     offreId,
         offre_titre:  story.title,
         offre_emoji:  story.emoji || '🎁',
         offre_type:   story.offreType || 'promo',
-      }, { onConflict: 'code_patient,offre_id,date_jour' });
+      }, { onConflict: 'code_patient,offre_id,date_jour' }));
     } else {
-      await sb.from('offre_interets')
+      ({ error } = await sb.from('offre_interets')
         .delete()
         .eq('code_patient', codePatient)
         .eq('offre_id', offreId)
-        .eq('date_jour', new Date().toISOString().split('T')[0]);
+        .eq('date_jour', new Date().toISOString().split('T')[0]));
+    }
+    if (error) {
+      // L'écriture a échoué côté serveur — annuler la mise à jour optimiste
+      // pour ne pas laisser croire au patient que son intérêt a été pris en
+      // compte alors que rien n'a été enregistré.
+      console.error('[toggleInteret]', error.message);
+      setInterets(prev => ({ ...prev, [offreId]: !isOn }));
     }
   } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);

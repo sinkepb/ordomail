@@ -208,7 +208,11 @@ CREATE TABLE IF NOT EXISTS offre_interets (
   offre_id      UUID REFERENCES offres_stories(id) ON DELETE SET NULL,
   offre_titre   TEXT,           -- dénormalisé pour affichage (déduit)
   offre_emoji   TEXT,           -- dénormalisé pour affichage (déduit)
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  -- Cible du upsert (PatientPage.jsx onConflict: 'code_patient,offre_id,date_jour') —
+  -- voir migrations/20260724_fix_offre_interets_unique.sql pour le correctif appliqué
+  -- en production (contrainte absente jusqu'ici, upserts en échec silencieux).
+  UNIQUE (code_patient, offre_id, date_jour)
 );
 
 -- Contenu générique des "stories" patient (conseils santé, quiz) — édité par le
