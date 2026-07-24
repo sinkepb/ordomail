@@ -57,6 +57,18 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
               if (reauthErr) { setPwdMsg({ok:false,text:"Mot de passe actuel incorrect"}); setPwdLoading(false); return; }
               const { error: updErr } = await sb.auth.updateUser({ password: pwdNew });
               if (updErr) { setPwdMsg({ok:false,text:updErr.message || "Erreur lors de la mise à jour"}); setPwdLoading(false); return; }
+              // Supabase Auth invalide les jetons de session existants lors d'un changement
+              // de mot de passe (événement de sécurité) — sans ce refresh explicite, le client
+              // continue d'utiliser un access_token désormais rejeté (401) par les requêtes
+              // suivantes (RLS, edge functions comme update-pin) jusqu'à sa reconnexion.
+              const { error: refreshErr } = await sb.auth.refreshSession();
+              if (refreshErr) {
+                setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓ — reconnexion nécessaire…"});
+                setPwdOld("");setPwdNew("");setPwdLoading(false);
+                await sb.auth.signOut().catch(()=>{});
+                setTimeout(()=>window.location.reload(), 1500);
+                return;
+              }
               setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓"});setPwdOld("");setPwdNew("");
             } catch(e) {
               setPwdMsg({ok:false,text:"Erreur : " + e.message});
