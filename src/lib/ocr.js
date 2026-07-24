@@ -5,11 +5,14 @@
 // dépendances npm (package-lock.json), bundlées par Vite au lieu d'être chargées
 // à l'exécution depuis esm.sh/jsdelivr (code tiers non pinné, exécuté dans le
 // tableau de bord où transitent des images d'ordonnances).
-// ⚠️ Résiduel : tesseract.js télécharge par défaut son cœur WASM et les données
-// de langue depuis un CDN jsdelivr (comportement par défaut de la librairie, pas
-// de ce fichier) — seul le module JS lui-même est désormais local. Le self-host
-// complet du cœur WASM + lang-data est un chantier séparé (assets binaires
-// volumineux), pas traité ici.
+// @fix 24/07/2026 — cœur WASM (tesseract-core-*-lstm.wasm(.js)) et worker script
+// vendorisés dans public/ (copiés depuis node_modules à l'installation, voir
+// public/tesseract-core/ et public/tesseract-worker.min.js) et servis en local via
+// corePath/workerPath ci-dessous — plus de chargement CDN pour le code exécuté.
+// ⚠️ Résiduel : les données de langue (fra.traineddata, ~10-15 Mo) restent
+// chargées depuis le CDN jsdelivr @tesseract.js-data — fichier de données statique
+// (pas de code exécuté), self-host possible mais nécessite de vendoriser et
+// maintenir à jour ce binaire séparément ; pas traité ici.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 let _tesseractWorker  = null;
@@ -28,7 +31,12 @@ async function getTesseractWorker() {
   try {
     // Import du paquet npm local (bundlé par Vite) — plus de CDN pour le module JS.
     const { createWorker } = await import('tesseract.js');
+    // URLs absolues obligatoires : le worker tesseract.js tourne dans un contexte
+    // blob: (workerBlobURL, par défaut) où un chemin relatif à la racine ("/...")
+    // ne se résout pas via importScripts (SyntaxError "URL invalide").
     _tesseractWorker = await createWorker('fra', 1, {
+      corePath: new URL('/tesseract-core', window.location.origin).href,
+      workerPath: new URL('/tesseract-worker.min.js', window.location.origin).href,
       logger: () => {}, // silencieux
     });
     await _tesseractWorker.setParameters({

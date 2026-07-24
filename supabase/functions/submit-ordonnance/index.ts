@@ -18,6 +18,13 @@ const CORS = {
 const MAX_SUBMISSIONS_PER_WINDOW = 20;
 const WINDOW_MINUTES = 10;
 
+// Validation serveur du fichier — avant ce correctif, le fichier était uploadé sans
+// aucun contrôle de taille, type MIME ou extension côté serveur (seule l'UI patient
+// limitait le sélecteur de fichier, contournable par un appel direct à l'API).
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Mo — généreux pour une photo téléphone
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]);
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
@@ -41,6 +48,18 @@ serve(async (req) => {
     if (!pharmacie_id) {
       return new Response(JSON.stringify({ error: "pharmacie_id requis" }),
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+
+    if (file && file.size > 0) {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        return new Response(JSON.stringify({ error: "Fichier trop volumineux (15 Mo maximum)" }),
+          { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
+      }
+      if (!ALLOWED_MIME_TYPES.has(file.type) || !ALLOWED_EXTENSIONS.has(ext)) {
+        return new Response(JSON.stringify({ error: "Type de fichier non autorisé (jpg, png, webp ou pdf uniquement)" }),
+          { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
+      }
     }
 
     // Service role → bypass RLS complet (contrôles d'accès faits explicitement ci-dessous)

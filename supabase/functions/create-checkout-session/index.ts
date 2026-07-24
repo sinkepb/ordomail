@@ -41,6 +41,31 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // 0. Exiger une session Supabase Auth valide, liée à CETTE pharmacie — avant ce
+    // correctif, n'importe qui connaissant un pharmacieId (UUID visible en URL, pas
+    // un secret) pouvait créer des sessions Checkout pour une pharmacie qui n'est pas
+    // la sienne. Le client (BillingModule.jsx) envoie déjà ce jeton après l'inscription
+    // (sb.auth.signUp() puis register-pharmacie) — il n'était simplement jamais lu ici.
+    const callerToken = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!callerToken) {
+      return new Response(JSON.stringify({ error: "Authentification requise" }),
+        { status: 401, headers: CORS });
+    }
+    const { data: userData, error: userErr } = await supabase.auth.getUser(callerToken);
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: "Session invalide ou expirée" }),
+        { status: 401, headers: CORS });
+    }
+    const { data: link } = await supabase
+      .from("pharmacie_users")
+      .select("pharmacie_id")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+    if (!link || link.pharmacie_id !== pharmacieId) {
+      return new Response(JSON.stringify({ error: "Vous n'êtes pas autorisé à souscrire pour cette pharmacie" }),
+        { status: 403, headers: CORS });
+    }
+
     // 1. Vérifier que la pharmacie existe
     const { data: ph, error: phErr } = await supabase
       .from("pharmacies")
@@ -75,7 +100,18 @@ serve(async (req) => {
 
     // 4. Créer la session Checkout — essai gratuit 30 jours, carte requise dès
     // maintenant, premier prélèvement automatique à l'issue de l'essai.
-    const base = appUrl || Deno.env.get("APP_URL") || "https://ordomail.fr";
+    // appUrl vient du client (window.location.origin) : ne jamais l'utiliser tel
+    // quel comme base des URLs de retour Stripe (redirection ouverte) — ne l'accepter
+    // que s'il correspond à un domaine connu (prod, ou localhost en dev).
+    const ALLOWED_APP_ORIGINS = [
+      Deno.env.get("APP_URL"),
+      "https://ordomail.fr",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+    ].filter(Boolean);
+    const base = (appUrl && ALLOWED_APP_ORIGINS.includes(appUrl))
+      ? appUrl
+      : (Deno.env.get("APP_URL") || "https://ordomail.fr");
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,

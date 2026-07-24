@@ -8,7 +8,10 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default [
-  { ignores: ["dist/**", "node_modules/**", "supabase/functions/**", "files/**"] },
+  // public/tesseract-core, public/tesseract-worker.min.js : cœur WASM et worker
+  // vendorisés depuis node_modules (self-host, voir lib/ocr.js) — code tiers généré,
+  // pas du code applicatif.
+  { ignores: ["dist/**", "node_modules/**", "supabase/functions/**", "files/**", "public/tesseract-core/**", "public/tesseract-worker.min.js"] },
   js.configs.recommended,
   {
     files: ["**/*.{js,jsx}"],

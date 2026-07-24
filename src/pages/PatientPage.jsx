@@ -647,9 +647,11 @@ function PatientPage({ pharmacie, onBack }) {
   const [step, setStep]           = useState("form");
   const [emailCode, setEmailCode] = useState(null); // code généré pour envoi email
 
-  // Générer le code email dès le montage de PatientPage
+  // Générer le code email dès le montage de PatientPage — generateCode() (déclarée
+  // plus bas, hissée dans la portée du composant) tire le code cryptographiquement,
+  // voir son commentaire pour le contexte.
   useEffect(() => {
-    setEmailCode(String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0"));
+    setEmailCode(generateCode());
   }, []);
   const [nom, setNom]             = useState("");
   const [files, setFiles]         = useState([]); // plusieurs ordonnances
@@ -745,7 +747,7 @@ function PatientPage({ pharmacie, onBack }) {
 
     // Générer UN SEUL code pour toute la session d'envoi
     // (même code pour toutes les ordonnances envoyées en même temps)
-    const sessionCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+    const sessionCode = generateCode();
 
     // Préparer tous les envois en parallèle
     async function sendOne(item) {
