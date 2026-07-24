@@ -1,17 +1,16 @@
 // @version 17/07/2026 13:36 — audit-logs
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
-import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, C } from "../lib/utils.js";
-import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
-import { generateOrdoPDF, generateInvoiceHTML } from "../lib/print.jsx";
-import { OrdoCard, OrdoRow, AttachmentThumb, OrdoGroup } from "../components/OrdoCard.jsx";
+import { PLAN_LIMITS } from "../lib/plans.js";
+import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "../lib/utils.js";
+import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
+import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { AbonnementSection } from "../components/AbonnementSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
-import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { Btn, Input } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { QRCode } from "../components/QRCode.jsx";
 import {
@@ -24,16 +23,12 @@ import {
   uploadOrdoFile,
   subscribeToPharmacy,
   addAuditLog,
-  fetchAbonnement,
-  fetchFactures,
   changePlan,
   isDemoMode,
   getSupabaseClient,
   getSignedUrl,
-  registerDB,
   fetchInteretsDuJour,
   appellerPatient,
-  updateSonnetteActive,
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";

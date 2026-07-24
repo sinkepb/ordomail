@@ -155,7 +155,6 @@ function generateOrdoPDF(ordo) {
   const cv  = escapeHtml(ordo.extracted?.carteVitale || "Non disponible");
   const med = escapeHtml(ordo.extracted?.medecin || "Dr Inconnu");
   const dat = escapeHtml(ordo.extracted?.date || new Date().toLocaleDateString("fr-FR"));
-  const meds = (ordo.extracted?.medicaments || []).map(escapeHtml).join(", ") || "—";
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -218,29 +217,6 @@ function generateOrdoPDF(ordo) {
   return URL.createObjectURL(blob);
 }
 
-
-function CVBadge({ numero, color = "#15623a" }) {
-  if (!numero) return <span style={{ color: "#bbb", fontSize: 12, fontStyle: "italic" }}>Non extrait</span>;
-  // Formater le numéro en groupes lisibles : X XX XX XX XXX XXX XX
-  const fmt = (n) => n.replace(/\s/g,"").replace(/(.{1})(.{2})(.{2})(.{2})(.{3})(.{3})(.{2})/, "$1 $2 $3 $4 $5 $6 $7").trim();
-  const formatted = fmt(numero) || numero;
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      background: `${color}14`, border: `1.5px solid ${color}44`,
-      borderRadius: 8, padding: "5px 10px",
-      minWidth: 0, overflow: "hidden",
-    }}>
-      <span style={{ fontSize: 14, flexShrink: 0 }}>💳</span>
-      <span style={{
-        fontFamily: "monospace", fontSize: 12, fontWeight: 700,
-        color: color, letterSpacing: 0.5,
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        minWidth: 0,
-      }}>{formatted}</span>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 

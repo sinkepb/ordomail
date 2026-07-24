@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { getSignedUrl } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
 import { escapeHtml } from "../lib/utils.js";

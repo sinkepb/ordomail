@@ -1,9 +1,8 @@
 // @version 16/07/2026 15:54 — register-form
-import { useState, useEffect, useRef } from "react";
-import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut, getCurrentSession,
+import { useState } from "react";
+import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   getSupabaseClient, isDemoMode } from "../supabase.js";
-import { PLAN_LIMITS } from "../lib/plans.js";
-import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { Btn, Input } from "../components/ui.jsx";
 
 console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
 

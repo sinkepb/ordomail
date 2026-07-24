@@ -1,7 +1,7 @@
 // @version 16/07/2026 14:23 — swipe-natural
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 

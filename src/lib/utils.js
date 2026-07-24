@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 // ─── Échappement HTML (anti-XSS) ──────────────────────────────────────────────
 // À utiliser systématiquement avant d'interpoler une valeur utilisateur/patient

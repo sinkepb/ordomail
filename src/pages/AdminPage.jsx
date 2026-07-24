@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { PLAN_LIMITS } from "../lib/plans.js";
-import { PLANS } from "../lib/utils.js";
 import { generateInvoiceHTML } from "../lib/print.jsx";
 import { StoriesContentAdmin } from "../components/StoriesContentAdmin.jsx";
 import { ClientDetail } from "../components/ClientDetail.jsx";
@@ -19,7 +18,7 @@ function openInvoicePDF(invoice, pharmacie, plan) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-import { getSupabaseClient, isDemoMode, changePlan } from "../supabase.js";
+import { isDemoMode } from "../supabase.js";
 
 console.log("✅ MODULE CHARGÉ: pages/AdminPage.jsx");
 
@@ -223,7 +222,6 @@ function AdminDashboardLive({ adminToken } = {}) {
   }
 
   function scoreColor(s) { return s>=70?"#15803d":s>=40?"#f59e0b":"#dc2626"; }
-  function scoreBg(s)    { return s>=70?"#f0fdf4":s>=40?"#fef9f0":"#fff5f5"; }
 
   const filtered = clients.filter(c =>
     c.nom?.toLowerCase().includes(search.toLowerCase()) ||
