@@ -97,6 +97,7 @@ Deno.serve(async (req: Request) => {
           { data: d_jour },
           { data: d_attente },
           { data: d_canaux },
+          { data: d_traitees },
         ] = await Promise.all([
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}`),
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
@@ -104,6 +105,8 @@ Deno.serve(async (req: Request) => {
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${today_start}`),
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&status=eq.nouveau&received_at=lte.${now24}`),
           query(`ordonnances?select=source&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
+          // Délai de traitement (envoi → impression) — ordonnances imprimées des 30 derniers jours
+          query(`ordonnances?select=received_at,printed_at&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}&printed_at=not.is.null`),
         ]);
 
         const c_total   = Array.isArray(d_total)   ? d_total.length   : 0;
@@ -127,6 +130,16 @@ Deno.serve(async (req: Request) => {
         // Taux de traitement
         const taux = c_total ? Math.round(((c_total - c_attente) / c_total) * 100) : 0;
 
+        // Temps de traitement moyen (minutes, envoi → impression)
+        const traitees = Array.isArray(d_traitees) ? d_traitees : [];
+        const delais = traitees
+          .map((o: { received_at: string; printed_at: string }) =>
+            (new Date(o.printed_at).getTime() - new Date(o.received_at).getTime()) / 60000)
+          .filter((m: number) => Number.isFinite(m) && m >= 0);
+        const delaiMoyen = delais.length
+          ? Math.round(delais.reduce((a: number, b: number) => a + b, 0) / delais.length)
+          : 0;
+
         // 3. UPSERT du snapshot
         const payload = {
           pharmacie_id:    ph.id,
@@ -140,6 +153,7 @@ Deno.serve(async (req: Request) => {
           canal_email_pct,
           taux_traitement: taux,
           score_activite:  score,
+          delai_moyen_min: delaiMoyen,
         };
 
         const { ok: upsertOk, status: upsertStatus } = await query(

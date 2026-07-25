@@ -271,6 +271,9 @@ CREATE TABLE IF NOT EXISTS metriques_journalieres (
   canal_email_pct   INTEGER DEFAULT 0,
   taux_traitement   INTEGER DEFAULT 0,
   score_activite    INTEGER DEFAULT 0,
+  -- Minutes moyennes entre received_at et printed_at (ordonnances imprimées,
+  -- 30 derniers jours) — voir migrations/20260725_temps_traitement.sql
+  delai_moyen_min INTEGER DEFAULT 0,
   PRIMARY KEY (pharmacie_id, date)
 );
 

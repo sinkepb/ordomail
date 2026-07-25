@@ -12,6 +12,7 @@ function HistoriqueSparkline({ pharmacieId }) {
   const METRICS = [
     { id:"ordos_jour",       label:"Ordos/jour",      color:"#60a5fa" },
     { id:"taux_traitement",  label:"Taux traitement",  color:"#4ade80" },
+    { id:"delai_moyen_min", label:"Délai moyen (min)", color:"#f87171" },
     { id:"score_activite",   label:"Score activité",   color:"#a78bfa" },
     { id:"canal_qr_pct",     label:"% QR code",        color:"#fbbf24" },
   ];

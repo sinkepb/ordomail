@@ -8,6 +8,13 @@ function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
   const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
   const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
   const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
+  // Délai moyen envoi → impression (delai_moyen_min), voir
+  // migrations/20260725_temps_traitement.sql
+  const formatDuree = (min) => {
+    if (!min || min <= 0) return "—";
+    if (min < 60) return `${min} min`;
+    return `${Math.floor(min/60)}h ${String(min%60).padStart(2,"0")}`;
+  };
 
   return (
     <div style={{background:"#1e293b",borderRadius:16,border:"1px solid #334155",overflow:"hidden"}}>
@@ -89,6 +96,7 @@ function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
             <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>⚡ Performance</div>
             {[
               ["Taux de traitement", `${ph.taux_traitement||0}%`,  (ph.taux_traitement||0)>=80?"#4ade80":"#f87171"],
+              ["Temps moyen de traitement", formatDuree(ph.delai_moyen_min), (ph.delai_moyen_min||0)>0 && (ph.delai_moyen_min||0)<=30?"#4ade80":"#fbbf24"],
               ["Ordos en attente +24h", ph.ordos_attente||0,       (ph.ordos_attente||0)===0?"#4ade80":"#f87171"],
               ["Postes actifs",     `${ph.postesActifs||0}/${planInfo.maxPostes||"∞"}`, "#60a5fa"],
               ["PINs configurés",   ph.pins_configures||0,          "#a78bfa"],
