@@ -151,6 +151,21 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    if (resource === "story_metrics") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      let q = sb.from("story_metrics").select("*").eq("pharmacie_id", pharmacieId);
+      if (params?.codePatient) q = q.eq("code_patient", params.codePatient);
+      if (params?.storyId)     q = q.eq("story_id", params.storyId);
+      if (params?.since)       q = q.gte("created_at", params.since);
+      q = q.order("created_at", { ascending: false }).limit(params?.limit || 500);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "admin_pharmacies") {
       if (!isAdmin) {
         return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),

@@ -695,6 +695,19 @@ export async function fetchInteretsDuJour(pharmacieId) {
   }
 }
 
+// Charger les métriques de consultation des stories (vue, temps passé, actions)
+// pour une pharmacie — pas encore branché sur un écran dédié, disponible pour
+// analyse ponctuelle ou un futur tableau de bord d'engagement patient.
+export async function fetchStoryMetrics(pharmacieId, params = {}) {
+  if (IS_DEMO) return [];
+  try {
+    return await _callSecureData('story_metrics', params) || [];
+  } catch(e) {
+    console.error('[fetchStoryMetrics]', e.message);
+    return [];
+  }
+}
+
 
 // ─── Sonnette patient ─────────────────────────────────────────────────────────
 

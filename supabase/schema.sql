@@ -215,6 +215,22 @@ CREATE TABLE IF NOT EXISTS offre_interets (
   UNIQUE (code_patient, offre_id, date_jour)
 );
 
+-- Suivi métrique des stories — consultation (temps passé) et actions (réponse quiz,
+-- intérêt offre). Même modèle d'accès que offre_interets : écriture anonyme (le
+-- patient n'est jamais authentifié), lecture réservée à la pharmacie via secure-data.
+-- Voir migrations/20260725_story_metrics.sql.
+CREATE TABLE IF NOT EXISTS story_metrics (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pharmacie_id  UUID NOT NULL REFERENCES pharmacies(id) ON DELETE CASCADE,
+  code_patient  TEXT,
+  story_id      TEXT NOT NULL,
+  story_type    TEXT,
+  event         TEXT NOT NULL,        -- 'view' | 'quiz_answer' | 'offer_interest'
+  duree_ms      INTEGER,
+  meta          JSONB,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Contenu générique des "stories" patient (conseils santé, quiz) — édité par le
 -- backoffice OrdoMail Business (StoriesContentAdmin), pas lié à une pharmacie.
 CREATE TABLE IF NOT EXISTS stories_content (
@@ -307,9 +323,9 @@ CREATE INDEX IF NOT EXISTS idx_submission_log_pharmacie_date
 --   - `pharmacies` : lecture ouverte à `anon` mais restreinte par GRANT à un sous-
 --     ensemble de colonnes non sensibles (id, nom, couleur, code_vendeur,
 --     email_reception, sonnette_active, plan) ; écriture réservée au titulaire.
---   - `offre_interets` : écriture ouverte à `anon` (le patient n'est jamais
---     authentifié), lecture réservée au titulaire (ou à secure-data via clé de
---     service pour le vendeur).
+--   - `offre_interets`, `story_metrics` : écriture ouverte à `anon` (le patient
+--     n'est jamais authentifié), lecture réservée au titulaire (ou à secure-data
+--     via clé de service pour le vendeur).
 --   - `pricing_plans`, `pin_verification_attempts`, `submission_log` : aucune
 --     policy anon/authenticated — accès uniquement via clé de service (edge
 --     functions), RLS forcée pour empêcher tout accès direct.
@@ -326,6 +342,7 @@ ALTER TABLE abonnements              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE factures                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE offre_interets           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pricing_plans            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE story_metrics            ENABLE ROW LEVEL SECURITY;
 
 -- Fonction helper : pharmacie de l'utilisateur Supabase Auth connecté (titulaire uniquement)
 CREATE OR REPLACE FUNCTION get_user_pharmacie_id()

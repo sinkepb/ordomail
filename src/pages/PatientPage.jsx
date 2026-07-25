@@ -92,6 +92,28 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     return unsub;
   }, [pharmacie?.id, codePatient]);
 
+  // Suivi métrique des stories — consultation (temps passé) et actions (réponse
+  // quiz, intérêt offre). Écriture anonyme, même modèle d'accès que offre_interets
+  // (voir migrations/20260725_story_metrics.sql) : pas d'attente de résultat côté
+  // patient, un échec ne doit jamais bloquer la navigation dans les stories.
+  async function logStoryEvent(story, event, extra = {}) {
+    if (!story || isDemoMode) return; // pas de bruit en démo
+    const sb = getSupabaseClient();
+    if (!sb) return;
+    try {
+      await sb.from('story_metrics').insert({
+        pharmacie_id: pharmacie?.id,
+        code_patient: codePatient,
+        story_id:     String(story.id),
+        story_type:   story.type,
+        event,
+        ...extra,
+      });
+    } catch(e) {
+      console.warn('[story_metrics]', e.message);
+    }
+  }
+
   // Toggle intérêt patient pour une offre
   async function toggleInteret(story) {
     const offreId = story.id?.toString().replace('offre-', '');
@@ -157,6 +179,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       // compte alors que rien n'a été enregistré.
       console.error('[toggleInteret]', error.message);
       setInterets(prev => ({ ...prev, [offreId]: !isOn }));
+    } else {
+      logStoryEvent(story, 'offer_interest', { meta: { isOn } });
     }
   } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);
@@ -330,6 +354,18 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
     }, 50);
     return () => clearInterval(timerRef.current);
+  }, [current]);
+
+  // Suivi du temps passé sur chaque story — la story vue est celle affichée au
+  // moment où l'effet se déclenche ; le nettoyage (changement de story ou
+  // démontage du composant en fin de visite) donne la durée réelle passée dessus.
+  useEffect(() => {
+    const viewedStory = allStories[current];
+    const viewStart = Date.now();
+    return () => {
+      logStoryEvent(viewedStory, 'view', { duree_ms: Date.now() - viewStart });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);
 
   // Reprendre après réponse quiz
@@ -539,7 +575,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 else if (revealed && chosen && !isCorrect) { bg = "rgba(239,68,68,0.35)"; border = "#f87171"; }
                 return (
                   <button key={idx}
-                    onClick={e => { e.stopPropagation(); if (quizAnswer === null) setQuizAnswer(idx); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (quizAnswer === null) {
+                        setQuizAnswer(idx);
+                        logStoryEvent(story, 'quiz_answer', { meta: { answerIndex: idx, correct: !!ans.correct } });
+                      }
+                    }}
                     style={{
                       padding: "13px 16px", borderRadius: 14,
                       border: `2px solid ${border}`,
