@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS ordonnances (
   from_email    TEXT,
 
   -- Regroupement patient (sonnette, file d'attente) — voir PatientPage.jsx / submit-ordonnance
-  code_patient  TEXT,           -- 3 chiffres, généré côté client (crypto-random depuis le 24/07/2026)
+  code_patient  TEXT,           -- 3 chiffres + 1 lettre (position aléatoire), crypto-random côté client (24/07/2026, lettre ajoutée le 25/07/2026)
 
   -- Données extraites par OCR/IA
   patient_nom   TEXT,

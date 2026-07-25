@@ -730,9 +730,10 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const filteredBySearch = searchQuery
     ? filteredByDate.filter(o => {
         const nom = o.extracted?.nom || o.fromName || "";
-        // Recherche par code patient (match exact ou partiel)
-        if (searchQuery.match(/^\d{1,3}$/) && o.code_patient) {
-          return o.code_patient.startsWith(searchQuery);
+        // Recherche par code patient (match exact ou partiel) — code = 3 chiffres +
+        // 1 lettre depuis le 25/07/2026, comparaison insensible à la casse.
+        if (searchQuery.match(/^[0-9A-Za-z]{1,4}$/) && o.code_patient) {
+          return o.code_patient.toUpperCase().startsWith(searchQuery.toUpperCase());
         }
         const words = normalize(searchQuery).split(/\s+/).filter(Boolean);
         return words.every(w => normalize(nom).includes(w));

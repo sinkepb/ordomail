@@ -35,16 +35,20 @@ Deno.serve(async (req) => {
     const toRaw   = payload.To || payload.to || payload.recipient || "";
     const toEmail = toRaw.match(/[\w.+%-]+@[\w.-]+/)?.[0]?.toLowerCase() || "";
 
-    // Regex : -\d{3}(?=@) — retire exactement -3chiffres juste avant le @
-    // "pharmacie-de-la-paix-247@in.immodiaspora.fr" → code="247"
-    // "pharmacie-de-la-paix@in.immodiaspora.fr"     → code=null (inchangé)
-    const codeMatch   = toEmail.match(/-(\d{3})(?=@)/);
-    const codePatient = codeMatch ? codeMatch[1] : null;
+    // Regex : -[0-9a-z]{4}(?=@) — code patient = 3 chiffres + 1 lettre (insérée à une
+    // position aléatoire par generateCode() côté client, voir PatientPage.jsx).
+    // "pharmacie-de-la-paix-24k7@in.immodiaspora.fr" → code="24K7"
+    // "pharmacie-de-la-paix@in.immodiaspora.fr"      → code=null (inchangé)
+    // ⚠️ toEmail est déjà en minuscules (ligne ci-dessus) — remis en majuscules pour
+    // matcher le code généré côté client (comparaison stricte === en aval : sonnette,
+    // regroupement dashboard).
+    const codeMatch   = toEmail.match(/-([0-9a-z]{4})(?=@)/);
+    const codePatient = codeMatch ? codeMatch[1].toUpperCase() : null;
 
     // Nettoyer l'adresse To pour send-email : retirer le code
-    // "pharmacie-de-la-paix-247@in.immodiaspora.fr"
+    // "pharmacie-de-la-paix-24k7@in.immodiaspora.fr"
     // → "pharmacie-de-la-paix@in.immodiaspora.fr"
-    const toEmailClean = toEmail.replace(/-\d{3}(?=@)/, "");
+    const toEmailClean = toEmail.replace(/-[0-9a-z]{4}(?=@)/, "");
 
     // Reconstruire le payload avec l'adresse nettoyée pour send-email
     const payloadForSendEmail = {
