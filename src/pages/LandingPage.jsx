@@ -120,7 +120,7 @@ function FeaturesSection() {
     { icon: "✉️", title: "Transfert email simplifié", desc: "Si le médecin envoie l'ordonnance par email, le patient transfère d'un clic à l'adresse dédiée de la pharmacie. Zéro ressaisie.", accent: "#0369a1" },
     { icon: "🖨️", title: "Impression avec confirmation", desc: "Un clic → boîte d'impression → confirmation que le papier est sorti. L'ordonnance est marquée traitée uniquement après validation.", accent: C.amber },
     { icon: "🗒️", title: "Journal d'audit complet", desc: "Chaque consultation, chaque impression, chaque connexion est tracée. Export CSV pour les contrôles. Aucune donnée médicale dans les logs.", accent: "#15803d" },
-    { icon: "🎁", title: "Offres & promotions patient", desc: "Diffusez vos promotions et offres de fidélité dans la salle d'attente numérique pendant que le patient patiente. Plan Premium.", accent: "#b45309" },
+    { icon: "🎁", title: "Offres & promotions patient", desc: "Diffusez vos promotions et offres de fidélité dans la salle d'attente numérique pendant que le patient patiente. Plan Pro.", accent: "#4c1d95" },
   ];
   return (
     <section ref={ref} style={{ padding:"52px 16px", background:"#fff" }}>
@@ -246,7 +246,12 @@ function PricingSection({ onGoToPricing }) {
                 <div style={{ marginBottom:16 }}>
                   <span style={{ fontSize:38, fontWeight:900, color:p.color }}>{price}</span>
                   <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> €/mois</span>
-                  {billing==="annual" && <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>}
+                  {billing==="annual" && (
+                    <>
+                      <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>
+                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {price*12}€ facturés / an</div>
+                    </>
+                  )}
                 </div>
                 <button onClick={onGoToPricing} style={{ width:"100%", padding:"11px", borderRadius:10, background:p.popular?p.color:C.surface, color:p.popular?"#fff":p.color, fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit", border:p.popular?"none":`1.5px solid ${p.color}22`, marginBottom:18, transition:"opacity 0.15s" }}
                   onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
