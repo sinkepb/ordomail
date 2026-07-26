@@ -13,6 +13,31 @@ export function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+// ─── Masquage des logs (données sensibles) ───────────────────────────────────
+// À utiliser dans tout console.log/error/warn qui référence un email, un
+// identifiant de pharmacie ou un code patient — ces logs finissent dans les
+// tableaux de bord d'hébergement (navigateur/Supabase) et ne doivent pas
+// exposer de données personnelles en clair.
+export function maskEmail(email) {
+  if (!email) return email;
+  const s = String(email);
+  const at = s.indexOf("@");
+  if (at <= 0) return "***";
+  return `${s[0]}***@${s.slice(at + 1)}`;
+}
+
+export function maskId(id) {
+  if (!id) return id;
+  const s = String(id);
+  return s.length <= 8 ? "***" : `${s.slice(0, 8)}…`;
+}
+
+export function maskCode(code) {
+  if (!code) return code;
+  const s = String(code);
+  return s.length <= 1 ? "***" : `${s[0]}***`;
+}
+
 // ─── Utilitaires temporels ────────────────────────────────────────────────────
 export function timeAgo(date) {
   if (!date) return "";

@@ -9,23 +9,14 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-};
+import { isValidPatientCode, validateFile } from "../_shared/upload-validation.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
 const MAX_SUBMISSIONS_PER_WINDOW = 20;
 const WINDOW_MINUTES = 10;
 
-// Validation serveur du fichier — avant ce correctif, le fichier était uploadé sans
-// aucun contrôle de taille, type MIME ou extension côté serveur (seule l'UI patient
-// limitait le sélecteur de fichier, contournable par un appel direct à l'API).
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Mo — généreux pour une photo téléphone
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]);
-const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
-
 serve(async (req) => {
+  const CORS = corsHeaders(req, { "Access-Control-Allow-Headers": "content-type, authorization" });
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
@@ -44,8 +35,6 @@ serve(async (req) => {
     // était envoyé par le client mais jamais lu ici : les ordonnances déposées par QR
     // code n'obtenaient jamais de code_patient, contrairement à celles reçues par email.
     const sessionCodeRaw = form.get("session_code")?.toString() || "";
-    const isValidPatientCode = (s: string) =>
-      s.length === 4 && (s.match(/[0-9]/g)?.length === 3) && (s.match(/[A-Za-z]/g)?.length === 1);
     const code_patient = isValidPatientCode(sessionCodeRaw) ? sessionCodeRaw : null;
 
     if (!pharmacie_id) {
@@ -54,13 +43,9 @@ serve(async (req) => {
     }
 
     if (file && file.size > 0) {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "";
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        return new Response(JSON.stringify({ error: "Fichier trop volumineux (15 Mo maximum)" }),
-          { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
-      }
-      if (!ALLOWED_MIME_TYPES.has(file.type) || !ALLOWED_EXTENSIONS.has(ext)) {
-        return new Response(JSON.stringify({ error: "Type de fichier non autorisé (jpg, png, webp ou pdf uniquement)" }),
+      const fileCheck = validateFile(file);
+      if (!fileCheck.ok) {
+        return new Response(JSON.stringify({ error: fileCheck.error }),
           { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
       }
     }

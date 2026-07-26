@@ -13,19 +13,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signToken } from "../_shared/jwt.ts";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 const MAX_ATTEMPTS_PER_WINDOW = 10;
 const WINDOW_MINUTES = 15;
 const VENDEUR_TOKEN_TTL_SECONDS = 8 * 3600; // 8h — durée d'un poste de travail
 
 Deno.serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }

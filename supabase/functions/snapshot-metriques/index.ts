@@ -10,14 +10,14 @@
 // job pg_cron côté base de données (à faire manuellement, hors du périmètre
 // de ce qui peut être automatisé depuis ce dépôt).
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req: Request) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }

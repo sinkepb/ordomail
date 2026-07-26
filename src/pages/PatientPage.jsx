@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseClient, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
+import { maskId, maskCode } from "../lib/utils.js";
 
 console.log("✅ MODULE CHARGÉ: pages/PatientPage.jsx");
 
@@ -71,7 +72,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const [appele, setAppele]         = useState(false);
 
   useEffect(() => {
-    console.log("[SONNETTE] écoute code:", codePatient, "pharmacie:", pharmacie?.id);
+    console.log("[SONNETTE] écoute code:", maskCode(codePatient), "pharmacie:", maskId(pharmacie?.id));
     if (!pharmacie?.id || !codePatient) return;
     const unsub = ecouterAppels(pharmacie.id, codePatient, (data) => {
       if ('vibrate' in navigator) navigator.vibrate([400, 200, 400, 200, 400]);
@@ -286,7 +287,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
 
       // Charger offres pharmacie — uniquement si pharmacie connue
-      console.log("[PatientStories] chargement offres, pharmacie.id:", capturedPharmaId);
+      console.log("[PatientStories] chargement offres, pharmacie.id:", maskId(capturedPharmaId));
       if (capturedPharmaId) {
         try {
           // Fetch direct REST pour compatibilité maximale mobile
@@ -337,7 +338,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         console.log("[PatientStories] pharmacie.id inconnu — pas d'offres");
       }
 
-      console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", pharmacie?.id, "demo:", isDemoMode);
+      console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", maskId(pharmacie?.id), "demo:", isDemoMode);
       setAllStories([...emailStory, ...base]);
     }
 

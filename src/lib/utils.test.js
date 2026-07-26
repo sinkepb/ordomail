@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { escapeHtml, toDateKey } from "./utils.js";
+import { escapeHtml, toDateKey, maskEmail, maskId, maskCode } from "./utils.js";
 
 // escapeHtml est le correctif de la faille XSS stockée de la phase 1 (nom
 // patient injecté dans l'impression/PDF) — tests ciblés en priorité dessus.
@@ -50,5 +50,45 @@ describe("toDateKey", () => {
   it("accepte une chaîne ISO ou un timestamp en plus d'un objet Date", () => {
     const d = new Date(2026, 11, 31, 12, 0);
     expect(toDateKey(d.toISOString())).toBe(toDateKey(d));
+  });
+});
+
+// Masquage des logs — évite qu'un email, un identifiant de pharmacie ou un
+// code patient n'apparaisse en clair dans les logs navigateur/Supabase.
+describe("maskEmail", () => {
+  it("masque la partie locale, garde le domaine visible", () => {
+    expect(maskEmail("jean.dupont@gmail.com")).toBe("j***@gmail.com");
+  });
+
+  it("gère une chaîne sans @ ou vide", () => {
+    expect(maskEmail("pasunemail")).toBe("***");
+    expect(maskEmail("")).toBe("");
+    expect(maskEmail(null)).toBe(null);
+  });
+});
+
+describe("maskId", () => {
+  it("tronque un UUID à ses 8 premiers caractères", () => {
+    expect(maskId("123e4567-e89b-12d3-a456-426614174000")).toBe("123e4567…");
+  });
+
+  it("masque totalement un identifiant court", () => {
+    expect(maskId("abc")).toBe("***");
+  });
+
+  it("gère null/undefined", () => {
+    expect(maskId(null)).toBe(null);
+    expect(maskId(undefined)).toBe(undefined);
+  });
+});
+
+describe("maskCode", () => {
+  it("garde le premier caractère, masque le reste", () => {
+    expect(maskCode("1A23")).toBe("1***");
+  });
+
+  it("gère un code d'un seul caractère ou vide", () => {
+    expect(maskCode("A")).toBe("***");
+    expect(maskCode("")).toBe("");
   });
 });

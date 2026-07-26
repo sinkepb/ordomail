@@ -15,17 +15,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { buildLookupKey, resolveAppOrigin } from "../_shared/checkout.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
 const TRIAL_DAYS = 30;
 
 serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
@@ -78,7 +78,7 @@ serve(async (req) => {
     }
 
     // 2. Retrouver le Price Stripe par lookup_key (voir note en tête de fichier)
-    const lookupKey = `price_${plan}_${billing === "annual" ? "annual" : "monthly"}`;
+    const lookupKey = buildLookupKey(plan, billing);
     const prices = await stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
     const price = prices.data[0];
     if (!price) {
@@ -108,10 +108,8 @@ serve(async (req) => {
       "https://ordomail.fr",
       "http://localhost:5173",
       "http://127.0.0.1:5173",
-    ].filter(Boolean);
-    const base = (appUrl && ALLOWED_APP_ORIGINS.includes(appUrl))
-      ? appUrl
-      : (Deno.env.get("APP_URL") || "https://ordomail.fr");
+    ];
+    const base = resolveAppOrigin(appUrl, ALLOWED_APP_ORIGINS, Deno.env.get("APP_URL") || "https://ordomail.fr");
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,

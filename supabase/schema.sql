@@ -208,11 +208,15 @@ CREATE TABLE IF NOT EXISTS offre_interets (
   offre_id      UUID REFERENCES offres_stories(id) ON DELETE SET NULL,
   offre_titre   TEXT,           -- dénormalisé pour affichage (déduit)
   offre_emoji   TEXT,           -- dénormalisé pour affichage (déduit)
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT NOW()
   -- Cible du upsert (PatientPage.jsx onConflict: 'code_patient,offre_id,date_jour') —
-  -- voir migrations/20260724_fix_offre_interets_unique.sql pour le correctif appliqué
-  -- en production (contrainte absente jusqu'ici, upserts en échec silencieux).
-  UNIQUE (code_patient, offre_id, date_jour)
+  -- contrainte ajoutée via migrations/20260724_fix_offre_interets_unique.sql, nommée
+  -- explicitement offre_interets_patient_offre_jour_key (PAS déclarée inline ici :
+  -- vérification live du 26/07/2026 a trouvé deux contraintes UNIQUE identiques sur
+  -- ces 3 colonnes coexistant en prod — l'auto-nommée issue d'une ancienne version de
+  -- ce fichier, et celle du correctif du 24/07 — dédupliquées par
+  -- migrations/20260726_live_advisor_fixes.sql. Ne pas réintroduire de UNIQUE inline
+  -- ici pour éviter de recréer le doublon sur un futur bootstrap.
 );
 
 -- Suivi métrique des stories — consultation (temps passé) et actions (réponse quiz,
@@ -304,10 +308,39 @@ CREATE TABLE IF NOT EXISTS ordomail_admins (
 -- Fonction de vérification bcrypt côté SQL (variante utilisée par une des deux
 -- versions de verify-admin — voir supabase/functions/verify-admin/verify-admin.ts,
 -- non déployée, à supprimer en phase 2 avec le reste du nettoyage).
+-- ⚠️ Vérification live du 26/07/2026 (supabase db advisors --linked) : cette
+-- fonction SECURITY DEFINER était appelable directement via
+-- /rest/v1/rpc/check_admin_password par anon ET authenticated (EXECUTE accordé
+-- à PUBLIC par défaut à la création) — bypass total du rate limit de l'edge
+-- function verify-admin. Verrouillée par migrations/20260726_live_advisor_fixes.sql
+-- (REVOKE ALL ... FROM PUBLIC) ; voir aussi verify_admin_login/verify_admin_password
+-- ci-dessous, mêmes correctifs appliqués.
 CREATE OR REPLACE FUNCTION check_admin_password(p_hash TEXT, p_password TEXT)
 RETURNS BOOLEAN AS $$
   SELECT p_hash = crypt(p_password, p_hash);
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+$$ LANGUAGE SQL SECURITY DEFINER STABLE
+   SET search_path = public, pg_temp;
+
+-- Variantes trouvées en base lors de la vérification live du 26/07/2026 (absentes
+-- de ce fichier jusqu'ici — écart de réconciliation), strictement identiques entre
+-- elles : recherchent un admin par email et vérifient son password_hash bcrypt.
+CREATE OR REPLACE FUNCTION verify_admin_login(p_email TEXT, p_password TEXT)
+RETURNS TABLE(email TEXT, nom TEXT, role TEXT) AS $$
+  SELECT email, nom, role FROM ordomail_admins
+  WHERE email = p_email AND password_hash = crypt(p_password, password_hash);
+$$ LANGUAGE SQL SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION verify_admin_password(p_email TEXT, p_password TEXT)
+RETURNS TABLE(email TEXT, nom TEXT, role TEXT) AS $$
+  SELECT email, nom, role FROM ordomail_admins
+  WHERE email = p_email AND password_hash = crypt(p_password, password_hash);
+$$ LANGUAGE SQL SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+REVOKE ALL ON FUNCTION verify_admin_login(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION verify_admin_password(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION check_admin_password(TEXT, TEXT) FROM PUBLIC;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- LIMITATION DE DÉBIT (phase 1, 23/07/2026)
@@ -364,11 +397,28 @@ ALTER TABLE pricing_plans            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE story_metrics            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pharmacie_stories_selection ENABLE ROW LEVEL SECURITY;
 
+-- ⚠️ Vérification live du 26/07/2026 : ces deux tables n'avaient en réalité
+-- JAMAIS eu RLS activée en prod (malgré ce que ce fichier affirmait plus haut) —
+-- anon disposait de SELECT/INSERT/UPDATE/DELETE/TRUNCATE complet dessus,
+-- permettant de réinitialiser à volonté les compteurs de rate-limit (brute-force
+-- PIN vendeur, spam submit-ordonnance). Corrigé par
+-- migrations/20260726_live_advisor_fixes.sql (ENABLE+FORCE RLS, REVOKE ALL FROM anon/authenticated).
+ALTER TABLE pin_verification_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pin_verification_attempts FORCE ROW LEVEL SECURITY;
+ALTER TABLE submission_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE submission_log FORCE ROW LEVEL SECURITY;
+
 -- Fonction helper : pharmacie de l'utilisateur Supabase Auth connecté (titulaire uniquement)
+-- ⚠️ Même correctif que check_admin_password ci-dessus : EXECUTE retiré de PUBLIC
+-- et de anon (auth.uid() y est toujours NULL), regrant explicite à authenticated
+-- seulement (nécessaire pour la policy RLS pharmacie_owns_offres sur offres_stories).
 CREATE OR REPLACE FUNCTION get_user_pharmacie_id()
 RETURNS UUID AS $$
   SELECT pharmacie_id FROM pharmacie_users WHERE id = auth.uid()
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+$$ LANGUAGE SQL SECURITY DEFINER STABLE
+   SET search_path = public, pg_temp;
+REVOKE ALL ON FUNCTION get_user_pharmacie_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_user_pharmacie_id() TO authenticated;
 
 -- Voir supabase/migrations/20260723_phase1_security.sql pour les policies exactes
 -- (ce fichier ne les redéfinit pas pour éviter toute divergence — source unique

@@ -5,17 +5,16 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signToken } from "../_shared/jwt.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
 const ADMIN_TOKEN_TTL_SECONDS = 4 * 3600; // 4h de session backoffice
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
-
 serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }

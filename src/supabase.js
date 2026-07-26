@@ -32,6 +32,7 @@ const IS_DEMO = _DEMO_EXPLICIT || (_SUPABASE_URL_MISSING && !import.meta.env.PRO
 
 // ─── Client Supabase (initialisé en mode prod uniquement) ────────────────────
 import { createClient } from '@supabase/supabase-js';
+import { maskId, maskCode } from './lib/utils.js';
 
 let _supabase = null;
 
@@ -127,7 +128,7 @@ async function _fetchPharmacieForUser(sb, userId) {
   if (!link) {
     // Aucune pharmacie liée à cet utilisateur
     // Peut arriver si l'inscription n'est pas finalisée
-    console.warn('[OrdoMail] Aucune pharmacie liée pour userId:', userId);
+    console.warn('[OrdoMail] Aucune pharmacie liée pour userId:', maskId(userId));
     return null;
   }
 
@@ -759,7 +760,7 @@ export async function setSonnetteActive(pharmacieId, active) {
 // ─── Sonnette patient ─────────────────────────────────────────────────────────
 
 export async function appellerPatient(pharmacieId, codePatient) {
-  console.log("[SONNETTE] appel pharmacie:", pharmacieId, "code:", codePatient, "demo:", IS_DEMO);
+  console.log("[SONNETTE] appel pharmacie:", maskId(pharmacieId), "code:", maskCode(codePatient), "demo:", IS_DEMO);
   if (IS_DEMO) {
     // Mode démo : event custom sur window
     window.dispatchEvent(new CustomEvent('ordomail:appel', {
@@ -777,10 +778,10 @@ export async function appellerPatient(pharmacieId, codePatient) {
 }
 
 export function ecouterAppels(pharmacieId, codePatient, callback) {
-  console.log("[SONNETTE] écoute pharmacie:", pharmacieId, "code:", codePatient, "demo:", IS_DEMO);
+  console.log("[SONNETTE] écoute pharmacie:", maskId(pharmacieId), "code:", maskCode(codePatient), "demo:", IS_DEMO);
   if (IS_DEMO) {
     const handler = (e) => {
-      console.log("[SONNETTE] event reçu, code event:", e.detail?.code_patient, "code attendu:", codePatient);
+      console.log("[SONNETTE] event reçu, code event:", maskCode(e.detail?.code_patient), "code attendu:", maskCode(codePatient));
       if (e.detail?.code_patient === codePatient) callback(e.detail);
     };
     window.addEventListener('ordomail:appel', handler);
@@ -817,7 +818,7 @@ export function addOrdonnance(pharmacieId, ordo) {
   const db = getDB();
   if (!db) { console.warn("[addOrdonnance] DB non initialisée"); return; }
   const ph = db.pharmacies.find(p => p.id === pharmacieId);
-  if (!ph) { console.warn("[addOrdonnance] Pharmacie introuvable:", pharmacieId); return; }
+  if (!ph) { console.warn("[addOrdonnance] Pharmacie introuvable:", maskId(pharmacieId)); return; }
   if (!ph.ordonnances) ph.ordonnances = [];
   ph.ordonnances.unshift(ordo);
   // Notifier les listeners Realtime démo

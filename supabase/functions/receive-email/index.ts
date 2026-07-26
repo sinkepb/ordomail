@@ -7,14 +7,15 @@
 // Postmark → receive-email → send-email (comportement existant préservé)
 //                          → UPDATE ordonnances SET code_patient = '247'
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 
 Deno.serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }
@@ -58,9 +59,9 @@ Deno.serve(async (req) => {
       recipient: toEmailClean,
     };
 
-    console.log("[receive-email] To original:", toEmail);
-    console.log("[receive-email] To nettoyé:", toEmailClean);
-    console.log("[receive-email] code extrait:", codePatient);
+    console.log("[receive-email] To original:", maskEmail(toEmail));
+    console.log("[receive-email] To nettoyé:", maskEmail(toEmailClean));
+    console.log("[receive-email] code extrait:", maskCode(codePatient));
 
     // ── 2. Appeler send-email avec l'adresse SANS le code ───────────────────
     const sendEmailUrl = `${supabaseUrl}/functions/v1/send-email`;
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
     });
 
     const sendData = await sendRes.json().catch(() => ({}));
-    console.log("[receive-email] send-email status:", sendRes.status, sendData);
+    console.log("[receive-email] send-email status:", sendRes.status, "ordonnance_id:", maskId(sendData?.ordonnance_id));
 
     // ── 3. Si un code a été extrait, mettre à jour l'ordonnance créée ───────
     if (codePatient && sendData?.ordonnance_id) {
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ code_patient: codePatient }),
         }
       );
-      console.log("[receive-email] code_patient mis à jour:", codePatient, "status:", updateRes.status);
+      console.log("[receive-email] code_patient mis à jour:", maskCode(codePatient), "status:", updateRes.status);
     } else if (codePatient && !sendData?.ordonnance_id) {
       // send-email ne retourne pas l'id → chercher l'ordonnance la plus récente
       // créée dans les 10 dernières secondes pour cette pharmacie
@@ -114,7 +115,7 @@ Deno.serve(async (req) => {
             body: JSON.stringify({ code_patient: codePatient }),
           }
         );
-        console.log("[receive-email] code_patient mis à jour sur ordo récente:", ordoId);
+        console.log("[receive-email] code_patient mis à jour sur ordo récente:", maskId(ordoId));
       }
     }
 

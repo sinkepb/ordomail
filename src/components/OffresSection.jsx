@@ -1,10 +1,26 @@
 // Extrait de Dashboard.jsx (phase 4) — composant autonome (props + état local
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
-import { getSupabaseClient, isDemoMode } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, fetchStoryMetrics } from "../supabase.js";
+
+function formatDuree(ms) {
+  if (!ms) return "—";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.round(s / 60)}min`;
+}
+
+function aggregateOffre(events, offreId) {
+  const key = `offre-${offreId}`;
+  const relevant = events.filter(e => e.story_id === key);
+  const views = relevant.filter(e => e.event === "view");
+  const avgMs = views.length ? Math.round(views.reduce((a, b) => a + (b.duree_ms || 0), 0) / views.length) : 0;
+  const interets = relevant.filter(e => e.event === "offer_interest" && e.meta?.isOn);
+  return { vues: views.length, dureeMoyenne: avgMs, interets: interets.length };
+}
 
 function OffresSection({ pharmacie, planInfo }) {
   const [offres, setOffres]       = useState([]);
+  const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
@@ -30,6 +46,7 @@ function OffresSection({ pharmacie, planInfo }) {
       .eq("pharmacie_id", pharmacie.id)
       .order("created_at", { ascending: false })
       .then(({ data }) => { if (data) setOffres(data); });
+    fetchStoryMetrics(pharmacie.id).then(data => setEvents(data || []));
   }, [pharmacie?.id]);
 
   function openNew() {
@@ -171,7 +188,9 @@ function OffresSection({ pharmacie, planInfo }) {
           <div style={{ fontSize:12, marginTop:4 }}>Créez votre première offre pour l'afficher dans les stories</div>
         </div>
       )}
-      {offres.map(offre => (
+      {offres.map(offre => {
+        const stats = aggregateOffre(events, offre.id);
+        return (
         <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
           <div style={{ width:44, height:44, borderRadius:10, background:`linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
             {offre.emoji||"🎁"}
@@ -186,6 +205,11 @@ function OffresSection({ pharmacie, planInfo }) {
             </div>
             {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
             {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
+            <div style={{ fontSize:11, color:"#64748b", marginTop:4, display:"flex", gap:12, flexWrap:"wrap" }}>
+              <span>👁️ {stats.vues} vue{stats.vues>1?"s":""}</span>
+              <span>⏱️ {formatDuree(stats.dureeMoyenne)} en moyenne</span>
+              <span>❤️ {stats.interets} intéressé{stats.interets>1?"s":""}</span>
+            </div>
           </div>
           <div style={{ display:"flex", gap:6, flexShrink:0 }}>
             <button onClick={()=>toggleOffre(offre.id, offre.actif)}
@@ -206,7 +230,8 @@ function OffresSection({ pharmacie, planInfo }) {
             </button>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

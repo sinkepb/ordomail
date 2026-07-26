@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -47,9 +48,9 @@ serve(async (req) => {
   const codePatient  = extractCode(toEmailRaw);
   const toEmailClean = cleanEmail(toEmailRaw);
 
-  console.log("[send-email] To original:", toEmailRaw);
-  console.log("[send-email] To nettoyé :", toEmailClean);
-  console.log("[send-email] code patient:", codePatient);
+  console.log("[send-email] To original:", maskEmail(toEmailRaw));
+  console.log("[send-email] To nettoyé :", maskEmail(toEmailClean));
+  console.log("[send-email] code patient:", maskCode(codePatient));
 
   // ── 2. Identifier la pharmacie par email_reception ──────────────────────────
   const { data: ph } = await supabase
@@ -59,7 +60,7 @@ serve(async (req) => {
     .single();
 
   if (!ph) {
-    console.warn("[send-email] Pharmacie introuvable pour:", toEmailClean);
+    console.warn("[send-email] Pharmacie introuvable pour:", maskEmail(toEmailClean));
     return new Response("Pharmacie inconnue", { status: 404 });
   }
 
@@ -77,7 +78,7 @@ serve(async (req) => {
     .select()
     .single();
 
-  console.log("[send-email] ordonnance créée:", ordo?.id, "code:", codePatient);
+  console.log("[send-email] ordonnance créée:", maskId(ordo?.id), "code:", maskCode(codePatient));
 
   // ── 4. Uploader les pièces jointes ──────────────────────────────────────────
   for (const att of (p.Attachments || [])) {
