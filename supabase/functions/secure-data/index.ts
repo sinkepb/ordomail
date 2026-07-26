@@ -166,6 +166,44 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    // Catalogue global de stories (stories_content) fusionné avec la sélection
+    // actif/inactif propre à cette pharmacie — voir pharmacie_stories_selection.
+    if (resource === "pharmacie_stories") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      const { data: stories, error: storiesErr } = await sb
+        .from("stories_content").select("*").eq("actif", true).order("created_at", { ascending: false });
+      if (storiesErr) throw new Error(storiesErr.message);
+      const { data: selections, error: selErr } = await sb
+        .from("pharmacie_stories_selection").select("story_id, actif").eq("pharmacie_id", pharmacieId);
+      if (selErr) throw new Error(selErr.message);
+      const selMap = new Map((selections || []).map(s => [s.story_id, s.actif]));
+      // Absence de ligne de sélection = affichée par défaut (true)
+      const data = (stories || []).map(s => ({ ...s, pharmacie_actif: selMap.has(s.id) ? selMap.get(s.id) : true }));
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Activer/désactiver une story du catalogue pour cette pharmacie uniquement.
+    if (resource === "pharmacie_stories_write") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      const { storyId, actif } = params || {};
+      if (!storyId || typeof actif !== "boolean") {
+        return new Response(JSON.stringify({ error: "storyId et actif (booléen) requis" }),
+          { status: 400, headers: CORS });
+      }
+      const { error } = await sb.from("pharmacie_stories_selection").upsert(
+        { pharmacie_id: pharmacieId, story_id: storyId, actif, updated_at: new Date().toISOString() },
+        { onConflict: "pharmacie_id,story_id" },
+      );
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     if (resource === "admin_pharmacies") {
       if (!isAdmin) {
         return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),

@@ -246,6 +246,19 @@ CREATE TABLE IF NOT EXISTS stories_content (
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Sélection par pharmacie des stories du catalogue global à diffuser à ses
+-- patients — absence de ligne = story affichée par défaut. Lecture publique
+-- (patient anonyme), écriture uniquement via secure-data (titulaire/vendeur).
+-- Voir migrations/20260726_pharmacie_stories_selection.sql.
+CREATE TABLE IF NOT EXISTS pharmacie_stories_selection (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pharmacie_id  UUID NOT NULL REFERENCES pharmacies(id) ON DELETE CASCADE,
+  story_id      UUID NOT NULL REFERENCES stories_content(id) ON DELETE CASCADE,
+  actif         BOOLEAN NOT NULL DEFAULT true,
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (pharmacie_id, story_id)
+);
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- APPELS PATIENT ("sonnette" — appeler un patient dans la file d'attente)
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -329,6 +342,9 @@ CREATE INDEX IF NOT EXISTS idx_submission_log_pharmacie_date
 --   - `offre_interets`, `story_metrics` : écriture ouverte à `anon` (le patient
 --     n'est jamais authentifié), lecture réservée au titulaire (ou à secure-data
 --     via clé de service pour le vendeur).
+--   - `pharmacie_stories_selection` : lecture ouverte à `anon` (booléens actif/
+--     inactif par story, aucune donnée sensible — nécessaire pour que le patient
+--     sache quelles stories exclure), écriture uniquement via secure-data.
 --   - `pricing_plans`, `pin_verification_attempts`, `submission_log` : aucune
 --     policy anon/authenticated — accès uniquement via clé de service (edge
 --     functions), RLS forcée pour empêcher tout accès direct.
@@ -346,6 +362,7 @@ ALTER TABLE factures                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE offre_interets           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pricing_plans            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE story_metrics            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pharmacie_stories_selection ENABLE ROW LEVEL SECURITY;
 
 -- Fonction helper : pharmacie de l'utilisateur Supabase Auth connecté (titulaire uniquement)
 CREATE OR REPLACE FUNCTION get_user_pharmacie_id()

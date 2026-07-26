@@ -10,6 +10,7 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { AbonnementSection } from "../components/AbonnementSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
+import { StoriesSection } from "../components/StoriesSection.jsx";
 import { Btn, Input } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { QRCode } from "../components/QRCode.jsx";
@@ -85,7 +86,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["stories","📊","Stories"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -262,6 +263,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
 
         {section==="offres"&&(
           <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
+        )}
+        {section==="stories"&&(
+          <StoriesSection pharmacie={pharmacie}/>
         )}
         {section==="abonnement"&&(
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{

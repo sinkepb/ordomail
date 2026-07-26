@@ -242,9 +242,26 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           .from("stories_content")
           .select("*")
           .eq("actif", true);
-        if (contents && contents.length > 0) {
+        let eligible = contents || [];
+        // Exclure les stories que CETTE pharmacie a désactivées — absence de ligne
+        // de sélection = story affichée par défaut (comportement inchangé pour les
+        // pharmacies qui n'ont jamais utilisé ce réglage).
+        if (eligible.length > 0 && capturedPharmaId) {
+          try {
+            const { data: selections } = await sb
+              .from("pharmacie_stories_selection")
+              .select("story_id, actif")
+              .eq("pharmacie_id", capturedPharmaId)
+              .eq("actif", false);
+            const disabled = new Set((selections || []).map(s => s.story_id));
+            if (disabled.size > 0) eligible = eligible.filter(s => !disabled.has(s.id));
+          } catch(e) {
+            console.warn("[pharmacie_stories_selection] Erreur:", e.message, "→ pas de filtrage");
+          }
+        }
+        if (eligible.length > 0) {
           // Mélanger et prendre 3 max
-          const shuffled = contents.sort(() => Math.random() - 0.5).slice(0, 3);
+          const shuffled = eligible.sort(() => Math.random() - 0.5).slice(0, 3);
           const dynamicStories = shuffled.map(s => ({
             id: `content-${s.id}`,
             emoji: s.emoji || "💡",

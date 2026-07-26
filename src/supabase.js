@@ -717,6 +717,31 @@ export async function fetchStoryMetrics(pharmacieId, params = {}) {
   }
 }
 
+// Catalogue de stories (global, stories_content) fusionné avec l'état
+// actif/inactif propre à cette pharmacie — pour l'écran titulaire de
+// sélection des stories publiées à ses patients.
+export async function fetchPharmacieStories(pharmacieId) {
+  if (IS_DEMO) return [];
+  try {
+    return await _callSecureData('pharmacie_stories', {}) || [];
+  } catch(e) {
+    console.error('[fetchPharmacieStories]', e.message);
+    return [];
+  }
+}
+
+// Active/désactive une story du catalogue pour cette pharmacie uniquement.
+export async function updatePharmacieStorySelection(pharmacieId, storyId, actif) {
+  if (IS_DEMO) return { ok: true };
+  try {
+    await _callSecureData('pharmacie_stories_write', { storyId, actif });
+    return { ok: true };
+  } catch(e) {
+    console.error('[updatePharmacieStorySelection]', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 
 // ─── Sonnette patient ─────────────────────────────────────────────────────────
 
