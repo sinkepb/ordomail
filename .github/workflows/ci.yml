@@ -1,10 +1,16 @@
 name: CI
 
-# Bloque le merge si le build ou le lint échoue — répond directement à un
-# problème visible dans l'historique du projet : plusieurs commits consécutifs
-# de type "fix build error" faute d'un filet avant merge (voir dossier d'audit,
-# phase 2). N'exécute ni tests ni déploiement Supabase — voir vitest.config.js
-# pour les tests et DEPLOIEMENT_PHASE1.md pour le déploiement manuel.
+# Bloque le merge si le build, le lint, les tests ou l'audit des dépendances de
+# production échouent — répond directement à un problème visible dans
+# l'historique du projet : plusieurs commits consécutifs de type "fix build
+# error" faute d'un filet avant merge (voir dossier d'audit, phase 2).
+# N'exécute pas de déploiement Supabase — voir DEPLOIEMENT_CHECKLIST.md.
+#
+# npm audit est limité à --omit=dev : les vulnérabilités connues à ce jour
+# (27/07/2026) sont toutes dans des devDependencies (eslint/minimatch, esbuild
+# en mode dev server) et n'affectent jamais le bundle livré en production —
+# les inclure ferait échouer la CI sur des alertes non exploitables sans
+# apporter de garantie réelle.
 
 on:
   push:
@@ -33,3 +39,35 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Audit dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    # Job séparé (pas dans build-and-lint) : Playwright installe ses propres
+    # navigateurs, un échec d'installation ne doit pas bloquer le build/lint.
+    # Tourne exclusivement en mode démo — voir e2e/README.md pour le pourquoi
+    # (le paiement Stripe réel n'est volontairement pas automatisé jusqu'au bout).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Installer Chromium (Playwright)
+        run: npx playwright install --with-deps chromium
+
+      - name: Tests E2E
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

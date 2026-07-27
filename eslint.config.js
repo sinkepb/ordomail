@@ -36,4 +36,13 @@ export default [
     },
     settings: { react: { version: "18.3" } },
   },
+  {
+    // Tests Vitest/Playwright + config Playwright, exécutés sous Node (pas
+    // dans le navigateur) — process.env, __dirname, etc. y sont légitimes,
+    // contrairement au reste du code applicatif.
+    files: ["**/*.test.{js,jsx}", "e2e/**/*.js", "playwright.config.js"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ];

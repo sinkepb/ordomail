@@ -142,7 +142,9 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
           { status: 403, headers: CORS });
       }
-      let q = sb.from("offre_interets").select("*").eq("pharmacie_id", pharmacieId);
+      // actif=true seulement : le patient retire son intérêt via un UPDATE
+      // (actif=false), plus via DELETE — voir 20260727_fix_offre_interets_upsert_delete.sql.
+      let q = sb.from("offre_interets").select("*").eq("pharmacie_id", pharmacieId).eq("actif", true);
       if (params?.codePatient) q = q.eq("code_patient", params.codePatient);
       if (params?.dateJour)    q = q.eq("date_jour", params.dateJour);
       const { data, error } = await q;

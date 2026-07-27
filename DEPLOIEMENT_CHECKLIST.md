@@ -1,9 +1,26 @@
 # OrdoMail — Checklist de déploiement
 
-Dernière vérification live complète : **26/07/2026** (via `supabase db advisors --linked`
-et requêtes SQL directes contre le projet lié `hdgpkgaznsaocczxvaix`). Ce document est la
-référence unique pour mettre en production ou auditer l'état actuel — les fichiers
-`DEPLOIEMENT_PHASE1.md` / `PHASE2.md` / `PHASE3_STRIPE.md` restent en contexte historique.
+Dernière vérification live complète : **27/07/2026** (via `supabase db advisors --linked`,
+requêtes SQL directes et tests RLS live contre le projet lié `hdgpkgaznsaocczxvaix`). Ce
+document est la référence unique pour mettre en production ou auditer l'état actuel — les
+fichiers `DEPLOIEMENT_PHASE1.md` / `PHASE2.md` / `PHASE3_STRIPE.md` restent en contexte
+historique.
+
+## ⚠️ Bug ouvert, non résolu (27/07/2026)
+
+**`offre_interets` — UPDATE via clé anon silencieusement sans effet.** Le patient qui
+retire son intérêt pour une offre (ou re-clique le même jour) envoie un UPDATE filtré
+(`.eq(...)`, pas un upsert) qui renvoie un succès HTTP mais ne modifie pas la ligne.
+Reproduit de façon identique en SQL brut (`SET ROLE anon`) et via l'API REST réelle, y
+compris sur des lignes fraîchement créées — écarte un problème de policy (INSERT et une
+partie des UPDATE fonctionnent) ou de cache de plan lié à une ligne précise. `EXPLAIN
+(VERBOSE)` montre "One-Time Filter: false" malgré une policy UPDATE `USING(true)`. Piste
+la plus probable : anomalie côté infrastructure Supabase (pooler/planner), à investiguer
+avec leur support. Testé et documenté par
+`src/lib/supabase/__tests__/rls.live.test.js` (`npm run test:rls`), qui échouera tant que
+ce n'est pas corrigé — volontairement laissé en échec pour servir de test de
+non-régression plutôt que d'affaiblir l'assertion. Le marquage initial d'intérêt (INSERT)
+fonctionne correctement.
 
 ---
 
@@ -12,6 +29,11 @@ référence unique pour mettre en production ou auditer l'état actuel — les f
 - [ ] `npm run build` passe sans erreur
 - [ ] `npm test` passe (44 tests Vitest — JWT, validation upload, checkout, plan webhook, masquage logs, XSS, dates)
 - [ ] `npm run lint` sans erreur (warnings tolérés, voir historique du nettoyage ESLint)
+- [ ] `npm run test:rls` passe (nécessite `RLS_TEST_SERVICE_ROLE_KEY` et `RLS_TEST_JWT_SECRET`
+      en secrets — voir en-tête de `src/lib/supabase/__tests__/rls.live.test.js`). Skippé
+      sans ces secrets, ne bloque pas un contributeur standard.
+- [ ] `npm run test:e2e` passe (Playwright, mode démo uniquement — voir `e2e/README.md`
+      pour ce qui est couvert et pourquoi le paiement Stripe réel ne l'est pas)
 - [ ] Variables d'environnement de production configurées (Vercel/Netlify → Environment Variables) :
 
   | Variable | Valeur |

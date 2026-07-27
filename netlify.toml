@@ -6,3 +6,22 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Durcissement des en-têtes HTTP (27/07/2026). CSP calée sur les besoins réels
+# de l'app : Google Fonts (Inter, chargée via <link> et un @import CSS dans
+# Dashboard.jsx), Supabase (REST/Auth/Storage + Realtime en wss:), Sentry
+# (optionnel, désactivé sans DSN), et Tesseract.js (worker chargé en blob: par
+# défaut — voir src/lib/ocr.js — + données de langue depuis jsdelivr). Les
+# styles inline restent nécessaires : le code utilise massivement le prop
+# `style={{...}}` de React, qui produit un attribut style="" HTML classique —
+# les retirer entièrement nécessiterait une réécriture de l'UI hors périmètre
+# de ce correctif.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://cdn.jsdelivr.net; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"

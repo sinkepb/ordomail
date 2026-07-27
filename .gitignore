@@ -3,6 +3,10 @@ dist/
 .env
 .env.local
 .DS_Store
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 supabase/.temp/ 
 deploy.bat 
 deploy.ps1 

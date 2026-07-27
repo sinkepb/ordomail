@@ -137,6 +137,11 @@ const DB = {
       email: "contact@pharmaciecentrale.fr", password: "demo123",
       adresse: "12 rue de la Paix, 75001 Paris",
       emailReception: "ph1@in.ordomail.fr",
+      // ⚠️ Requis pour la connexion vendeur en démo (LoginPage.jsx cherche
+      // db.pharmacies.find(p => p.codeVendeur === code)) — absent jusqu'au
+      // 27/07/2026, ce qui cassait silencieusement ce parcours malgré l'indice
+      // "123456" affiché dans l'UI elle-même. Détecté en écrivant l'E2E.
+      codeVendeur: "123456",
       plan: "starter", createdAt: "2025-01-15T10:00:00Z",
       postes: [
         { id:"p1", nom:"Poste Accueil",     actif:true,  pin:"1234" },
@@ -150,6 +155,7 @@ const DB = {
       email: "pharma@soleil.fr", password: "demo123",
       adresse: "45 avenue du Soleil, 69001 Lyon",
       emailReception: "ph2@in.ordomail.fr",
+      codeVendeur: "654321",
       plan: "standard", createdAt: "2025-02-01T10:00:00Z",
       postes: [
         { id:"p1", nom:"Poste 1", actif:true, pin:"1111" },

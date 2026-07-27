@@ -157,22 +157,52 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     if (!codePatient) return;
     const sb = getSupabaseClient();
     if (!sb) return;
+    const dateJour = new Date().toISOString().split('T')[0];
     let error;
+    // ⚠️ Ne jamais utiliser .upsert(...,{onConflict}) ni .delete() ici : les
+    // deux exigent côté Postgres que l'appelant puisse aussi "voir" la ligne
+    // visée (vérification RLS de type SELECT) — un INSERT ... ON CONFLICT DO
+    // UPDATE pour vérifier l'existence d'un conflit, un DELETE pour déterminer
+    // les lignes éligibles — même quand aucune ligne n'existe encore/n'est
+    // réellement supprimée. offre_interets n'a volontairement aucune policy
+    // SELECT pour anon (le patient n'est jamais authentifié et ne doit pas
+    // pouvoir lire les intérêts des autres patients, dans d'autres pharmacies).
+    // Confirmé en direct le 27/07/2026 : l'upsert échouait bruyamment ("new row
+    // violates row-level security policy"), le delete échouait silencieusement
+    // (204 renvoyé mais 0 ligne réellement supprimée, via EXPLAIN : "One-Time
+    // Filter: false"). Un INSERT simple et un UPDATE filtré (WHERE, pas ON
+    // CONFLICT) ne nécessitent eux QUE la policy INSERT/UPDATE correspondante.
+    // Le retrait d'intérêt bascule donc un flag `actif` via UPDATE au lieu de
+    // supprimer la ligne (voir migrations/20260727_fix_offre_interets_upsert_delete.sql).
     if (isOn) {
-      ({ error } = await sb.from('offre_interets').upsert({
+      ({ error } = await sb.from('offre_interets').insert({
         pharmacie_id: pharmacie?.id,
         code_patient: codePatient,
         offre_id:     offreId,
         offre_titre:  story.title,
         offre_emoji:  story.emoji || '🎁',
         offre_type:   story.offreType || 'promo',
-      }, { onConflict: 'code_patient,offre_id,date_jour' }));
+        date_jour:    dateJour,
+        actif:        true,
+      }));
+      if (error?.code === '23505') {
+        ({ error } = await sb.from('offre_interets')
+          .update({
+            actif:       true,
+            offre_titre: story.title,
+            offre_emoji: story.emoji || '🎁',
+            offre_type:  story.offreType || 'promo',
+          })
+          .eq('code_patient', codePatient)
+          .eq('offre_id', offreId)
+          .eq('date_jour', dateJour));
+      }
     } else {
       ({ error } = await sb.from('offre_interets')
-        .delete()
+        .update({ actif: false })
         .eq('code_patient', codePatient)
         .eq('offre_id', offreId)
-        .eq('date_jour', new Date().toISOString().split('T')[0]));
+        .eq('date_jour', dateJour));
     }
     if (error) {
       // L'écriture a échoué côté serveur — annuler la mise à jour optimiste
