@@ -1020,6 +1020,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                       loadingId={loadingId}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                    interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
@@ -1131,6 +1132,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     );
                   }
                   return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                    interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}

@@ -85,7 +85,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive }) {
+function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, interets = [] }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email  = ordo.fromEmail || "";
@@ -162,6 +162,33 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
           }
         </div>
 
+        {/* Intérêts offres du patient — voir OrdoGroup pour le même affichage
+            côté groupe. Absent ici jusqu'au 27/07/2026 : cette carte gère le
+            cas (majoritaire) d'un patient avec une seule ordonnance, jamais
+            câblée avec les intérêts contrairement à OrdoGroup (plusieurs
+            ordonnances) — le badge n'apparaissait donc jamais côté vendeur
+            pour l'immense majorité des patients. */}
+        {interets.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            {interets.map(int => (
+              <div key={int.id} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "7px 12px", marginBottom: 5,
+                background: "#fff8e1", borderRadius: 10,
+                border: "1.5px solid #fde68a",
+              }}>
+                <span style={{ fontSize: 18 }}>{int.offre_emoji || "🎁"}</span>
+                <div>
+                  <div style={{ fontSize: 11, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Intéressé(e)
+                  </div>
+                  <div style={{ fontSize: 12, color: "#78350f", fontWeight: 600 }}>{int.offre_titre}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Miniature ordonnance si dispo */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
           <div style={{ marginBottom: 14, cursor: "pointer" }} onClick={onView}>
@@ -233,7 +260,7 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
   );
 }
 
-function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive }) {
+function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive, interets = [] }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -268,6 +295,17 @@ function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, son
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+          {/* Badge intérêts — voir OrdoCard/OrdoGroup pour le détail complet, pas
+              la place pour ça sur une ligne compacte */}
+          {interets.length > 0 && (
+            <span title={interets.map(i => i.offre_titre).join(', ')} style={{
+              fontSize: 11, fontWeight: 800, padding: "2px 7px", flexShrink: 0,
+              borderRadius: 20, background: "#fef3c7",
+              color: "#92400e", border: "1px solid #fde68a",
+            }}>
+              🎯 {interets.length}
+            </span>
+          )}
         </div>
         {email && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email}</div>}
         <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{timeAgo(ordo.receivedAt)}</div>
