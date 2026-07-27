@@ -38,6 +38,33 @@ export function getSupabase() {
   return _supabase;
 }
 
+// ─── Client "anonyme garanti" pour la page patient ────────────────────────────
+// ⚠️ Bug réel confirmé en direct le 27/07/2026 : getSupabase() persiste la
+// session Supabase Auth du titulaire dans localStorage (persistSession: true,
+// nécessaire pour que le dashboard reste connecté après un rechargement). Si le
+// MÊME navigateur a une session titulaire/admin active (onglet différent, ou
+// juste laissée ouverte), le SDK attache AUTOMATIQUEMENT le jeton de cette
+// session à CHAQUE requête PostgREST — y compris depuis PatientPage.jsx, censée
+// être strictement anonyme. Or offre_interets/story_metrics n'ont aucune policy
+// INSERT pour le rôle `authenticated` (volontairement — seul `anon` peut y
+// écrire) : la requête échoue alors avec "new row violates row-level security
+// policy", un message qui ressemble à un bug de policy alors que la vraie cause
+// est qu'elle n'est jamais appelée en tant qu'anon. Un second client, sans
+// persistance de session, garantit que la page patient reste anonyme quel que
+// soit l'état de connexion du reste de l'app dans le même navigateur.
+let _supabaseAnon = null;
+
+export function getSupabaseAnon() {
+  if (_supabaseAnon) return _supabaseAnon;
+  if (IS_DEMO) return null;
+  _supabaseAnon = createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }
+  );
+  return _supabaseAnon;
+}
+
 // ─── Référence à la DB mock via pont global window._ordomailDB ───────────────
 // App.jsx expose la DB via window._ordomailDB = DB après son initialisation
 export function getDB() {

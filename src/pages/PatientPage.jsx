@@ -1,7 +1,7 @@
 // @version 16/07/2026 14:23 — swipe-natural
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
+import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
@@ -99,7 +99,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   // patient, un échec ne doit jamais bloquer la navigation dans les stories.
   async function logStoryEvent(story, event, extra = {}) {
     if (!story || isDemoMode) return; // pas de bruit en démo
-    const sb = getSupabaseClient();
+    const sb = getSupabaseAnon();
     if (!sb) return;
     try {
       await sb.from('story_metrics').insert({
@@ -155,7 +155,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
     // Mode prod : Supabase
     if (!codePatient) return;
-    const sb = getSupabaseClient();
+    const sb = getSupabaseAnon();
     if (!sb) return;
     const dateJour = new Date().toISOString().split('T')[0];
     let error;
@@ -236,7 +236,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
   useEffect(() => {
-    const sb = getSupabaseClient();
+    const sb = getSupabaseAnon();
     // En mode email : exclure la story "Ordonnance reçue" (id:1)
     const baseStoriesForLoad = emailMode
       ? HEALTH_STORIES.filter(s => s.id !== 1)

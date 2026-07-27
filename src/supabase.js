@@ -19,6 +19,7 @@ export {
   IS_DEMO as isDemoMode,
   getSupabase as supabase,
   getSupabaseClient,
+  getSupabaseAnon,
   getSignedUrl,
   getCurrentSession,
   onAuthStateChange,
