@@ -16,6 +16,14 @@
 # `style={{...}}` de React, qui produit un attribut style="" HTML classique —
 # les retirer entièrement nécessiterait une réécriture de l'UI hors périmètre
 # de ce correctif.
+#
+# ⚠️ Régression du 27/07/2026, corrigée : la première version de cette CSP
+# (script-src 'self' seul) bloquait la compilation du binaire WASM de
+# Tesseract (WebAssembly.instantiate nécessite 'wasm-unsafe-eval' sous CSP
+# niveau 3) et le chargement de ce binaire via une URL data: (bloqué par
+# connect-src). Conséquence : tout dépôt d'ordonnance restait bloqué
+# indéfiniment sur "Envoi en cours…", jamais d'erreur visible côté patient.
+# Reproduit en direct sur le preview Vercel de develop.
 [[headers]]
   for = "/*"
   [headers.values]
@@ -24,4 +32,4 @@
     X-Frame-Options = "DENY"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://cdn.jsdelivr.net; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' data: https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://cdn.jsdelivr.net; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
