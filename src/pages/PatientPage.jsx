@@ -153,65 +153,43 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       return;
     }
 
-    // Mode prod : Supabase
+    // Mode prod : edge function toggle-interet (clé de service, bypass RLS).
+    // ⚠️ Ne PAS écrire directement en clé anon ici (upsert/update/delete) : Postgres
+    // exige une visibilité SELECT pour un INSERT ... ON CONFLICT DO UPDATE, et un
+    // simple UPDATE filtré échoue aussi SILENCIEUSEMENT pour anon sur cette table
+    // (200/204 renvoyé, 0 ligne réellement modifiée — confirmé en direct le
+    // 27/07/2026, cause exacte non élucidée malgré policies/grants corrects).
+    // offre_interets n'a volontairement aucune policy SELECT pour anon (le patient
+    // n'est jamais authentifié et ne doit pas pouvoir lire les intérêts des autres
+    // patients) — la clé de service contourne le problème sans avoir à l'exposer.
     if (!codePatient) return;
-    const sb = getSupabaseAnon();
-    if (!sb) return;
-    const dateJour = new Date().toISOString().split('T')[0];
-    let error;
-    // ⚠️ Ne jamais utiliser .upsert(...,{onConflict}) ni .delete() ici : les
-    // deux exigent côté Postgres que l'appelant puisse aussi "voir" la ligne
-    // visée (vérification RLS de type SELECT) — un INSERT ... ON CONFLICT DO
-    // UPDATE pour vérifier l'existence d'un conflit, un DELETE pour déterminer
-    // les lignes éligibles — même quand aucune ligne n'existe encore/n'est
-    // réellement supprimée. offre_interets n'a volontairement aucune policy
-    // SELECT pour anon (le patient n'est jamais authentifié et ne doit pas
-    // pouvoir lire les intérêts des autres patients, dans d'autres pharmacies).
-    // Confirmé en direct le 27/07/2026 : l'upsert échouait bruyamment ("new row
-    // violates row-level security policy"), le delete échouait silencieusement
-    // (204 renvoyé mais 0 ligne réellement supprimée, via EXPLAIN : "One-Time
-    // Filter: false"). Un INSERT simple et un UPDATE filtré (WHERE, pas ON
-    // CONFLICT) ne nécessitent eux QUE la policy INSERT/UPDATE correspondante.
-    // Le retrait d'intérêt bascule donc un flag `actif` via UPDATE au lieu de
-    // supprimer la ligne (voir migrations/20260727_fix_offre_interets_upsert_delete.sql).
-    if (isOn) {
-      ({ error } = await sb.from('offre_interets').insert({
-        pharmacie_id: pharmacie?.id,
-        code_patient: codePatient,
-        offre_id:     offreId,
-        offre_titre:  story.title,
-        offre_emoji:  story.emoji || '🎁',
-        offre_type:   story.offreType || 'promo',
-        date_jour:    dateJour,
-        actif:        true,
-      }));
-      if (error?.code === '23505') {
-        ({ error } = await sb.from('offre_interets')
-          .update({
-            actif:       true,
-            offre_titre: story.title,
-            offre_emoji: story.emoji || '🎁',
-            offre_type:  story.offreType || 'promo',
-          })
-          .eq('code_patient', codePatient)
-          .eq('offre_id', offreId)
-          .eq('date_jour', dateJour));
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/toggle-interet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        body: JSON.stringify({
+          pharmacieId: pharmacie?.id,
+          codePatient,
+          offreId,
+          offreTitre: story.title,
+          offreEmoji: story.emoji || '🎁',
+          offreType:  story.offreType || 'promo',
+          actif:      isOn,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `toggle-interet : erreur ${res.status}`);
       }
-    } else {
-      ({ error } = await sb.from('offre_interets')
-        .update({ actif: false })
-        .eq('code_patient', codePatient)
-        .eq('offre_id', offreId)
-        .eq('date_jour', dateJour));
-    }
-    if (error) {
+      logStoryEvent(story, 'offer_interest', { meta: { isOn } });
+    } catch(e) {
       // L'écriture a échoué côté serveur — annuler la mise à jour optimiste
       // pour ne pas laisser croire au patient que son intérêt a été pris en
       // compte alors que rien n'a été enregistré.
-      console.error('[toggleInteret]', error.message);
+      console.error('[toggleInteret]', e.message);
       setInterets(prev => ({ ...prev, [offreId]: !isOn }));
-    } else {
-      logStoryEvent(story, 'offer_interest', { meta: { isOn } });
     }
   } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);

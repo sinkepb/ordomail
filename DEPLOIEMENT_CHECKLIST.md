@@ -6,21 +6,31 @@ document est la référence unique pour mettre en production ou auditer l'état 
 fichiers `DEPLOIEMENT_PHASE1.md` / `PHASE2.md` / `PHASE3_STRIPE.md` restent en contexte
 historique.
 
-## ⚠️ Bug ouvert, non résolu (27/07/2026)
+## Historique — `offre_interets` (résolu le 27/07/2026)
 
-**`offre_interets` — UPDATE via clé anon silencieusement sans effet.** Le patient qui
-retire son intérêt pour une offre (ou re-clique le même jour) envoie un UPDATE filtré
-(`.eq(...)`, pas un upsert) qui renvoie un succès HTTP mais ne modifie pas la ligne.
-Reproduit de façon identique en SQL brut (`SET ROLE anon`) et via l'API REST réelle, y
-compris sur des lignes fraîchement créées — écarte un problème de policy (INSERT et une
-partie des UPDATE fonctionnent) ou de cache de plan lié à une ligne précise. `EXPLAIN
-(VERBOSE)` montre "One-Time Filter: false" malgré une policy UPDATE `USING(true)`. Piste
-la plus probable : anomalie côté infrastructure Supabase (pooler/planner), à investiguer
-avec leur support. Testé et documenté par
-`src/lib/supabase/__tests__/rls.live.test.js` (`npm run test:rls`), qui échouera tant que
-ce n'est pas corrigé — volontairement laissé en échec pour servir de test de
-non-régression plutôt que d'affaiblir l'assertion. Le marquage initial d'intérêt (INSERT)
-fonctionne correctement.
+Trois bugs distincts, tous liés au marquage/retrait d'intérêt patient pour une offre,
+trouvés et corrigés en cascade le même jour en testant en direct contre le preview
+`develop` :
+
+1. **`.upsert(...,{onConflict})` échoue avec RLS violation.** Un `INSERT ... ON CONFLICT
+   DO UPDATE` exige côté Postgres une visibilité SELECT sur la table, même sans conflit
+   réel — `offre_interets` n'a volontairement aucune policy SELECT pour `anon`. Cassé
+   depuis l'activation de RLS sur cette table (23/07/2026) : le code client faisait un
+   `.upsert()` depuis bien avant.
+2. **CORS + CSP bloquaient tout sur les previews Vercel.** `_shared/cors.ts` ne couvrait
+   que le domaine de prod, pas les URLs `ordomail-git-<branche>-*.vercel.app` — et la CSP
+   (`script-src 'self'` sans `'wasm-unsafe-eval'`) bloquait la compilation du WASM
+   Tesseract, gelant tout dépôt d'ordonnance sur "Envoi en cours…".
+3. **UPDATE anon silencieusement sans effet ni erreur** (200/204 renvoyé, `EXPLAIN
+   VERBOSE` : "One-Time Filter: false" malgré une policy `USING(true)` correcte — cause
+   exacte jamais élucidée) **+ badge jamais câblé pour un patient à une seule ordonnance**
+   (`OrdoCard`/`OrdoRow` ne recevaient pas la prop `interets`, contrairement à `OrdoGroup`).
+
+Le point 1 est corrigé côté client (voir git log). Le point 3 (UPDATE anon) a été
+contourné définitivement : l'écriture passe désormais par l'edge function
+`toggle-interet` (clé de service, bypass RLS complet — même schéma que
+`submit-ordonnance`), plus fiable qu'une policy RLS supplémentaire qui aurait dû exposer
+une lecture anon large sur la table pour fonctionner.
 
 ---
 

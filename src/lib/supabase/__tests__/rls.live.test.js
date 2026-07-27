@@ -66,18 +66,21 @@ describe.skipIf(!canRun)('RLS live — offre_interets, rate-limit, stories_conte
       expect(error).toBeNull();
     });
 
-    // ⚠️ BUG OUVERT, NON RÉSOLU (27/07/2026) : ce test échoue actuellement en
-    // direct contre le projet de prod — l'UPDATE renvoie un succès HTTP (204,
-    // pas d'erreur) mais la ligne n'est PAS modifiée. Confirmé via EXPLAIN
+    // ⚠️ Comportement Supabase anormal, jamais élucidé (27/07/2026), mais qui
+    // n'est PLUS un bloqueur en pratique depuis le même jour : ce test échoue
+    // contre le projet réel — l'UPDATE renvoie un succès HTTP (204, pas
+    // d'erreur) mais la ligne n'est PAS modifiée. Confirmé via EXPLAIN
     // (VERBOSE) : le plan affiche "One-Time Filter: false" alors que la seule
-    // policy UPDATE applicable est USING(true)/WITH CHECK(true) — comportement
-    // reproduit de façon identique en SQL brut (SET ROLE anon) et via l'API
-    // REST réelle, y compris sur des lignes fraîchement créées (donc pas un
-    // problème de cache de plan lié à une ligne précise). Cause probable :
-    // anomalie côté Supabase (pooler/planner) plutôt qu'un problème de policy —
-    // reste à investiguer avec le support Supabase. Ne PAS affaiblir cette
-    // assertion pour la faire passer : elle documente le comportement attendu
-    // et sert de test de non-régression pour le jour où la cause sera trouvée.
+    // policy UPDATE applicable est USING(true)/WITH CHECK(true) — reproduit de
+    // façon identique en SQL brut (SET ROLE anon) et via l'API REST réelle, y
+    // compris sur des lignes fraîchement créées. Cause probable : anomalie
+    // côté Supabase (pooler/planner), jamais confirmée avec leur support.
+    // PatientPage.jsx ne dépend plus de ce chemin : le marquage/retrait
+    // d'intérêt passe désormais par l'edge function toggle-interet (clé de
+    // service, bypass RLS) — voir supabase/functions/toggle-interet/index.ts.
+    // Ce test reste volontairement en échec (pas affaibli) pour documenter le
+    // comportement RLS réel de la table, indépendamment du contournement
+    // applicatif.
     it('anon peut UPDATE une ligne existante via filtre (pas upsert/ON CONFLICT)', async () => {
       // ⚠️ Ne PAS utiliser .upsert(...,{onConflict}) dans ce test : ON CONFLICT DO
       // UPDATE exige une visibilité SELECT que anon n'a jamais sur cette table —
