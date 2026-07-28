@@ -22,7 +22,12 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
-    "Access-Control-Allow-Headers": "content-type, authorization",
+    // ⚠️ apikey requis : le client envoie ce header en plus d'Authorization
+    // (voir PatientPage.jsx) — oublié en copiant le pattern de submit-ordonnance,
+    // qui envoie du FormData sans ce header. Sans lui dans la liste, le préflight
+    // OPTIONS échoue et le navigateur bloque la vraie requête avant même qu'elle
+    // parte ("Request header field apikey is not allowed").
+    "Access-Control-Allow-Headers": "content-type, authorization, apikey",
     "Content-Type": "application/json",
   });
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
