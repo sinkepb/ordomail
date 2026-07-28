@@ -1,15 +1,20 @@
+// @phase1-security 23/07/2026 — émet désormais un jeton admin signé (voir _shared/jwt.ts),
+// consommé par secure-data (resource=admin_pharmacies) pour authentifier les lectures du
+// backoffice OrdoMail Business côté serveur, au lieu de requêtes anon-key non vérifiées.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { signToken } from "../_shared/jwt.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+const ADMIN_TOKEN_TTL_SECONDS = 4 * 3600; // 4h de session backoffice
 
 serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }
@@ -45,7 +50,10 @@ serve(async (req) => {
       );
     }
 
-    const valid = await bcrypt.compare(password, admin.password_hash);
+    // compareSync (pas compare async) : la version async de ce package spawn un Worker,
+    // indisponible dans le runtime des Edge Functions Supabase ("Worker is not defined").
+    // C'est probablement la cause du repli fréquent sur la porte dérobée avant son retrait.
+    const valid = bcrypt.compareSync(password, admin.password_hash);
     if (!valid) {
       return new Response(
         JSON.stringify({ success: false, error: "Identifiants incorrects" }),
@@ -53,8 +61,15 @@ serve(async (req) => {
       );
     }
 
+    const jwtSecret = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
+    const token = await signToken(
+      { sub: admin.email, role: "admin", admin_role: admin.role },
+      jwtSecret,
+      ADMIN_TOKEN_TTL_SECONDS,
+    );
+
     return new Response(
-      JSON.stringify({ success: true, admin: { email: admin.email, nom: admin.nom, role: admin.role } }),
+      JSON.stringify({ success: true, token, admin: { email: admin.email, nom: admin.nom, role: admin.role } }),
       { headers: CORS }
     );
 

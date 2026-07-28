@@ -1,9 +1,10 @@
 // @version 16/07/2026 14:23 — swipe-natural
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseClient, isDemoMode, fetchPharmacie, ecouterAppels, addOrdonnance } from "../supabase.js";
+import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
+import { maskId, maskCode } from "../lib/utils.js";
 
 console.log("✅ MODULE CHARGÉ: pages/PatientPage.jsx");
 
@@ -71,7 +72,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const [appele, setAppele]         = useState(false);
 
   useEffect(() => {
-    console.log("[SONNETTE] écoute code:", codePatient, "pharmacie:", pharmacie?.id);
+    console.log("[SONNETTE] écoute code:", maskCode(codePatient), "pharmacie:", maskId(pharmacie?.id));
     if (!pharmacie?.id || !codePatient) return;
     const unsub = ecouterAppels(pharmacie.id, codePatient, (data) => {
       if ('vibrate' in navigator) navigator.vibrate([400, 200, 400, 200, 400]);
@@ -85,12 +86,34 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.3);
           osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.3);
         });
-      } catch(e) {}
+      } catch(e) { /* AudioContext indisponible/bloqué — le bip est un bonus, pas bloquant */ }
       setAppele(true);
       setTimeout(() => setAppele(false), 8000);
     });
     return unsub;
   }, [pharmacie?.id, codePatient]);
+
+  // Suivi métrique des stories — consultation (temps passé) et actions (réponse
+  // quiz, intérêt offre). Écriture anonyme, même modèle d'accès que offre_interets
+  // (voir migrations/20260725_story_metrics.sql) : pas d'attente de résultat côté
+  // patient, un échec ne doit jamais bloquer la navigation dans les stories.
+  async function logStoryEvent(story, event, extra = {}) {
+    if (!story || isDemoMode) return; // pas de bruit en démo
+    const sb = getSupabaseAnon();
+    if (!sb) return;
+    try {
+      await sb.from('story_metrics').insert({
+        pharmacie_id: pharmacie?.id,
+        code_patient: codePatient,
+        story_id:     String(story.id),
+        story_type:   story.type,
+        event,
+        ...extra,
+      });
+    } catch(e) {
+      console.warn('[story_metrics]', e.message);
+    }
+  }
 
   // Toggle intérêt patient pour une offre
   async function toggleInteret(story) {
@@ -130,25 +153,43 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       return;
     }
 
-    // Mode prod : Supabase
+    // Mode prod : edge function toggle-interet (clé de service, bypass RLS).
+    // ⚠️ Ne PAS écrire directement en clé anon ici (upsert/update/delete) : Postgres
+    // exige une visibilité SELECT pour un INSERT ... ON CONFLICT DO UPDATE, et un
+    // simple UPDATE filtré échoue aussi SILENCIEUSEMENT pour anon sur cette table
+    // (200/204 renvoyé, 0 ligne réellement modifiée — confirmé en direct le
+    // 27/07/2026, cause exacte non élucidée malgré policies/grants corrects).
+    // offre_interets n'a volontairement aucune policy SELECT pour anon (le patient
+    // n'est jamais authentifié et ne doit pas pouvoir lire les intérêts des autres
+    // patients) — la clé de service contourne le problème sans avoir à l'exposer.
     if (!codePatient) return;
-    const sb = getSupabaseClient();
-    if (!sb) return;
-    if (isOn) {
-      await sb.from('offre_interets').upsert({
-        pharmacie_id: pharmacie?.id,
-        code_patient: codePatient,
-        offre_id:     offreId,
-        offre_titre:  story.title,
-        offre_emoji:  story.emoji || '🎁',
-        offre_type:   story.offreType || 'promo',
-      }, { onConflict: 'code_patient,offre_id,date_jour' });
-    } else {
-      await sb.from('offre_interets')
-        .delete()
-        .eq('code_patient', codePatient)
-        .eq('offre_id', offreId)
-        .eq('date_jour', new Date().toISOString().split('T')[0]);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/toggle-interet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        body: JSON.stringify({
+          pharmacieId: pharmacie?.id,
+          codePatient,
+          offreId,
+          offreTitre: story.title,
+          offreEmoji: story.emoji || '🎁',
+          offreType:  story.offreType || 'promo',
+          actif:      isOn,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `toggle-interet : erreur ${res.status}`);
+      }
+      logStoryEvent(story, 'offer_interest', { meta: { isOn } });
+    } catch(e) {
+      // L'écriture a échoué côté serveur — annuler la mise à jour optimiste
+      // pour ne pas laisser croire au patient que son intérêt a été pris en
+      // compte alors que rien n'a été enregistré.
+      console.error('[toggleInteret]', e.message);
+      setInterets(prev => ({ ...prev, [offreId]: !isOn }));
     }
   } // index réponse choisie
   const [touchStart, setTouchStart] = useState(null);
@@ -173,7 +214,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
   useEffect(() => {
-    const sb = getSupabaseClient();
+    const sb = getSupabaseAnon();
     // En mode email : exclure la story "Ordonnance reçue" (id:1)
     const baseStoriesForLoad = emailMode
       ? HEALTH_STORIES.filter(s => s.id !== 1)
@@ -210,9 +251,26 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           .from("stories_content")
           .select("*")
           .eq("actif", true);
-        if (contents && contents.length > 0) {
+        let eligible = contents || [];
+        // Exclure les stories que CETTE pharmacie a désactivées — absence de ligne
+        // de sélection = story affichée par défaut (comportement inchangé pour les
+        // pharmacies qui n'ont jamais utilisé ce réglage).
+        if (eligible.length > 0 && capturedPharmaId) {
+          try {
+            const { data: selections } = await sb
+              .from("pharmacie_stories_selection")
+              .select("story_id, actif")
+              .eq("pharmacie_id", capturedPharmaId)
+              .eq("actif", false);
+            const disabled = new Set((selections || []).map(s => s.story_id));
+            if (disabled.size > 0) eligible = eligible.filter(s => !disabled.has(s.id));
+          } catch(e) {
+            console.warn("[pharmacie_stories_selection] Erreur:", e.message, "→ pas de filtrage");
+          }
+        }
+        if (eligible.length > 0) {
           // Mélanger et prendre 3 max
-          const shuffled = contents.sort(() => Math.random() - 0.5).slice(0, 3);
+          const shuffled = eligible.sort(() => Math.random() - 0.5).slice(0, 3);
           const dynamicStories = shuffled.map(s => ({
             id: `content-${s.id}`,
             emoji: s.emoji || "💡",
@@ -237,7 +295,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
 
       // Charger offres pharmacie — uniquement si pharmacie connue
-      console.log("[PatientStories] chargement offres, pharmacie.id:", capturedPharmaId);
+      console.log("[PatientStories] chargement offres, pharmacie.id:", maskId(capturedPharmaId));
       if (capturedPharmaId) {
         try {
           // Fetch direct REST pour compatibilité maximale mobile
@@ -288,7 +346,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         console.log("[PatientStories] pharmacie.id inconnu — pas d'offres");
       }
 
-      console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", pharmacie?.id, "demo:", isDemoMode);
+      console.log("[PatientStories] ✅ stories:", base.length, "types:", base.map(s=>s.type).join(", "), "pharmacie:", maskId(pharmacie?.id), "demo:", isDemoMode);
       setAllStories([...emailStory, ...base]);
     }
 
@@ -322,6 +380,18 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
     }, 50);
     return () => clearInterval(timerRef.current);
+  }, [current]);
+
+  // Suivi du temps passé sur chaque story — la story vue est celle affichée au
+  // moment où l'effet se déclenche ; le nettoyage (changement de story ou
+  // démontage du composant en fin de visite) donne la durée réelle passée dessus.
+  useEffect(() => {
+    const viewedStory = allStories[current];
+    const viewStart = Date.now();
+    return () => {
+      logStoryEvent(viewedStory, 'view', { duree_ms: Date.now() - viewStart });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);
 
   // Reprendre après réponse quiz
@@ -531,7 +601,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 else if (revealed && chosen && !isCorrect) { bg = "rgba(239,68,68,0.35)"; border = "#f87171"; }
                 return (
                   <button key={idx}
-                    onClick={e => { e.stopPropagation(); if (quizAnswer === null) setQuizAnswer(idx); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (quizAnswer === null) {
+                        setQuizAnswer(idx);
+                        logStoryEvent(story, 'quiz_answer', { meta: { answerIndex: idx, correct: !!ans.correct } });
+                      }
+                    }}
                     style={{
                       padding: "13px 16px", borderRadius: 14,
                       border: `2px solid ${border}`,
@@ -639,9 +715,11 @@ function PatientPage({ pharmacie, onBack }) {
   const [step, setStep]           = useState("form");
   const [emailCode, setEmailCode] = useState(null); // code généré pour envoi email
 
-  // Générer le code email dès le montage de PatientPage
+  // Générer le code email dès le montage de PatientPage — generateCode() (déclarée
+  // plus bas, hissée dans la portée du composant) tire le code cryptographiquement,
+  // voir son commentaire pour le contexte.
   useEffect(() => {
-    setEmailCode(String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0"));
+    setEmailCode(generateCode());
   }, []);
   const [nom, setNom]             = useState("");
   const [files, setFiles]         = useState([]); // plusieurs ordonnances
@@ -682,8 +760,22 @@ function PatientPage({ pharmacie, onBack }) {
   }
 
   // Génère le code email (même algo que sessionCode)
+  // Code à 3 chiffres + 1 lettre (insérée à une position aléatoire) utilisé dans
+  // l'adresse email dynamique (pharmacie-24K7@in.ordomail.fr) — doit être généré
+  // côté client car il est intégré à l'adresse AVANT tout appel serveur.
+  // ⚠️ Avant le 24/07/2026, ce code était dérivé de l'heure système (minutes/secondes),
+  // donc prévisible par quiconque lisait le code source — remplacé par un tirage
+  // cryptographique. La lettre insérée (25/07/2026) élargit l'espace de valeurs
+  // (900 → 23 400 combinaisons) sans changer le principe : le format reste une
+  // contrainte partagée avec le parsing regex côté send-email/receive-email
+  // (voir ces fichiers si ce format doit encore évoluer).
   function generateCode() {
-    return String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+    const arr = new Uint32Array(3);
+    crypto.getRandomValues(arr);
+    const digits = String(100 + (arr[0] % 900)).padStart(3, "0");
+    const letter = String.fromCharCode(65 + (arr[1] % 26)); // A-Z
+    const pos = arr[2] % 4; // position d'insertion parmi les 4 caractères finaux
+    return digits.slice(0, pos) + letter + digits.slice(pos);
   }
 
   // Construit l'adresse email avec le code patient intégré
@@ -728,7 +820,7 @@ function PatientPage({ pharmacie, onBack }) {
 
     // Générer UN SEUL code pour toute la session d'envoi
     // (même code pour toutes les ordonnances envoyées en même temps)
-    const sessionCode = String(100 + (new Date().getMinutes() * 9 + new Date().getSeconds()) % 900).padStart(3, "0");
+    const sessionCode = generateCode();
 
     // Préparer tous les envois en parallèle
     async function sendOne(item) {
@@ -752,6 +844,9 @@ function PatientPage({ pharmacie, onBack }) {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
       formData.append("pharmacie_id", pharmacie.id);
+      // Jeton public par pharmacie (imprimé sur le QR code) — submit-ordonnance le vérifie
+      // pour empêcher qu'un pharmacie_id deviné suffise à déposer de fausses ordonnances.
+      formData.append("qr_token", pharmacie.qr_token || "");
       formData.append("from_name",    nom.toUpperCase());
       formData.append("patient_nom",  extracted?.nom || nom.toUpperCase());
       formData.append("patient_cv",   "");

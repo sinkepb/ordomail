@@ -1,10 +1,18 @@
 // ─── Génération PDF et impression ───────────────────────────────────────────
 import { PLAN_LIMITS } from "./plans.js";
+import { escapeHtml } from "./utils.js";
 
 function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   const planInfo = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
   const tva = Math.round(invoice.amount * 0.20 * 100) / 100;
   const ht  = Math.round((invoice.amount - tva) * 100) / 100;
+  // pharmacie.nom/adresse/email sont définis par le titulaire dans ses paramètres —
+  // moins exposés qu'un champ patient, mais on échappe quand même par défense en profondeur.
+  const safePhNom     = escapeHtml(pharmacie?.nom || "Pharmacie");
+  const safePhAdresse = escapeHtml(pharmacie?.adresse || pharmacie?.email || "—");
+  const safePhEmail   = escapeHtml(pharmacie?.email || "—");
+  const safeDesc      = escapeHtml(invoice.desc || "Abonnement mensuel");
+  const safeInvoiceId = escapeHtml(invoice.id);
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -55,10 +63,10 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
     <div class="badge">FACTURE</div>
   </div>
   <div class="meta">
-    <strong>${invoice.id}</strong>
+    <strong>${safeInvoiceId}</strong>
     Émise le : ${invoice.date}<br>
     Échéance : ${invoice.date}<br>
-    Période : ${invoice.desc || "Abonnement mensuel"}
+    Période : ${safeDesc}
   </div>
 </div>
 
@@ -78,10 +86,10 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   </div>
   <div class="party-card">
     <div class="party-label">Client</div>
-    <div class="party-name">${pharmacie?.nom || "Pharmacie"}</div>
+    <div class="party-name">${safePhNom}</div>
     <div class="party-info">
-      ${pharmacie?.adresse || pharmacie?.email || "—"}<br>
-      ${pharmacie?.email || "—"}<br>
+      ${safePhAdresse}<br>
+      ${safePhEmail}<br>
       Plan : ${planInfo.icon} ${planInfo.label}
     </div>
   </div>
@@ -103,7 +111,7 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
         <strong>OrdoMail ${planInfo.label}</strong><br>
         <span style="font-size:11px;color:#64748b">Abonnement mensuel — ${planInfo.maxPostes === 999 ? "Postes illimités" : planInfo.maxPostes + " postes"} · ${planInfo.maxOrdos === 99999 ? "Volume illimité" : planInfo.maxOrdos + " ordo/mois"}</span>
       </td>
-      <td style="color:#64748b;font-size:12px">${invoice.desc || "Mois en cours"}</td>
+      <td style="color:#64748b;font-size:12px">${safeDesc || "Mois en cours"}</td>
       <td style="text-align:right">1</td>
       <td style="text-align:right">${ht.toFixed(2)} €</td>
       <td style="text-align:right;font-weight:700">${ht.toFixed(2)} €</td>
@@ -133,7 +141,7 @@ function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, "_blank");
+  const win  = window.open(url, "_blank", "noopener,noreferrer");
   if (win) win.focus();
   // Révoquer après 60s
   setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -141,11 +149,12 @@ function openInvoicePDF(invoice, pharmacie, plan) {
 
 // ─── Génère un PDF d'ordonnance fictif (pour les ordonnances email démo) ──────
 function generateOrdoPDF(ordo) {
-  const nom = ordo.extracted?.nom || ordo.fromName || "Patient";
-  const cv  = ordo.extracted?.carteVitale || "Non disponible";
-  const med = ordo.extracted?.medecin || "Dr Inconnu";
-  const dat = ordo.extracted?.date || new Date().toLocaleDateString("fr-FR");
-  const meds = (ordo.extracted?.medicaments || []).join(", ") || "—";
+  // ⚠️ nom/cv/med/dat/medicaments proviennent du patient (formulaire non authentifié)
+  // ou de l'OCR — toujours échapper avant interpolation dans du HTML brut (anti-XSS).
+  const nom = escapeHtml(ordo.extracted?.nom || ordo.fromName || "Patient");
+  const cv  = escapeHtml(ordo.extracted?.carteVitale || "Non disponible");
+  const med = escapeHtml(ordo.extracted?.medecin || "Dr Inconnu");
+  const dat = escapeHtml(ordo.extracted?.date || new Date().toLocaleDateString("fr-FR"));
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -196,7 +205,7 @@ function generateOrdoPDF(ordo) {
 </div>
 <div class="meds">
   <div class="meds-label">Médicaments prescrits</div>
-  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${m}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
+  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${escapeHtml(m)}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
 </div>
 <div class="footer">
   <span>Imprimé le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"})}</span>
@@ -208,29 +217,6 @@ function generateOrdoPDF(ordo) {
   return URL.createObjectURL(blob);
 }
 
-
-function CVBadge({ numero, color = "#15623a" }) {
-  if (!numero) return <span style={{ color: "#bbb", fontSize: 12, fontStyle: "italic" }}>Non extrait</span>;
-  // Formater le numéro en groupes lisibles : X XX XX XX XXX XXX XX
-  const fmt = (n) => n.replace(/\s/g,"").replace(/(.{1})(.{2})(.{2})(.{2})(.{3})(.{3})(.{2})/, "$1 $2 $3 $4 $5 $6 $7").trim();
-  const formatted = fmt(numero) || numero;
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      background: `${color}14`, border: `1.5px solid ${color}44`,
-      borderRadius: 8, padding: "5px 10px",
-      minWidth: 0, overflow: "hidden",
-    }}>
-      <span style={{ fontSize: 14, flexShrink: 0 }}>💳</span>
-      <span style={{
-        fontFamily: "monospace", fontSize: 12, fontWeight: 700,
-        color: color, letterSpacing: 0.5,
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        minWidth: 0,
-      }}>{formatted}</span>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 

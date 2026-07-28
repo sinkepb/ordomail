@@ -1,9 +1,8 @@
 // @version 16/07/2026 15:54 — register-form
-import { useState, useEffect, useRef } from "react";
-import { authSignInEmail, authSignInPIN, authSignOut, getCurrentSession,
+import { useState } from "react";
+import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   getSupabaseClient, isDemoMode } from "../supabase.js";
-import { PLAN_LIMITS } from "../lib/plans.js";
-import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { Btn, Input } from "../components/ui.jsx";
 
 console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
 
@@ -460,7 +459,7 @@ function LoginPage({ onLogin, onBack }) {
   );
 }
 
-function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, AdminComponent, PatientComponent }) {
+function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, PatientComponent }) {
   // Récupérer la session restaurée depuis le refresh
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
@@ -468,20 +467,11 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, AdminCo
 
   if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
+  // Note : toute connexion pharmacie (titulaire ou vendeur) produit une session avec
+  // role:"pharmacie" — seul session.userRole distingue "admin" (titulaire) de "vendeur"
+  // (voir les boutons/badges ci-dessous). Le backoffice OrdoMail Business est un flux
+  // entièrement séparé (route "backoffice" → BackofficeAdmin, dans App.jsx).
   if (session) {
-    if (session.role==="admin") return (
-      <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
-        <div style={{background:"#0f172a",color:"#fff",height:48,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}><span>💊</span><span style={{fontWeight:800}}>OrdoMail Admin</span></div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>💳 Abonnements</button>
-            <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.7)",padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
-          </div>
-        </div>
-        <AdminComponent onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }}/>
-      </div>
-    );
     return (
       <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
         <div style={{background:"#1a3a6e",color:"#fff",height:44,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px"}}>

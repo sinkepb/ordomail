@@ -1,36 +1,27 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
-  fetchPharmacie, savePharmacie, savePostes,
-  fetchOrdonnances, updateOrdoStatus, updateOrdoExtracted, uploadOrdoFile,
-  subscribeToPharmacy, notifyPharmacy,
-  addAuditLog, getAuditLogs, exportLogsCSV,
-  fetchAbonnement, fetchFactures, changePlan,
-  isDemoMode, registerDB, getSupabaseClient, getSignedUrl,
-  getCurrentSession, onAuthStateChange,
-  snapshotMetriquesJournalieres, fetchHistoriqueMetriques,
+  fetchPharmaciePublic,
+  isDemoMode, registerDB, getSupabaseClient,
+  getCurrentSession,
 } from "./supabase.js";
-import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, getPrevPlan, computeImpact, canAddPoste } from "./lib/plans.js";
-import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "./lib/utils.js";
-import { getTesseractWorker, extractFromFile, prewarmTesseract } from "./lib/ocr.js";
-import { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF } from "./lib/print.jsx";
-import { LandingPage, PersistentNav } from "./pages/LandingPage.jsx";
-import { AppLogin, LoginPage, LoginTabContent, BoutonProSanteConnect, ResetPasswordPage } from "./pages/LoginPage.jsx";
-import { PatientPage, PatientStories } from "./pages/PatientPage.jsx";
-import { PharmacieDashboard, QRNFCTab, BottomNav, OffresSection, AbonnementSection, CompteSection, ParametresTab } from "./pages/Dashboard.jsx";
-import { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin, HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin } from "./pages/AdminPage.jsx";
-import { OrdoCard, OrdoRow, AttachmentThumb } from "./components/OrdoCard.jsx";
-import { PrintConfirmModal, ViewerModal } from "./components/PrintModal.jsx";
-import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "./components/UpgradeModal.jsx";
-import { CVBadge, Btn, Input } from "./components/ui.jsx";
+import { reportError } from "./lib/monitoring.js";
+import { LandingPage } from "./pages/LandingPage.jsx";
+import { AppLogin, ResetPasswordPage } from "./pages/LoginPage.jsx";
+import { PatientPage } from "./pages/PatientPage.jsx";
+// Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
+// (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
+// lui-même, pas besoin de les réimporter ici (même remarque que pour AdminPage.jsx).
+import { PharmacieDashboard } from "./pages/Dashboard.jsx";
+// Seuls BillingModule et BackofficeAdmin sont utilisés ici — les autres exports de
+// AdminPage.jsx (AdminDashboardLive, ClientDetail, ContratEditor…) sont consommés en
+// interne par BackofficeAdmin lui-même, pas besoin de les réimporter ici.
+import { BillingModule, BackofficeAdmin } from "./pages/AdminPage.jsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ORDOMAIL — App.jsx (Routeur principal)
 // v6.0 · 12/07/2026 14:51
 // Architecture modulaire : pages/ + components/ + lib/
 // ═══════════════════════════════════════════════════════════════════════════
-
-const APP_VERSION = "v6.0 · 12/07/2026 18:40";
 
 // ── Diagnostic démarrage ─────────────────────────────────────────────────────
 console.log("=== ORDOMAIL DÉMARRAGE ===");
@@ -58,6 +49,7 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info);
+    reportError(error, { componentStack: info?.componentStack }); // no-op sans VITE_SENTRY_DSN
     this.setState({ info });
   }
   render() {
@@ -145,6 +137,11 @@ const DB = {
       email: "contact@pharmaciecentrale.fr", password: "demo123",
       adresse: "12 rue de la Paix, 75001 Paris",
       emailReception: "ph1@in.ordomail.fr",
+      // ⚠️ Requis pour la connexion vendeur en démo (LoginPage.jsx cherche
+      // db.pharmacies.find(p => p.codeVendeur === code)) — absent jusqu'au
+      // 27/07/2026, ce qui cassait silencieusement ce parcours malgré l'indice
+      // "123456" affiché dans l'UI elle-même. Détecté en écrivant l'E2E.
+      codeVendeur: "123456",
       plan: "starter", createdAt: "2025-01-15T10:00:00Z",
       postes: [
         { id:"p1", nom:"Poste Accueil",     actif:true,  pin:"1234" },
@@ -158,6 +155,7 @@ const DB = {
       email: "pharma@soleil.fr", password: "demo123",
       adresse: "45 avenue du Soleil, 69001 Lyon",
       emailReception: "ph2@in.ordomail.fr",
+      codeVendeur: "654321",
       plan: "standard", createdAt: "2025-02-01T10:00:00Z",
       postes: [
         { id:"p1", nom:"Poste 1", actif:true, pin:"1111" },
@@ -169,99 +167,9 @@ const DB = {
   admin: { email: "admin@ordomail.fr", password: "admin2025" },
 };
 
-// ─── Système de notifications (pub/sub) ──────────────────────────────────────
-
-// ─── Logs d'audit ─────────────────────────────────────────────────────────────
-
-// ─── Mock abonnements backoffice ──────────────────────────────────────────────
-const MOCK_SUBSCRIPTIONS = [
-  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
-  { id:"sub2", pharmacie:"Pharmacie du Soleil",   email:"pharma@soleil.fr",             plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"01/08/2025", subId:"sub2" },
-  { id:"sub3", pharmacie:"Pharmacie Lafayette",   email:"contact@lafayette.fr",         plan:"pro",      billing:"annual",  status:"active",    mrr:63,  renewal:"15/09/2025", subId:"sub3" },
-  { id:"sub4", pharmacie:"Pharmacie des Arts",    email:"info@pharmaarts.fr",           plan:"starter",  billing:"monthly", status:"trialing",  mrr:0,   renewal:"30/07/2025", subId:"sub4" },
-  { id:"sub5", pharmacie:"Pharmacie Saint-Michel",email:"saintmichel@pharma.fr",        plan:"standard", billing:"annual",  status:"past_due",  mrr:31,  renewal:"01/07/2025", subId:"sub5" },
-  { id:"sub6", pharmacie:"Pharmacie Beaubourg",   email:"contact@beaubourg.fr",         plan:"starter",  billing:"monthly", status:"canceled",  mrr:0,   renewal:"—",          subId:"sub6" },
-  { id:"sub7", pharmacie:"Pharmacie de la Gare",  email:"gare@pharma.fr",              plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"20/07/2025", subId:"sub7" },
-  { id:"sub8", pharmacie:"Pharmacie Marais",      email:"marais@pharma.fr",             plan:"pro",      billing:"monthly", status:"trialing",  mrr:0,   renewal:"10/08/2025", subId:"sub8" },
-];
-
 // Exposer DB au module supabase.js (pont inter-modules)
 if (typeof window !== 'undefined') window._ordomailDB = DB;
 registerDB(DB);
-
-const MOCK_INVOICES = [
-  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
-  { id:"INV-2025-005", subId:"sub2", date:"01/06/2025", amount:39,  desc:"Standard — Juin 2025" },
-  { id:"INV-2025-004", subId:"sub3", date:"15/05/2025", amount:189, desc:"Pro Annuel — Q2 2025" },
-  { id:"INV-2025-003", subId:"sub1", date:"15/05/2025", amount:19,  desc:"Starter — Mai 2025" },
-  { id:"INV-2025-002", subId:"sub7", date:"20/05/2025", amount:39,  desc:"Standard — Mai 2025" },
-];
-
-// ─── LogsPanel ─────────────────────────────────────────────────────────────────
-function LogsPanel({ pharmacieId, onClose, onOpenOrdo }) {
-  const [logs, setLogs] = useState([]);
-  useEffect(() => { getAuditLogs(pharmacieId).then(setLogs); }, [pharmacieId]);
-  const actionLabel = { view:"Consultation", print:"Impression", upload:"Import", reopen:"Remise en file", login:"Connexion", logout:"Déconnexion" };
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:500,display:"flex",flexDirection:"column"}}>
-      <div style={{background:"#fff",flex:1,overflow:"auto",marginTop:52,padding:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#1a3a6e"}}>🗒️ Journal d'activité</div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>exportLogsCSV(pharmacieId).catch(()=>{})} style={{padding:"6px 14px",border:"1px solid #e2e8f0",borderRadius:8,background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⬇️ Export CSV</button>
-            <button onClick={onClose} style={{padding:"6px 14px",border:"none",borderRadius:8,background:"#1a3a6e",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕ Fermer</button>
-          </div>
-        </div>
-        {logs.length===0?(
-          <div style={{textAlign:"center",padding:"40px 0",color:"#bbb"}}><div style={{fontSize:32,marginBottom:8}}>📋</div><div>Aucune action enregistrée</div></div>
-        ):(
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
-              {["Date / Heure","Poste / Vendeur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
-            </tr></thead>
-            <tbody>{logs.map(l=>{
-              const ts   = l.ts || l.created_at;
-              const d    = ts ? new Date(ts) : null;
-              const date = d && !isNaN(d) ? d.toLocaleDateString("fr-FR") : "—";
-              const time = d && !isNaN(d) ? d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—";
-              return (
-              <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                  <div style={{fontWeight:600,fontSize:12,color:"#1a1a1a"}}>{date}</div>
-                  <div style={{fontSize:11,color:"#94a3b8"}}>{time}</div>
-                </td>
-                <td style={{padding:"8px 10px"}}>
-                  {l.posteNom
-                    ? <><div style={{fontWeight:700,fontSize:12,color:"#1a1a1a"}}>{l.posteNom}</div><div style={{fontSize:10,color:"#94a3b8",fontFamily:"monospace"}}>{l.userId||""}</div></>
-                    : <span style={{fontFamily:"monospace",fontSize:11,color:"#475569"}}>{l.userId||"—"}</span>}
-                </td>
-                <td style={{padding:"8px 10px"}}>
-                  <span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>
-                    {l.userRole||"—"}
-                  </span>
-                </td>
-                <td style={{padding:"8px 10px",fontWeight:600,color:"#1a1a1a"}}>{actionLabel[l.action]||l.action}</td>
-                <td style={{padding:"8px 10px"}}>
-                  {l.ordonnanceId
-                    ? <button
-                        onClick={() => { onClose(); onOpenOrdo && onOpenOrdo(l.ordonnanceId); }}
-                        title={l.ordonnanceId}
-                        style={{fontFamily:"monospace",fontSize:10,color:"#1e40af",background:"#eff6ff",
-                          border:"1px solid #bfdbfe",borderRadius:6,padding:"2px 8px",cursor:"pointer",
-                          fontWeight:700,textDecoration:"none"}}>
-                        {l.ordonnanceId.slice(0,8)}…
-                      </button>
-                    : <span style={{color:"#94a3b8"}}>—</span>}
-                </td>
-              </tr>
-              );
-            })}</tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
@@ -282,9 +190,13 @@ function AppInner() {
   const hashToken   = hashParams.get("access_token");
   const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
+  const qrTokenParam = urlParams.get("t"); // jeton public par pharmacie porté par le QR code (phase 1 sécurité)
+  // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
+  // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
+  const checkoutReturn = urlParams.get("checkout");
   // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const initialRoute = isRecovery ? "reset-password" : (patientParam ? "patient" : "landing");
+  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : (patientParam ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam);
@@ -326,10 +238,13 @@ function AppInner() {
       else setPatientPharmacieQR(ph);
       return;
     }
-    // Mode prod : charger depuis Supabase
-    fetchPharmacie(patientParam).then(ph => {
+    // Mode prod : charger depuis Supabase — lecture publique restreinte (pas de PIN/postes,
+    // voir fetchPharmaciePublic) puisque cette page est ouverte par un patient non authentifié.
+    fetchPharmaciePublic(patientParam).then(ph => {
       if (!ph) { setRoute("landing"); return; }
-      setPatientPharmacieQR(ph);
+      // qr_token vient de l'URL (imprimé sur le QR code), pas de la base — submit-ordonnance
+      // le revérifiera côté serveur contre la valeur stockée pour cette pharmacie.
+      setPatientPharmacieQR({ ...ph, qr_token: qrTokenParam });
     }).catch(() => setRoute("landing"));
   }, []);
   const [checkoutPlan, setCheckoutPlan] = useState("standard");
@@ -364,7 +279,6 @@ function AppInner() {
           onLogout={()=>setRoute("landing")}
           onGoToPricing={()=>setRoute("pricing")}
           DashboardComponent={PharmacieDashboard}
-          AdminComponent={AdminDashboard}
           PatientComponent={PatientPage}
         />}
     </>

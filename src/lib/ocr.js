@@ -1,5 +1,19 @@
 // ─── OCR Tesseract — traitement local HDS ────────────────────────────────────
 // Conforme HDS : traitement 100% navigateur, aucune donnée envoyée à un tiers
+//
+// @phase3 24/07/2026 — tesseract.js et pdfjs-dist sont désormais de vraies
+// dépendances npm (package-lock.json), bundlées par Vite au lieu d'être chargées
+// à l'exécution depuis esm.sh/jsdelivr (code tiers non pinné, exécuté dans le
+// tableau de bord où transitent des images d'ordonnances).
+// @fix 24/07/2026 — cœur WASM (tesseract-core-*-lstm.wasm(.js)) et worker script
+// vendorisés dans public/ (copiés depuis node_modules à l'installation, voir
+// public/tesseract-core/ et public/tesseract-worker.min.js) et servis en local via
+// corePath/workerPath ci-dessous — plus de chargement CDN pour le code exécuté.
+// ⚠️ Résiduel : les données de langue (fra.traineddata, ~10-15 Mo) restent
+// chargées depuis le CDN jsdelivr @tesseract.js-data — fichier de données statique
+// (pas de code exécuté), self-host possible mais nécessite de vendoriser et
+// maintenir à jour ce binaire séparément ; pas traité ici.
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 let _tesseractWorker  = null;
 let _tesseractLoading = false;
@@ -15,9 +29,14 @@ async function getTesseractWorker() {
   }
   _tesseractLoading = true;
   try {
-    // Tesseract.js v5 — import ESM depuis esm.sh (même CDN que qrcode, déjà autorisé)
-    const { createWorker } = await import('https://esm.sh/tesseract.js@5');
+    // Import du paquet npm local (bundlé par Vite) — plus de CDN pour le module JS.
+    const { createWorker } = await import('tesseract.js');
+    // URLs absolues obligatoires : le worker tesseract.js tourne dans un contexte
+    // blob: (workerBlobURL, par défaut) où un chemin relatif à la racine ("/...")
+    // ne se résout pas via importScripts (SyntaxError "URL invalide").
     _tesseractWorker = await createWorker('fra', 1, {
+      corePath: new URL('/tesseract-core', window.location.origin).href,
+      workerPath: new URL('/tesseract-worker.min.js', window.location.origin).href,
       logger: () => {}, // silencieux
     });
     await _tesseractWorker.setParameters({
@@ -65,8 +84,8 @@ async function preprocessImage(base64, mimeType) {
 // Conversion PDF page 1 → image PNG via pdf.js
 async function pdfToImage(base64) {
   try {
-    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.min.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.worker.min.mjs';
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     const pdf    = await (await pdfjsLib.getDocument({ data: atob(base64) }).promise);
     const page   = await pdf.getPage(1);
     const vp     = page.getViewport({ scale: 2.5 });
@@ -87,19 +106,19 @@ const OCR_PARSERS = {
     return r.replace(/^(\d)(\d{2})(\d{2})(\d{2})(\d{3})(\d{3})(\d{2})$/, '$1 $2 $3 $4 $5 $6 $7') || null;
   },
   medecin(txt) {
-    const m = txt.match(/(?:Dr\.?|Docteur)\s+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-záàâéèêëîïôùûüç\s\-]{2,30})/i)
+    const m = txt.match(/(?:Dr\.?|Docteur)\s+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-záàâéèêëîïôùûüç\s-]{2,30})/i)
            || txt.match(/Prescripteur\s*[:]\s*(.+)/i);
     return m ? ('Dr ' + m[1].trim().slice(0, 40)) : null;
   },
   nom(txt) {
-    const m = txt.match(/(?:Patient|Nom|Assuré)\s*[:]\s*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-záàâéèêëîïôùûüç\s\-]{2,40})/i)
+    const m = txt.match(/(?:Patient|Nom|Assuré)\s*[:]\s*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-záàâéèêëîïôùûüç\s-]{2,40})/i)
            || txt.match(/^([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,}(?:\s+[A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-z]{1,20}){1,2})/m);
     if (!m) return null;
     const excluded = ['ORDONNANCE','MEDICALE','PRESCRIPTION','REPUBLIQUE','CABINET','MEDECIN'];
     return excluded.includes(m[1].trim().toUpperCase()) ? null : m[1].trim().slice(0, 50);
   },
   date(txt) {
-    const m = txt.match(/(\d{1,2})[\/\-.·](\d{1,2})[\/\-.·](\d{2,4})/);
+    const m = txt.match(/(\d{1,2})[/\-.·](\d{1,2})[/\-.·](\d{2,4})/);
     if (!m) return null;
     const y = m[3].length === 2 ? '20' + m[3] : m[3];
     return `${m[1].padStart(2,'0')}/${m[2].padStart(2,'0')}/${y}`;

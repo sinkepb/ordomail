@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -19,18 +20,24 @@ function extractEmail(toHeader: string): string {
   return toHeader.toLowerCase().trim();
 }
 
-// Extrait le code patient depuis l'adresse email dynamique
-// "pharmacie-de-la-paix-247@in.ordomail.fr" → "247"
-// "pharmacie-de-la-paix@in.ordomail.fr"     → null
+// Extrait le code patient depuis l'adresse email dynamique — 3 chiffres + 1 lettre
+// (depuis le 25/07/2026), insérée à une position aléatoire par generateCode() côté
+// client (voir PatientPage.jsx).
+// "pharmacie-de-la-paix-24k7@in.ordomail.fr" → "24K7"
+// "pharmacie-de-la-paix@in.ordomail.fr"      → null
+// ⚠️ L'adresse est déjà passée en minuscules par extractEmail() ci-dessus (les adresses
+// email sont insensibles à la casse) — mais le code affiché au patient et comparé côté
+// client (sonnette, regroupement dashboard) est généré en MAJUSCULES. Remettre en
+// majuscules ici pour que la comparaison stricte (===) reste valable des deux côtés.
 function extractCode(email: string): string | null {
-  const match = email.match(/-(\d{3})(?=@)/);
-  return match ? match[1] : null;
+  const match = email.match(/-([0-9a-z]{4})(?=@)/);
+  return match ? match[1].toUpperCase() : null;
 }
 
 // Retire le code de l'adresse pour retrouver l'adresse de base
-// "pharmacie-de-la-paix-247@in.ordomail.fr" → "pharmacie-de-la-paix@in.ordomail.fr"
+// "pharmacie-de-la-paix-24k7@in.ordomail.fr" → "pharmacie-de-la-paix@in.ordomail.fr"
 function cleanEmail(email: string): string {
-  return email.replace(/-\d{3}(?=@)/, "");
+  return email.replace(/-[0-9a-z]{4}(?=@)/, "");
 }
 
 serve(async (req) => {
@@ -41,9 +48,9 @@ serve(async (req) => {
   const codePatient  = extractCode(toEmailRaw);
   const toEmailClean = cleanEmail(toEmailRaw);
 
-  console.log("[send-email] To original:", toEmailRaw);
-  console.log("[send-email] To nettoyé :", toEmailClean);
-  console.log("[send-email] code patient:", codePatient);
+  console.log("[send-email] To original:", maskEmail(toEmailRaw));
+  console.log("[send-email] To nettoyé :", maskEmail(toEmailClean));
+  console.log("[send-email] code patient:", maskCode(codePatient));
 
   // ── 2. Identifier la pharmacie par email_reception ──────────────────────────
   const { data: ph } = await supabase
@@ -53,7 +60,7 @@ serve(async (req) => {
     .single();
 
   if (!ph) {
-    console.warn("[send-email] Pharmacie introuvable pour:", toEmailClean);
+    console.warn("[send-email] Pharmacie introuvable pour:", maskEmail(toEmailClean));
     return new Response("Pharmacie inconnue", { status: 404 });
   }
 
@@ -71,7 +78,7 @@ serve(async (req) => {
     .select()
     .single();
 
-  console.log("[send-email] ordonnance créée:", ordo?.id, "code:", codePatient);
+  console.log("[send-email] ordonnance créée:", maskId(ordo?.id), "code:", maskCode(codePatient));
 
   // ── 4. Uploader les pièces jointes ──────────────────────────────────────────
   for (const att of (p.Attachments || [])) {

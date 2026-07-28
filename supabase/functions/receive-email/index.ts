@@ -7,14 +7,15 @@
 // Postmark → receive-email → send-email (comportement existant préservé)
 //                          → UPDATE ordonnances SET code_patient = '247'
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 
 Deno.serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }
@@ -35,16 +36,20 @@ Deno.serve(async (req) => {
     const toRaw   = payload.To || payload.to || payload.recipient || "";
     const toEmail = toRaw.match(/[\w.+%-]+@[\w.-]+/)?.[0]?.toLowerCase() || "";
 
-    // Regex : -\d{3}(?=@) — retire exactement -3chiffres juste avant le @
-    // "pharmacie-de-la-paix-247@in.immodiaspora.fr" → code="247"
-    // "pharmacie-de-la-paix@in.immodiaspora.fr"     → code=null (inchangé)
-    const codeMatch   = toEmail.match(/-(\d{3})(?=@)/);
-    const codePatient = codeMatch ? codeMatch[1] : null;
+    // Regex : -[0-9a-z]{4}(?=@) — code patient = 3 chiffres + 1 lettre (insérée à une
+    // position aléatoire par generateCode() côté client, voir PatientPage.jsx).
+    // "pharmacie-de-la-paix-24k7@in.immodiaspora.fr" → code="24K7"
+    // "pharmacie-de-la-paix@in.immodiaspora.fr"      → code=null (inchangé)
+    // ⚠️ toEmail est déjà en minuscules (ligne ci-dessus) — remis en majuscules pour
+    // matcher le code généré côté client (comparaison stricte === en aval : sonnette,
+    // regroupement dashboard).
+    const codeMatch   = toEmail.match(/-([0-9a-z]{4})(?=@)/);
+    const codePatient = codeMatch ? codeMatch[1].toUpperCase() : null;
 
     // Nettoyer l'adresse To pour send-email : retirer le code
-    // "pharmacie-de-la-paix-247@in.immodiaspora.fr"
+    // "pharmacie-de-la-paix-24k7@in.immodiaspora.fr"
     // → "pharmacie-de-la-paix@in.immodiaspora.fr"
-    const toEmailClean = toEmail.replace(/-\d{3}(?=@)/, "");
+    const toEmailClean = toEmail.replace(/-[0-9a-z]{4}(?=@)/, "");
 
     // Reconstruire le payload avec l'adresse nettoyée pour send-email
     const payloadForSendEmail = {
@@ -54,9 +59,9 @@ Deno.serve(async (req) => {
       recipient: toEmailClean,
     };
 
-    console.log("[receive-email] To original:", toEmail);
-    console.log("[receive-email] To nettoyé:", toEmailClean);
-    console.log("[receive-email] code extrait:", codePatient);
+    console.log("[receive-email] To original:", maskEmail(toEmail));
+    console.log("[receive-email] To nettoyé:", maskEmail(toEmailClean));
+    console.log("[receive-email] code extrait:", maskCode(codePatient));
 
     // ── 2. Appeler send-email avec l'adresse SANS le code ───────────────────
     const sendEmailUrl = `${supabaseUrl}/functions/v1/send-email`;
@@ -71,7 +76,7 @@ Deno.serve(async (req) => {
     });
 
     const sendData = await sendRes.json().catch(() => ({}));
-    console.log("[receive-email] send-email status:", sendRes.status, sendData);
+    console.log("[receive-email] send-email status:", sendRes.status, "ordonnance_id:", maskId(sendData?.ordonnance_id));
 
     // ── 3. Si un code a été extrait, mettre à jour l'ordonnance créée ───────
     if (codePatient && sendData?.ordonnance_id) {
@@ -84,7 +89,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ code_patient: codePatient }),
         }
       );
-      console.log("[receive-email] code_patient mis à jour:", codePatient, "status:", updateRes.status);
+      console.log("[receive-email] code_patient mis à jour:", maskCode(codePatient), "status:", updateRes.status);
     } else if (codePatient && !sendData?.ordonnance_id) {
       // send-email ne retourne pas l'id → chercher l'ordonnance la plus récente
       // créée dans les 10 dernières secondes pour cette pharmacie
@@ -110,7 +115,7 @@ Deno.serve(async (req) => {
             body: JSON.stringify({ code_patient: codePatient }),
           }
         );
-        console.log("[receive-email] code_patient mis à jour sur ordo récente:", ordoId);
+        console.log("[receive-email] code_patient mis à jour sur ordo récente:", maskId(ordoId));
       }
     }
 

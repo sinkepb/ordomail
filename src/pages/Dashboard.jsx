@@ -1,537 +1,40 @@
 // @version 17/07/2026 13:36 — audit-logs
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, canAddPoste, computeImpact } from "../lib/plans.js";
-import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, C } from "../lib/utils.js";
-import { extractFromFile, prewarmTesseract, getTesseractWorker } from "../lib/ocr.js";
-import { generateOrdoPDF, generateInvoiceHTML, openInvoicePDF } from "../lib/print.jsx";
-import { OrdoCard, OrdoRow, AttachmentThumb, OrdoGroup } from "../components/OrdoCard.jsx";
+import { PLAN_LIMITS } from "../lib/plans.js";
+import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "../lib/utils.js";
+import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
+import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
-import { UpgradeModal, PlanSwitcher, PlanSwitcherModal } from "../components/UpgradeModal.jsx";
-import { Btn, Input, CVBadge } from "../components/ui.jsx";
+import { UpgradeModal } from "../components/UpgradeModal.jsx";
+import { OffresSection } from "../components/OffresSection.jsx";
+import { AbonnementSection } from "../components/AbonnementSection.jsx";
+import { CompteSection } from "../components/CompteSection.jsx";
+import { StoriesSection } from "../components/StoriesSection.jsx";
+import { Btn, Input } from "../components/ui.jsx";
+import { LogsPanel } from "../components/LogsPanel.jsx";
+import { QRCode } from "../components/QRCode.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
   savePostes,
   fetchOrdonnances,
   updateOrdoStatus,
+  updateOrdoExtracted,
+  uploadOrdoFile,
   subscribeToPharmacy,
   addAuditLog,
-  getAuditLogs,
-  exportLogsCSV,
-  fetchAbonnement,
-  fetchFactures,
   changePlan,
   isDemoMode,
   getSupabaseClient,
   getSignedUrl,
-  registerDB,
   fetchInteretsDuJour,
   appellerPatient,
-  updateSonnetteActive,
 } from "../supabase.js";
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
 
-const MOCK_INVOICES = [
-  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
-  { id:"INV-2025-005", subId:"sub2", date:"01/06/2025", amount:39,  desc:"Standard — Juin 2025" },
-  { id:"INV-2025-004", subId:"sub3", date:"15/05/2025", amount:189, desc:"Pro Annuel — Q2 2025" },
-  { id:"INV-2025-003", subId:"sub1", date:"15/05/2025", amount:19,  desc:"Starter — Mai 2025" },
-  { id:"INV-2025-002", subId:"sub7", date:"20/05/2025", amount:39,  desc:"Standard — Mai 2025" },
-];
-
-const MOCK_SUBSCRIPTIONS = [
-  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
-  { id:"sub2", pharmacie:"Pharmacie du Soleil",   email:"pharma@soleil.fr",             plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"01/08/2025", subId:"sub2" },
-  { id:"sub3", pharmacie:"Pharmacie Lafayette",   email:"contact@lafayette.fr",         plan:"pro",      billing:"annual",  status:"active",    mrr:63,  renewal:"15/09/2025", subId:"sub3" },
-  { id:"sub4", pharmacie:"Pharmacie des Arts",    email:"info@pharmaarts.fr",           plan:"starter",  billing:"monthly", status:"trialing",  mrr:0,   renewal:"30/07/2025", subId:"sub4" },
-  { id:"sub5", pharmacie:"Pharmacie Saint-Michel",email:"saintmichel@pharma.fr",        plan:"standard", billing:"annual",  status:"past_due",  mrr:31,  renewal:"01/07/2025", subId:"sub5" },
-  { id:"sub6", pharmacie:"Pharmacie Beaubourg",   email:"contact@beaubourg.fr",         plan:"starter",  billing:"monthly", status:"canceled",  mrr:0,   renewal:"—",          subId:"sub6" },
-  { id:"sub7", pharmacie:"Pharmacie de la Gare",  email:"gare@pharma.fr",              plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"20/07/2025", subId:"sub7" },
-  { id:"sub8", pharmacie:"Pharmacie Marais",      email:"marais@pharma.fr",             plan:"pro",      billing:"monthly", status:"trialing",  mrr:0,   renewal:"10/08/2025", subId:"sub8" },
-];
-
-
-function makeOrdos(days=3, perDay=15) {
-  const items = [];
-  const meds = [["Doliprane 1000mg","Amoxicilline 500mg","Ibuprofène 400mg"],["Metformine 850mg","Paracétamol 500mg"],["Levothyrox 50µg","Oméprazole 20mg","Vitamine D3"],["Aspirine 100mg","Lisinopril 5mg"]];
-  const names = [["MARTIN","Pierre","1 75 04 75 118 042 18","email"],["DUBOIS","Sophie","2 82 11 75 063 014 22","qrcode"],["LEFEBVRE","Jean","1 60 03 75 042 118 08","email"],["ROUX","Anne","2 91 03 69 215 088 45","qrcode"],["THOMAS","Isabelle","2 77 06 13 042 118 31","email"],["BERNARD","Paul","1 55 08 31 042 118 09","email"],["MOREAU","Claire","2 68 05 75 042 118 44","qrcode"],["RICHARD","Lucas","1 88 12 93 042 118 77","email"],["PETIT","Emma","2 95 03 75 042 118 55","email"],["SIMON","Marc","1 72 07 69 042 118 33","qrcode"],["LEROY","Julie","2 85 09 75 042 118 66","email"],["DURAND","Pierre","1 63 01 13 042 118 22","email"],["GARCIA","Marie","2 78 04 75 042 118 88","qrcode"],["MARTINEZ","Thomas","1 91 06 75 042 118 11","email"],["FOURNIER","Alice","2 87 11 75 042 118 99","email"]];
-  const docs = ["Dr Bernard","Dr Leclerc","Dr Moreau","Dr Petit","Dr Gautier","Dr Lambert"];
-  for (let d=0;d<days;d++) {
-    const date = new Date(); date.setDate(date.getDate()-d);
-    for (let i=0;i<(d===0?perDay:10);i++) {
-      const n = names[i%names.length];
-      const mins = Math.floor(Math.random()*120)+1;
-      const recv = new Date(date); recv.setHours(8+Math.floor(i/2),mins%60,0,0);
-      items.push({
-        id:`ordo-${d}-${i}`, fromName:`${n[0]} ${n[1]}`, source:n[3],
-        status: d===0?"nouveau":"imprime", receivedAt:recv.toISOString(),
-        attachments:[], extracted:{ nom:`${n[0]} ${n[1]}`, carteVitale:n[2],
-          medecin:docs[i%docs.length], date:date.toLocaleDateString("fr-FR"),
-          medicaments:meds[i%meds.length] }
-      });
-    }
-  }
-  return items;
-}
-
-function LogsPanel({ pharmacieId, onClose }) {
-  const [logs, setLogs] = useState([]);
-  useEffect(() => { getAuditLogs(pharmacieId).then(setLogs); }, [pharmacieId]);
-  const actionLabel = { view:"Consultation", print:"Impression", upload:"Import", reopen:"Remise en file", login:"Connexion", logout:"Déconnexion" };
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:500,display:"flex",flexDirection:"column"}}>
-      <div style={{background:"#fff",flex:1,overflow:"auto",marginTop:52,padding:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#1a3a6e"}}>🗒️ Journal d'activité</div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>exportLogsCSV(pharmacieId).catch(()=>{})} style={{padding:"6px 14px",border:"1px solid #e2e8f0",borderRadius:8,background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⬇️ Export CSV</button>
-            <button onClick={onClose} style={{padding:"6px 14px",border:"none",borderRadius:8,background:"#1a3a6e",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕ Fermer</button>
-          </div>
-        </div>
-        {logs.length===0?(
-          <div style={{textAlign:"center",padding:"40px 0",color:"#bbb"}}><div style={{fontSize:32,marginBottom:8}}>📋</div><div>Aucune action enregistrée</div></div>
-        ):(
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
-              {["Heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
-            </tr></thead>
-            <tbody>{logs.map(l=>(
-              <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                <td style={{padding:"8px 10px",color:"#64748b"}}>{new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11}}>{l.userId}</td>
-                <td style={{padding:"8px 10px"}}><span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>{l.userRole}</span></td>
-                <td style={{padding:"8px 10px",fontWeight:600}}>{actionLabel[l.action]||l.action}</td>
-                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:"#94a3b8"}}>{l.ordonnanceId||"—"}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function QRCode({ url, size = 220, color = "#1a3a6e", printId }) {
-  const [dataUrl, setDataUrl] = useState(null);
-  const [error, setError]     = useState(false);
-
-  useEffect(() => {
-    if (!url) return;
-    setDataUrl(null); setError(false);
-
-    // qrcode via esm.sh — transforme le package npm en ESM navigateur natif
-    // toDataURL retourne une Promise avec le PNG en base64
-    import("https://esm.sh/qrcode@1.5.4")
-      .then(mod => {
-        const QR = mod.default || mod;
-        return QR.toDataURL(url, {
-          errorCorrectionLevel: "M",
-          margin: 2,
-          width: size,
-          color: { dark: "#000000", light: "#ffffff" },
-          type: "image/png",
-        });
-      })
-      .then(dataURL => setDataUrl(dataURL))
-      .catch(err => {
-        console.error("[QRCode]", err);
-        setError(true);
-      });
-  }, [url, color, size]);
-
-  if (error) return (
-    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#fee2e2",borderRadius:8,fontSize:11,color:"#dc2626",textAlign:"center",padding:8}}>
-      ⚠️ Erreur génération QR
-    </div>
-  );
-
-  if (!dataUrl) return (
-    <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc",borderRadius:8}}>
-      <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
-        <div style={{animation:"spin 1s linear infinite",fontSize:22,marginBottom:4}}>⏳</div>
-        Génération QR…
-      </div>
-    </div>
-  );
-
-  return (
-    <img
-      id={printId || undefined}
-      src={dataUrl}
-      width={size}
-      height={size}
-      style={{display:"block",borderRadius:4}}
-      alt="QR Code"
-    />
-  );
-}
-
-function OffresSection({ pharmacie, planInfo }) {
-  const [offres, setOffres]       = useState([]);
-  const [showForm, setShowForm]   = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
-  const [saving, setSaving]       = useState(false);
-  const sb = getSupabaseClient();
-
-  const TYPES = [
-    { id:"promo",    label:"Promotion",   emoji:"🏷️" },
-    { id:"service",  label:"Service",     emoji:"🩺" },
-    { id:"fidelite", label:"Fidélité",    emoji:"🎁" },
-  ];
-
-  // Charger les offres au montage
-  useEffect(() => {
-    if (!pharmacie?.id) return;
-    if (isDemoMode) {
-      // Démo : offres en mémoire déjà dans le state
-      return;
-    }
-    if (!sb) return;
-    sb.from("offres_stories")
-      .select("*")
-      .eq("pharmacie_id", pharmacie.id)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { if (data) setOffres(data); });
-  }, [pharmacie?.id]);
-
-  function openNew() {
-    setEditingId(null);
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
-    setShowForm(true);
-  }
-
-  function openEdit(offre) {
-    setEditingId(offre.id);
-    setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
-      emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
-      actif:offre.actif, date_fin:offre.date_fin||"" });
-    setShowForm(true);
-  }
-
-  async function saveOffre() {
-    if (!form.titre.trim()) return;
-    setSaving(true);
-    const payload = { ...form, pharmacie_id: pharmacie.id };
-    if (editingId) {
-      // Modification
-      if (sb && !isDemoMode) {
-        await sb.from("offres_stories").update(payload).eq("id", editingId);
-      }
-      setOffres(prev => prev.map(o => o.id === editingId ? { ...o, ...payload } : o));
-    } else {
-      // Création
-      if (sb && !isDemoMode) {
-        const { data } = await sb.from("offres_stories").insert(payload).select().single();
-        if (data) setOffres(prev => [data, ...prev]);
-      } else {
-        setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
-      }
-    }
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
-    setEditingId(null);
-    setShowForm(false);
-    setSaving(false);
-  }
-
-  async function toggleOffre(id, actif) {
-    setOffres(prev => prev.map(o => o.id === id ? { ...o, actif: !actif } : o));
-    if (sb && !isDemoMode) await sb.from("offres_stories").update({ actif: !actif }).eq("id", id);
-  }
-
-  async function deleteOffre(id) {
-    if (!window.confirm("Supprimer cette offre ?")) return;
-    setOffres(prev => prev.filter(o => o.id !== id));
-    if (sb && !isDemoMode) await sb.from("offres_stories").delete().eq("id", id);
-  }
-
-  return (
-    <div style={{ background:"#fff", borderRadius:14, padding:22, boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
-        <div>
-          <div style={{ fontWeight:800, fontSize:15 }}>🎯 Offres & Promotions</div>
-          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>Affichées dans les stories de vos patients en attente</div>
-        </div>
-        <button onClick={()=>setShowForm(true)}
-          style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-          + Nouvelle offre
-        </button>
-      </div>
-
-      {/* Formulaire création */}
-      {showForm && (
-        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18 }}>
-          <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>{editingId ? "✏️ Modifier l'offre" : "➕ Créer une offre"}</div>
-
-          {/* Type */}
-          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-            {TYPES.map(t=>(
-              <button key={t.id} onClick={()=>setForm(f=>({...f,type:t.id}))}
-                style={{ flex:1, padding:"8px 4px", border:`2px solid ${form.type===t.id?"#1a3a6e":"#e0e7ff"}`, borderRadius:10,
-                  background:form.type===t.id?"#1a3a6e":"#fff", color:form.type===t.id?"#fff":"#374151",
-                  fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit", textAlign:"center" }}>
-                <div style={{ fontSize:18, marginBottom:2 }}>{t.emoji}</div>
-                <div>{t.label}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Emoji + titre */}
-          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-            <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
-              style={{ width:52, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px", fontSize:20, textAlign:"center", fontFamily:"inherit" }}/>
-            <input value={form.titre} onChange={e=>setForm(f=>({...f,titre:e.target.value}))}
-              placeholder="Titre de l'offre (ex: -20% sur Doliprane)"
-              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
-          </div>
-
-          {/* Description */}
-          <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}
-            placeholder="Description courte (1-2 lignes)"
-            rows={2}
-            style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
-
-          {/* Badge + couleur + date fin */}
-          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-            <input value={form.badge} onChange={e=>setForm(f=>({...f,badge:e.target.value}))}
-              placeholder='Badge (ex: "-20%")'
-              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
-            <input type="color" value={form.couleur} onChange={e=>setForm(f=>({...f,couleur:e.target.value}))}
-              style={{ width:44, height:38, border:"1.5px solid #e0e7ff", borderRadius:8, cursor:"pointer", padding:2 }}/>
-            <input type="date" value={form.date_fin} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
-              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
-          </div>
-
-          {/* Preview story */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
-            <div style={{ width:120, height:200, borderRadius:16, background:`linear-gradient(160deg,${form.couleur},${form.couleur}99)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
-              {form.badge && <div style={{ background:"rgba(255,255,255,0.25)", borderRadius:20, padding:"2px 8px", fontSize:11, fontWeight:900, color:"#fff", marginBottom:6 }}>{form.badge}</div>}
-              <div style={{ fontSize:28, marginBottom:6 }}>{form.emoji||"🎁"}</div>
-              <div style={{ fontSize:11, fontWeight:800, color:"#fff", lineHeight:1.3 }}>{form.titre||"Titre"}</div>
-              {form.description && <div style={{ fontSize:9, color:"rgba(255,255,255,0.8)", marginTop:4, lineHeight:1.4 }}>{form.description.slice(0,40)}</div>}
-            </div>
-          </div>
-
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={()=>setShowForm(false)}
-              style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              Annuler
-            </button>
-            <button onClick={saveOffre} disabled={!form.titre.trim()||saving}
-              style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              {saving ? "Enregistrement…" : editingId ? "✅ Enregistrer" : "✅ Publier l'offre"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Liste des offres */}
-      {offres.length === 0 && !showForm && (
-        <div style={{ textAlign:"center", padding:"32px 0", color:"#94a3b8" }}>
-          <div style={{ fontSize:36, marginBottom:8 }}>🎯</div>
-          <div style={{ fontSize:14, fontWeight:600 }}>Aucune offre créée</div>
-          <div style={{ fontSize:12, marginTop:4 }}>Créez votre première offre pour l'afficher dans les stories</div>
-        </div>
-      )}
-      {offres.map(offre => (
-        <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
-          <div style={{ width:44, height:44, borderRadius:10, background:`linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
-            {offre.emoji||"🎁"}
-          </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontWeight:700, fontSize:14, color:offre.actif?"#1a1a1a":"#94a3b8", display:"flex", alignItems:"center", gap:6 }}>
-              {offre.titre}
-              {offre.badge && <span style={{ fontSize:10, background:"#fef3c7", color:"#92400e", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>{offre.badge}</span>}
-              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
-                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":"Fidélité"}
-              </span>
-            </div>
-            {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
-            {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
-          </div>
-          <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-            <button onClick={()=>toggleOffre(offre.id, offre.actif)}
-              style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#fecdd3":"#bbf7d0"}`, borderRadius:8,
-                background:offre.actif?"#fff5f5":"#f0fdf4", color:offre.actif?"#dc2626":"#15803d",
-                fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-              {offre.actif?"⏸ Pause":"▶ Activer"}
-            </button>
-            <button onClick={()=>openEdit(offre)}
-              style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8,
-                background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-              ✏️
-            </button>
-            <button onClick={()=>deleteOffre(offre.id)}
-              style={{ padding:"5px 9px", border:"1.5px solid #fee2e2", borderRadius:8,
-                background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-              🗑️
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AbonnementSection({ pharmacie, onUpgrade }) {
-  const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
-  const plan = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
-  const postes = pharmacie.postes || [];
-  const postesActifs = postes.filter(p=>p.actif).length;
-  const ordos = (pharmacie.ordonnances||[]).length;
-  const invoices = [
-    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price,status:"paid"},
-    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price,status:"paid"},
-    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price,status:"paid"},
-  ];
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",border:`2px solid ${plan.color}22`}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>💳 Abonnement actuel</div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,border:`1px solid ${plan.color}33`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:42,height:42,borderRadius:11,background:plan.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{plan.icon}</div>
-            <div><div style={{fontWeight:900,fontSize:17,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#64748b"}}>Facturation mensuelle</div></div>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontWeight:900,fontSize:24,color:plan.color}}>{plan.price} <span style={{fontSize:13,fontWeight:400,color:"#94a3b8"}}>€/mois</span></div>
-            <div style={{fontSize:11,color:"#94a3b8"}}>Prochain : 15/07/2025</div>
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-          {[[`🖥️ Postes actifs`,postesActifs,plan.maxPostes===999?null:plan.maxPostes,plan.maxPostes===999?0.1:postesActifs/plan.maxPostes],
-            [`📋 Ordonnances`,ordos,plan.maxOrdos===99999?null:plan.maxOrdos,plan.maxOrdos===99999?0.1:ordos/plan.maxOrdos]
-          ].map(([label,used,max,ratio])=>(
-            <div key={label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:4}}>{label}</div>
-              <div style={{fontWeight:800,fontSize:18,color:ratio>0.8?"#ef4444":"#1a1a1a"}}>{used}{max?<span style={{fontSize:12,fontWeight:400,color:"#94a3b8"}}> / {max}</span>:<span style={{fontSize:12,fontWeight:400,color:"#94a3b8"}}> / ∞</span>}</div>
-              <div style={{marginTop:5,height:4,background:"#e2e8f0",borderRadius:4}}><div style={{width:`${Math.min(ratio*100,100)}%`,height:"100%",background:ratio>0.8?"#ef4444":plan.color,borderRadius:4}}/></div>
-            </div>
-          ))}
-        </div>
-        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"10px 18px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer de plan</button>
-          {plan.id!=="starter"&&<button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"8px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#94a3b8",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↓ Rétrograder</button>}
-        </div>
-      </div>
-      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🧾 Historique</div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>
-            {["N°","Date","Description","Montant","",""].map(h=><th key={h} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>{invoices.map(inv=>(
-            <tr key={inv.id} style={{borderBottom:"1px solid #f8fafc"}}>
-              <td style={{padding:"9px 0",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>{inv.id}</td>
-              <td style={{padding:"9px 0",color:"#475569"}}>{inv.date}</td>
-              <td style={{padding:"9px 0",color:"#1a1a1a",fontWeight:500}}>{inv.desc}</td>
-              <td style={{padding:"9px 0",fontWeight:800}}>{inv.amount} €</td>
-              <td style={{padding:"9px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
-              <td style={{padding:"9px 0",textAlign:"right"}}><button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={pharmacie.postes||[]} onConfirm={(newPlan)=>{onUpgrade(newPlan);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
-    </div>
-  );
-}
-
-function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
-  const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
-  const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
-  const plan=planInfo||PLAN_LIMITS[pharmacie.plan]||PLAN_LIMITS.starter;
-  const postesActifs=(postes||[]).filter(p=>p.actif).length;
-  const ordosTraitees=(pharmacie.ordonnances||[]).filter(o=>o.status==="imprime").length;
-  const invoices=[
-    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price},
-    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price},
-    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price},
-    {id:"INV-2025-003",date:"15/03/2025",desc:`OrdoMail ${plan.label} — Mars 2025`,amount:plan.price},
-    {id:"INV-2025-002",date:"15/02/2025",desc:`OrdoMail ${plan.label} — Fév. 2025`,amount:plan.price},
-    {id:"INV-2025-001",date:"15/01/2025",desc:`OrdoMail ${plan.label} — Jan. 2025`,amount:plan.price},
-  ];
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {/* Infos compte */}
-      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>👤 Informations du compte</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-          {[["Email",pharmacie.email],["Pharmacie",pharmacie.nom],["Membre depuis",new Date(pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
-            <div key={l} style={{background:"#f8f9ff",borderRadius:10,padding:"10px 13px"}}>
-              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{l}</div>
-              <div style={{fontSize:13,fontWeight:600,color:"#1a1a1a"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>🔑 Mot de passe</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            <Input label="Actuel" value={pwdOld} onChange={setPwdOld} type="password" placeholder="••••••••" icon="🔒"/>
-            <Input label="Nouveau" value={pwdNew} onChange={setPwdNew} type="password" placeholder="••••••••" icon="🔒"/>
-          </div>
-          <Btn variant="secondary" small onClick={()=>{
-            if(!pwdOld||!pwdNew){setPwdMsg({ok:false,text:"Remplissez les deux champs"});return;}
-            if(pwdNew.length<6){setPwdMsg({ok:false,text:"6 caractères minimum"});return;}
-            setPwdMsg({ok:true,text:"Mot de passe mis à jour ✓"});setPwdOld("");setPwdNew("");setTimeout(()=>setPwdMsg(null),3000);
-          }}>Mettre à jour</Btn>
-          {pwdMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:pwdMsg.ok?"#15803d":"#dc2626",padding:"6px 10px",background:pwdMsg.ok?"#dcfce7":"#fee2e2",borderRadius:7}}>{pwdMsg.text}</div>}
-        </div>
-      </div>
-      {/* Abonnement */}
-      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",border:`2px solid ${plan.color}22`}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>💳 Abonnement</div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
-          <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <div style={{width:40,height:40,borderRadius:10,background:plan.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{plan.icon}</div>
-            <div><div style={{fontWeight:900,fontSize:16}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#64748b"}}>{plan.price} €/mois</div></div>
-          </div>
-          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"9px 16px",border:"none",borderRadius:9,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer</button>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {[[`🖥️ Postes`,postesActifs,plan.maxPostes===999?null:plan.maxPostes],[`📋 Ordonnances`,ordosTraitees,plan.maxOrdos===99999?null:plan.maxOrdos]].map(([l,u,m])=>(
-            <div key={l} style={{background:"#f8fafc",borderRadius:9,padding:"10px 12px"}}>
-              <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>{l}</div>
-              <div style={{fontWeight:800,fontSize:17}}>{u}{m?<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> / {m}</span>:<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> / ∞</span>}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* Factures */}
-      <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🧾 Historique factures</div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>{["N°","Date","Description","Montant","",""].map(h=><th key={h} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>{invoices.map(inv=>(
-            <tr key={inv.id} style={{borderBottom:"1px solid #f8fafc"}}>
-              <td style={{padding:"8px 0",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>{inv.id}</td>
-              <td style={{padding:"8px 0",color:"#475569"}}>{inv.date}</td>
-              <td style={{padding:"8px 0",fontWeight:500}}>{inv.desc}</td>
-              <td style={{padding:"8px 0",fontWeight:800}}>{inv.amount} €</td>
-              <td style={{padding:"8px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓</span></td>
-              <td style={{padding:"8px 0",textAlign:"right"}}><button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-        <div style={{marginTop:12,padding:"8px 12px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#94a3b8",display:"flex",justifyContent:"space-between"}}>
-          <span>Total 2025</span><span style={{fontWeight:700,color:"#1a1a1a"}}>{invoices.reduce((s,i)=>s+i.amount,0)} €</span>
-        </div>
-      </div>
-      {/* Zone danger */}
-      <div style={{background:"#fff",borderRadius:14,padding:20,border:"1px solid #fee2e2"}}>
-        <div style={{fontWeight:700,fontSize:14,color:"#dc2626",marginBottom:10}}>⚠️ Zone de danger</div>
-        <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Les données sont conservées 90 jours.</div>
-        <Btn variant="danger" small>🗑 Supprimer mon compte</Btn>
-      </div>
-      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={(p)=>{onUpgrade(p);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
-    </div>
-  );
-}
-
-function ParametresTab({ pharmacie, onSave }) {
+function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
   const [section, setSection] = useState("pharmacie");
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
@@ -583,7 +86,7 @@ function ParametresTab({ pharmacie, onSave }) {
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["stories","📊","Stories"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -658,18 +161,24 @@ function ParametresTab({ pharmacie, onSave }) {
                           // Mode démo : sauvegarder le PIN dans la DB mémoire
                           const db = window._ordomailDB || window.__ordomailDB;
                           if (db) {
-                            const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                            const ph = db.pharmacies?.find(p => p.id === pharmacie.id);
                             if (ph) {
                               const posteIdx = (ph.postes || []).findIndex(p => p.id === poste.id);
                               if (posteIdx !== -1) ph.postes[posteIdx].pin = v;
                             }
                           }
                         } else {
+                          // update-pin exige désormais le jeton du titulaire connecté (phase 1 sécurité)
                           const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
                           const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                          const { data: { session } } = await sb.auth.getSession();
                           await fetch(`${supabaseUrl}/functions/v1/update-pin`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey },
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'apikey': supabaseKey,
+                              'Authorization': `Bearer ${session?.access_token || ''}`,
+                            },
                             body: JSON.stringify({ posteId: poste.id, pin: v }),
                           });
                         }
@@ -692,7 +201,7 @@ function ParametresTab({ pharmacie, onSave }) {
                           if (isDemoMode) {
                             const db = window._ordomailDB || window.__ordomailDB;
                             if (db) {
-                              const ph = db.pharmacies?.find(p => p.id === pharmacieId);
+                              const ph = db.pharmacies?.find(p => p.id === pharmacie.id);
                               if (ph) {
                                 const idx = (ph.postes||[]).findIndex(p => p.id === poste.id);
                                 if (idx !== -1) ph.postes[idx].pin = v;
@@ -755,21 +264,16 @@ function ParametresTab({ pharmacie, onSave }) {
         {section==="offres"&&(
           <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
         )}
+        {section==="stories"&&(
+          <StoriesSection pharmacie={pharmacie}/>
+        )}
         {section==="abonnement"&&(
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              // Recharger la pharmacie depuis Supabase pour avoir le bon plan
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) {
-                  setPharmacie(ph);
-                  setPostes(ph.postes || []);
-                }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              // Recharger la pharmacie (plan à jour) depuis le parent, qui possède l'état
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
             } catch(e) {
               console.error("[changePlan]", e.message);
             }
@@ -780,13 +284,8 @@ function ParametresTab({ pharmacie, onSave }) {
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
             } catch(e) { console.error("[changePlan]", e.message); }
           }}/>
         )}
@@ -799,14 +298,8 @@ function ParametresTab({ pharmacie, onSave }) {
             try {
               await changePlan(pharmacie.id, newPlan);
               setShowUpgrade(null);
-              // Recharger depuis Supabase
-              const sb = getSupabaseClient();
-              if (sb) {
-                const { data: ph } = await sb.from("pharmacies").select("*, postes(*)").eq("id", pharmacie.id).maybeSingle();
-                if (ph) { setPharmacie(ph); setPostes(ph.postes || []); }
-              } else {
-                onSave({...pharmacie, plan: newPlan});
-              }
+              const ph = await onPlanChanged?.();
+              if (ph) setPostes(ph.postes || []);
               await addPoste();
             } catch(e) {
               console.error("[upgrade]", e.message);
@@ -815,155 +308,6 @@ function ParametresTab({ pharmacie, onSave }) {
           }}
           onClose={()=>setShowUpgrade(null)}/>
       )}
-    </div>
-  );
-}
-
-function PricingEditor() {
-  const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
-  const [saved,setSaved]=useState(false);
-  function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
-  function save(){plans.forEach(p=>{PLAN_LIMITS[p.id]={...p};});setSaved(true);setTimeout(()=>setSaved(false),3000);}
-  return (
-    <div style={{maxWidth:900,margin:"0 auto"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>Modifications en temps réel</div></div>
-        <button onClick={save} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{saved?"✅ Sauvegardé":"💾 Sauvegarder"}</button>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:24}}>
-        {plans.map(plan=>(
-          <div key={plan.id} style={{background:"#1e293b",borderRadius:14,padding:20,border:`2px solid #334155`}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
-              <input value={plan.icon} onChange={e=>update(plan.id,"icon",e.target.value)} style={{width:34,textAlign:"center",background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:18,padding:"3px 4px",color:"#fff"}}/>
-              <input value={plan.label} onChange={e=>update(plan.id,"label",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:15,fontWeight:700,padding:"5px 10px",color:"#fff",fontFamily:"inherit"}}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[["price","Mensuel €"],["priceAnnual","Annuel €"]].map(([field,lbl])=>(
-                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
-                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:plan.color,fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/></div>
-              ))}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[["maxPostes","Postes"],["maxOrdos","Ordo/mois"]].map(([field,lbl])=>(
-                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
-                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:700,fontSize:13,fontFamily:"monospace",outline:"none"}}/></div>
-              ))}
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="color" value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{width:30,height:30,border:"none",cursor:"pointer",borderRadius:5}}/>
-              <input value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:plan.color,fontWeight:700,fontSize:12,fontFamily:"monospace",outline:"none"}}/>
-              <div style={{width:26,height:26,borderRadius:7,background:plan.color}}/>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,marginBottom:14}}>APERÇU TEMPS RÉEL</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:12}}>
-          {plans.map(plan=>(
-            <div key={plan.id} style={{background:"#fff",borderRadius:10,padding:"14px 12px",border:`2px solid ${plan.color}33`}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}><span style={{fontSize:16}}>{plan.icon}</span><span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>{plan.label}</span></div>
-              <div style={{fontWeight:900,fontSize:22,color:plan.color}}>{plan.price}<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> €/mois</span></div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{plan.maxPostes===999?"Illimité":`${plan.maxPostes} postes`}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BillingAdmin() {
-  const [tab,setTab]=useState("dashboard");
-  const [filterStatus,setFilterStatus]=useState("all");
-  const activeCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").length;
-  const trialCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="trialing").length;
-  const mrr=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").reduce((s,sub)=>s+sub.mrr,0);
-
-  return (
-    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-      <div style={{display:"flex",gap:6,marginBottom:24,flexWrap:"wrap"}}>
-        {[["dashboard","📊 Dashboard"],["subscriptions","📋 Abonnements"],["invoices","🧾 Factures"],["pricing","🏷️ Pricing"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#3b82f6":"#1e293b",color:tab===k?"#fff":"#64748b"}}>{l}</button>
-        ))}
-      </div>
-
-      {tab==="dashboard"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:14,marginBottom:24}}>
-            {[["MRR",`${mrr} €`,"#3b82f6"],["ARR",`${mrr*12} €`,"#10b981"],["Clients actifs",activeCount,"#6366f1"],["En essai",trialCount,"#f59e0b"]].map(([l,v,color])=>(
-              <div key={l} style={{background:"#1e293b",borderRadius:12,padding:20,border:`1px solid #334155`}}>
-                <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{l}</div>
-                <div style={{fontWeight:900,fontSize:26,color}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-            <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>Derniers abonnements</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-              <tbody>{MOCK_SUBSCRIPTIONS.slice(0,5).map(s=>(
-                <tr key={s.id} style={{borderBottom:"1px solid #1e293b"}}>
-                  <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:11,fontWeight:700,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
-                  <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":"#dc2626"}}>{s.status}</span></td>
-                  <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab==="subscriptions"&&(
-        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-            {[["all","Tous"],["active","Actifs"],["trialing","Essai"],["past_due","Impayés"],["canceled","Annulés"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setFilterStatus(k)} style={{padding:"5px 12px",border:`1px solid ${filterStatus===k?"#3b82f6":"#334155"}`,borderRadius:7,background:filterStatus===k?"#3b82f6":"transparent",color:filterStatus===k?"#fff":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
-            ))}
-          </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","Facturation","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{MOCK_SUBSCRIPTIONS.filter(s=>filterStatus==="all"||s.status===filterStatus).map(s=>(
-              <tr key={s.id} style={{borderBottom:"1px solid #0f172a"}}>
-                <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
-                <td style={{padding:"9px 10px"}}><span style={{fontSize:11,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
-                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12,textTransform:"capitalize"}}>{s.billing}</td>
-                <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
-                <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":s.status==="past_due"?"#fef9c3":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":s.status==="past_due"?"#92400e":"#dc2626"}}>{s.status}</span></td>
-                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab==="invoices"&&(
-        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-          <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>🧾 Factures</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["N°","Date","Description","Montant","Statut",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{MOCK_INVOICES.map(inv=>{
-              const sub=MOCK_SUBSCRIPTIONS.find(s=>s.id===inv.subId);
-              return (
-                <tr key={inv.id} style={{borderBottom:"1px solid #0f172a"}}>
-                  <td style={{padding:"9px 10px",fontFamily:"monospace",fontSize:11,color:"#64748b"}}>{inv.id}</td>
-                  <td style={{padding:"9px 10px",color:"#94a3b8"}}>{inv.date}</td>
-                  <td style={{padding:"9px 10px",color:"#e2e8f0"}}>{inv.desc}</td>
-                  <td style={{padding:"9px 10px",fontWeight:800,color:"#fff"}}>{inv.amount} €</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
-                  <td style={{padding:"9px 10px",textAlign:"right"}}>
-                    <button onClick={()=>openInvoicePDF({...inv,desc:inv.desc},{nom:sub?.pharmacie,email:sub?.email},sub?.plan||"starter")} style={{fontSize:12,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button>
-                  </td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab==="pricing"&&<PricingEditor/>}
     </div>
   );
 }
@@ -992,7 +336,7 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
     // Générer si pas encore chargé
     if (!qrSrc || !qrSrc.startsWith("data:")) {
       try {
-        const mod = await import("https://esm.sh/qrcode@1.5.4");
+        const mod = await import("qrcode");
         const QR = mod.default || mod;
         qrSrc = await QR.toDataURL(qrUrl, {
           errorCorrectionLevel: "H",
@@ -1390,9 +734,10 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const filteredBySearch = searchQuery
     ? filteredByDate.filter(o => {
         const nom = o.extracted?.nom || o.fromName || "";
-        // Recherche par code patient (match exact ou partiel)
-        if (searchQuery.match(/^\d{1,3}$/) && o.code_patient) {
-          return o.code_patient.startsWith(searchQuery);
+        // Recherche par code patient (match exact ou partiel) — code = 3 chiffres +
+        // 1 lettre depuis le 25/07/2026, comparaison insensible à la casse.
+        if (searchQuery.match(/^[0-9A-Za-z]{1,4}$/) && o.code_patient) {
+          return o.code_patient.toUpperCase().startsWith(searchQuery.toUpperCase());
         }
         const words = normalize(searchQuery).split(/\s+/).filter(Boolean);
         return words.every(w => normalize(nom).includes(w));
@@ -1434,7 +779,9 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   // → En prod : VITE_APP_URL = https://ordomail.fr
   // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
   const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
-  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}`;
+  // qr_token (phase 1 sécurité) : jeton public par pharmacie exigé par submit-ordonnance
+  // pour éviter qu'un pharmacie_id deviné/énuméré permette de spammer la file d'une pharmacie.
+  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}${pharmacie?.qr_token ? `&t=${pharmacie.qr_token}` : ""}`;
   // Calendrier : jours avec ordonnances (recomputed)
   const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
 
@@ -1500,6 +847,15 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   async function handleSaveParams(patch) {
     await savePharmacie(pharmacieId, patch);
     setPharmacie(p=>({...p,...patch}));
+  }
+
+  // Repéré par le linter (phase 2) : ParametresTab appelait un setPharmacie qui
+  // n'existe que dans ce composant-ci (PharmacieDashboard), pas dans le sien —
+  // ReferenceError garantie après un changement de plan. Passé en prop à la place.
+  async function refreshPharmacie() {
+    const ph = await fetchPharmacie(pharmacieId);
+    if (ph) setPharmacie(ph);
+    return ph;
   }
 
   return (
@@ -1664,6 +1020,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                       loadingId={loadingId}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                    interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
@@ -1775,6 +1132,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     );
                   }
                   return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                    interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
@@ -1796,7 +1154,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
       )}
 
       {tab==="qrcode"&&canAdmin&&!showLogs&&<QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>}
-      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams}/>}
+      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}/>}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}

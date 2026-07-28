@@ -1,5 +1,3 @@
-import { useState, useEffect, useRef } from "react";
-
 function CVBadge({ numero, color = "#15623a" }) {
   if (!numero) return <span style={{ color: "#bbb", fontSize: 12, fontStyle: "italic" }}>Non extrait</span>;
   // Formater le numéro en groupes lisibles : X XX XX XX XXX XXX XX

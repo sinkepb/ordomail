@@ -1,17 +1,30 @@
 // Edge Function : snapshot-metriques
 // Appelée chaque nuit par pg_cron à 2h00
 // Calcule et persiste toutes les métriques de chaque pharmacie
+//
+// @phase4-security 25/07/2026 — cette fonction recalcule les métriques de
+// TOUTES les pharmacies à chaque appel (coûteux) et n'était protégée par
+// aucune vérification d'appelant : n'importe qui pouvait la déclencher à
+// volonté. Elle exige désormais un secret partagé transmis par pg_cron dans
+// l'en-tête x-cron-secret — voir DEPLOIEMENT_PHASE4.md pour la mise à jour du
+// job pg_cron côté base de données (à faire manuellement, hors du périmètre
+// de ce qui peut être automatisé depuis ce dépôt).
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req: Request) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
+  }
+
+  const cronSecret = Deno.env.get("SNAPSHOT_CRON_SECRET");
+  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response(JSON.stringify({ error: "Non autorisé" }), { status: 401, headers: CORS });
   }
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -84,6 +97,7 @@ Deno.serve(async (req: Request) => {
           { data: d_jour },
           { data: d_attente },
           { data: d_canaux },
+          { data: d_traitees },
         ] = await Promise.all([
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}`),
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
@@ -91,6 +105,8 @@ Deno.serve(async (req: Request) => {
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${today_start}`),
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&status=eq.nouveau&received_at=lte.${now24}`),
           query(`ordonnances?select=source&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
+          // Délai de traitement (envoi → impression) — ordonnances imprimées des 30 derniers jours
+          query(`ordonnances?select=received_at,printed_at&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}&printed_at=not.is.null`),
         ]);
 
         const c_total   = Array.isArray(d_total)   ? d_total.length   : 0;
@@ -114,6 +130,16 @@ Deno.serve(async (req: Request) => {
         // Taux de traitement
         const taux = c_total ? Math.round(((c_total - c_attente) / c_total) * 100) : 0;
 
+        // Temps de traitement moyen (minutes, envoi → impression)
+        const traitees = Array.isArray(d_traitees) ? d_traitees : [];
+        const delais = traitees
+          .map((o: { received_at: string; printed_at: string }) =>
+            (new Date(o.printed_at).getTime() - new Date(o.received_at).getTime()) / 60000)
+          .filter((m: number) => Number.isFinite(m) && m >= 0);
+        const delaiMoyen = delais.length
+          ? Math.round(delais.reduce((a: number, b: number) => a + b, 0) / delais.length)
+          : 0;
+
         // 3. UPSERT du snapshot
         const payload = {
           pharmacie_id:    ph.id,
@@ -127,6 +153,7 @@ Deno.serve(async (req: Request) => {
           canal_email_pct,
           taux_traitement: taux,
           score_activite:  score,
+          delai_moyen_min: delaiMoyen,
         };
 
         const { ok: upsertOk, status: upsertStatus } = await query(

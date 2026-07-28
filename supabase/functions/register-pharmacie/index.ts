@@ -3,15 +3,15 @@
 // Crée le compte pharmacie après inscription Supabase Auth
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { maskId } from "../_shared/log-mask.ts";
 
 Deno.serve(async (req) => {
+  const CORS = corsHeaders(req, {
+    "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
   }
@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
       { pharmacie_id: pharmacie.id, nom: "Poste Caisse",  actif: true },
     ]);
 
-    console.log("[register-pharmacie] Pharmacie créée:", pharmacie.id, nom, codeVendeur);
+    console.log("[register-pharmacie] Pharmacie créée:", maskId(pharmacie.id), nom);
 
     return new Response(JSON.stringify({
       success:      true,

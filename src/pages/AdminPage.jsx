@@ -1,31 +1,12 @@
-import { useState, useEffect, useRef } from "react";
-import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
-import { updateSonnetteActive } from "../supabase.js";
-import { PersistentNav } from "../pages/LandingPage.jsx";
-import { PLANS } from "../lib/utils.js";
-
-function makeOrdos(days=3, perDay=15) {
-  const items = [];
-  const meds = [["Doliprane 1000mg","Amoxicilline 500mg","Ibuprofène 400mg"],["Metformine 850mg","Paracétamol 500mg"],["Levothyrox 50µg","Oméprazole 20mg","Vitamine D3"],["Aspirine 100mg","Lisinopril 5mg"]];
-  const names = [["MARTIN","Pierre","1 75 04 75 118 042 18","email"],["DUBOIS","Sophie","2 82 11 75 063 014 22","qrcode"],["LEFEBVRE","Jean","1 60 03 75 042 118 08","email"],["ROUX","Anne","2 91 03 69 215 088 45","qrcode"],["THOMAS","Isabelle","2 77 06 13 042 118 31","email"],["BERNARD","Paul","1 55 08 31 042 118 09","email"],["MOREAU","Claire","2 68 05 75 042 118 44","qrcode"],["RICHARD","Lucas","1 88 12 93 042 118 77","email"],["PETIT","Emma","2 95 03 75 042 118 55","email"],["SIMON","Marc","1 72 07 69 042 118 33","qrcode"],["LEROY","Julie","2 85 09 75 042 118 66","email"],["DURAND","Pierre","1 63 01 13 042 118 22","email"],["GARCIA","Marie","2 78 04 75 042 118 88","qrcode"],["MARTINEZ","Thomas","1 91 06 75 042 118 11","email"],["FOURNIER","Alice","2 87 11 75 042 118 99","email"]];
-  const docs = ["Dr Bernard","Dr Leclerc","Dr Moreau","Dr Petit","Dr Gautier","Dr Lambert"];
-  for (let d=0;d<days;d++) {
-    const date = new Date(); date.setDate(date.getDate()-d);
-    for (let i=0;i<(d===0?perDay:10);i++) {
-      const n = names[i%names.length];
-      const mins = Math.floor(Math.random()*120)+1;
-      const recv = new Date(date); recv.setHours(8+Math.floor(i/2),mins%60,0,0);
-      items.push({
-        id:`ordo-${d}-${i}`, fromName:`${n[0]} ${n[1]}`, source:n[3],
-        status: d===0?"nouveau":"imprime", receivedAt:recv.toISOString(),
-        attachments:[], extracted:{ nom:`${n[0]} ${n[1]}`, carteVitale:n[2],
-          medecin:docs[i%docs.length], date:date.toLocaleDateString("fr-FR"),
-          medicaments:meds[i%meds.length] }
-      });
-    }
-  }
-  return items;
-}
+import { useState, useEffect } from "react";
+import { PLAN_LIMITS } from "../lib/plans.js";
+import { generateInvoiceHTML } from "../lib/print.jsx";
+import { StoriesContentAdmin } from "../components/StoriesContentAdmin.jsx";
+import { ClientDetail } from "../components/ClientDetail.jsx";
+import { ContratEditor } from "../components/ContratEditor.jsx";
+import { HistoriqueSparkline } from "../components/HistoriqueSparkline.jsx";
+import { PricingEditor } from "../components/PricingEditor.jsx";
+import { BillingModule } from "../components/BillingModule.jsx";
 
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
@@ -37,8 +18,7 @@ function openInvoicePDF(invoice, pharmacie, plan) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-import { getSupabaseClient, isDemoMode, changePlan,
-  snapshotMetriquesJournalieres, fetchHistoriqueMetriques } from "../supabase.js";
+import { isDemoMode } from "../supabase.js";
 
 console.log("✅ MODULE CHARGÉ: pages/AdminPage.jsx");
 
@@ -62,44 +42,24 @@ const MOCK_SUBSCRIPTIONS = [
 ];
 
 
+// Identifiant démo (mode VITE_DEMO_MODE=true uniquement — voir authenticate() ci-dessous).
+// ⚠️ Ne JAMAIS utiliser DB.admin comme repli d'authentification hors mode démo strict :
+// c'était la porte dérobée corrigée le 23/07/2026 (voir dossier d'audit sécurité).
+// Note : contrairement à App.jsx, ce fichier n'a plus besoin d'un jeu de pharmacies
+// factices — AdminDashboardLive lit window._ordomailDB (exposé par App.jsx) en mode
+// démo, pas une copie locale. Seul DB.admin sert encore ici (repli démo du login).
 const DB = {
-  pharmacies: [
-    {
-      id: "ph1", nom: "Pharmacie Centrale", couleur: "#1a3a6e",
-      email: "contact@pharmaciecentrale.fr", password: "demo123",
-      adresse: "12 rue de la Paix, 75001 Paris",
-      emailReception: "ph1@in.ordomail.fr",
-      plan: "starter", createdAt: "2025-01-15T10:00:00Z",
-      postes: [
-        { id:"p1", nom:"Poste Accueil",     actif:true,  pin:"1234" },
-        { id:"p2", nom:"Poste Caisse",      actif:true,  pin:"5678" },
-        { id:"p3", nom:"Poste Préparation", actif:false, pin:"9012" },
-      ],
-      ordonnances: makeOrdos(3,15),
-    },
-    {
-      id: "ph2", nom: "Pharmacie du Soleil", couleur: "#15623a",
-      email: "pharma@soleil.fr", password: "demo123",
-      adresse: "45 avenue du Soleil, 69001 Lyon",
-      emailReception: "ph2@in.ordomail.fr",
-      plan: "standard", createdAt: "2025-02-01T10:00:00Z",
-      postes: [
-        { id:"p1", nom:"Poste 1", actif:true, pin:"1111" },
-        { id:"p2", nom:"Poste 2", actif:true, pin:"2222" },
-      ],
-      ordonnances: makeOrdos(2,10),
-    },
-  ],
   admin: { email: "admin@ordomail.fr", password: "admin2025" },
 };
 
 
 function BackofficeAdmin({ onBack }) {
-  const [authed,    setAuthed]    = useState(false);
-  const [email,     setEmail]     = useState("");
-  const [pwd,       setPwd]       = useState("");
-  const [err,       setErr]       = useState("");
-  const [loading,   setLoading]   = useState(false);
+  const [authed,     setAuthed]     = useState(false);
+  const [adminToken, setAdminToken] = useState(null);
+  const [email,      setEmail]      = useState("");
+  const [pwd,        setPwd]        = useState("");
+  const [err,        setErr]        = useState("");
+  const [loading,    setLoading]    = useState(false);
 
   async function authenticate() {
     if (!email || !pwd) return;
@@ -112,12 +72,21 @@ function BackofficeAdmin({ onBack }) {
         body: JSON.stringify({ email, password: pwd }),
       });
       const data = await res.json();
-      if (data.success) setAuthed(true);
+      if (data.success) { setAdminToken(data.token || null); setAuthed(true); }
       else setErr(data.error || "Identifiants incorrects");
     } catch(e) {
-      // Fallback mode démo
-      if (email === DB.admin.email && pwd === DB.admin.password) setAuthed(true);
-      else setErr("Erreur de connexion");
+      // Le service verify-admin est indisponible (réseau, fonction non déployée, config manquante).
+      // ⚠️ SÉCURITÉ : ce repli ne doit JAMAIS authentifier en production. Avant le 23/07/2026, ce
+      // bloc comparait à un identifiant codé en dur (admin@ordomail.fr / admin2025) shipé dans le
+      // bundle JS — une porte dérobée exploitable par quiconque lisait le code source. Il n'est
+      // désormais accepté qu'en mode démo explicite (VITE_DEMO_MODE=true), jamais sur un simple
+      // échec réseau.
+      if (isDemoMode && email === DB.admin.email && pwd === DB.admin.password) {
+        setAdminToken(null);
+        setAuthed(true);
+      } else {
+        setErr("Service d'authentification indisponible — réessayez ou contactez le support");
+      }
     }
     setLoading(false);
   }
@@ -161,387 +130,15 @@ function BackofficeAdmin({ onBack }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,0.07)",border:"1px solid #334155",color:"#94a3b8",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-          <button onClick={()=>setAuthed(false)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+          <button onClick={()=>{ setAuthed(false); setAdminToken(null); }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
         </div>
       </header>
-      <AdminDashboardLive/>
+      <AdminDashboardLive adminToken={adminToken}/>
     </div>
   );
 }
 
-function StoriesContentAdmin() {
-  const [items, setItems]       = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing]   = useState(null);
-  const [form, setForm]         = useState({
-    type: "info", titre: "", contenu: "", emoji: "💡",
-    question: "", reponses: "", explication: "", actif: true,
-  });
-  const [saving, setSaving]     = useState(false);
-  const [search, setSearch]     = useState("");
-  const sb = getSupabaseClient();
-
-  const TYPES = [
-    { id:"info",    label:"Information",  emoji:"💡", color:"#1a3a6e" },
-    { id:"conseil", label:"Conseil santé",emoji:"💊", color:"#15803d" },
-    { id:"quiz",    label:"Quiz",         emoji:"🧠", color:"#6d28d9" },
-  ];
-
-  useEffect(() => { loadItems(); }, []);
-
-  async function loadItems() {
-    setLoading(true);
-    if (!sb) { setLoading(false); return; }
-    const { data } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
-    if (data) setItems(data);
-    setLoading(false);
-  }
-
-  function openNew() {
-    setEditing(null);
-    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true });
-    setShowForm(true);
-  }
-
-  function openEdit(item) {
-    setEditing(item.id);
-    setForm({
-      type: item.type, titre: item.titre, contenu: item.contenu || "",
-      emoji: item.emoji || "💡", question: item.question || "",
-      reponses: item.reponses || "", explication: item.explication || "",
-      actif: item.actif,
-    });
-    setShowForm(true);
-  }
-
-  async function saveItem() {
-    if (!form.titre.trim()) return;
-    setSaving(true);
-    const payload = {
-      type: form.type, titre: form.titre, contenu: form.contenu,
-      emoji: form.emoji, question: form.question,
-      reponses: form.reponses, explication: form.explication, actif: form.actif,
-    };
-    if (editing) {
-      await sb.from("stories_content").update(payload).eq("id", editing);
-      setItems(prev => prev.map(x => x.id === editing ? { ...x, ...payload } : x));
-    } else {
-      const { data } = await sb.from("stories_content").insert(payload).select().single();
-      if (data) setItems(prev => [data, ...prev]);
-    }
-    setShowForm(false); setSaving(false); setEditing(null);
-  }
-
-  async function deleteItem(id) {
-    if (!window.confirm("Supprimer ce contenu ?")) return;
-    await sb.from("stories_content").delete().eq("id", id);
-    setItems(prev => prev.filter(x => x.id !== id));
-  }
-
-  async function toggleActif(id, actif) {
-    await sb.from("stories_content").update({ actif: !actif }).eq("id", id);
-    setItems(prev => prev.map(x => x.id === id ? { ...x, actif: !actif } : x));
-  }
-
-  const filtered = items.filter(x =>
-    x.titre.toLowerCase().includes(search.toLowerCase()) ||
-    (x.contenu||"").toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
-        <div>
-          <div style={{ fontWeight:900, fontSize:18 }}>📱 Contenu Stories Santé</div>
-          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{items.length} contenus · Affichés aléatoirement aux patients</div>
-        </div>
-        <button onClick={openNew}
-          style={{ padding:"10px 18px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-          + Ajouter
-        </button>
-      </div>
-
-      {/* Barre recherche */}
-      <input value={search} onChange={e=>setSearch(e.target.value)}
-        placeholder="🔍 Rechercher…"
-        style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:10, padding:"10px 14px", fontSize:14, fontFamily:"inherit", marginBottom:16, outline:"none" }}/>
-
-      {/* Formulaire */}
-      {showForm && (
-        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:14, padding:20, marginBottom:20 }}>
-          <div style={{ fontWeight:700, fontSize:15, marginBottom:16 }}>{editing ? "✏️ Modifier" : "➕ Nouveau contenu"}</div>
-
-          {/* Type */}
-          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-            {TYPES.map(t => (
-              <button key={t.id} onClick={()=>setForm(f=>({...f, type:t.id, emoji:t.emoji}))}
-                style={{ flex:1, padding:"8px 4px", border:`2px solid ${form.type===t.id?t.color:"#e0e7ff"}`,
-                  borderRadius:10, background:form.type===t.id?t.color:"#fff",
-                  color:form.type===t.id?"#fff":"#374151", fontWeight:700, fontSize:12,
-                  cursor:"pointer", fontFamily:"inherit", textAlign:"center" }}>
-                <div style={{ fontSize:18 }}>{t.emoji}</div>
-                <div>{t.label}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Emoji + Titre */}
-          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-            <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
-              style={{ width:52, border:"1.5px solid #e0e7ff", borderRadius:8, padding:8, fontSize:20, textAlign:"center", fontFamily:"inherit" }}/>
-            <input value={form.titre} onChange={e=>setForm(f=>({...f,titre:e.target.value}))}
-              placeholder="Titre" style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
-          </div>
-
-          {/* Contenu texte (info + conseil) */}
-          {form.type !== "quiz" && (
-            <textarea value={form.contenu} onChange={e=>setForm(f=>({...f,contenu:e.target.value}))}
-              placeholder="Contenu de la story (2-3 lignes max)" rows={3}
-              style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
-          )}
-
-          {/* Champs quiz */}
-          {form.type === "quiz" && (
-            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:10 }}>
-              <input value={form.question} onChange={e=>setForm(f=>({...f,question:e.target.value}))}
-                placeholder="Question du quiz"
-                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
-              <textarea value={form.reponses} onChange={e=>setForm(f=>({...f,reponses:e.target.value}))}
-                rows={5} placeholder={`Réponses au format JSON:
-[{"text":"Réponse A","correct":false,"emoji":"❌"},
- {"text":"Réponse B","correct":true,"emoji":"✅"}]`}
-                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:12, fontFamily:"monospace", resize:"vertical" }}/>
-              <input value={form.explication} onChange={e=>setForm(f=>({...f,explication:e.target.value}))}
-                placeholder="Explication après réponse"
-                style={{ border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
-            </div>
-          )}
-
-          {/* Actif */}
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <input type="checkbox" checked={form.actif} onChange={e=>setForm(f=>({...f,actif:e.target.checked}))} id="actif-check"/>
-            <label htmlFor="actif-check" style={{ fontSize:13, fontWeight:600, color:"#374151", cursor:"pointer" }}>Actif (affiché aux patients)</label>
-          </div>
-
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={()=>{setShowForm(false);setEditing(null);}}
-              style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              Annuler
-            </button>
-            <button onClick={saveItem} disabled={!form.titre.trim()||saving}
-              style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              {saving ? "Enregistrement…" : editing ? "✅ Enregistrer" : "✅ Publier"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Stats rapides */}
-      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-        {TYPES.map(t => (
-          <div key={t.id} style={{ flex:1, background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-            <div style={{ fontSize:20 }}>{t.emoji}</div>
-            <div style={{ fontSize:20, fontWeight:900, color:t.color }}>{items.filter(x=>x.type===t.id).length}</div>
-            <div style={{ fontSize:10, color:"#64748b" }}>{t.label}</div>
-          </div>
-        ))}
-        <div style={{ flex:1, background:"#f0fdf4", border:"1.5px solid #bbf7d0", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-          <div style={{ fontSize:20 }}>✅</div>
-          <div style={{ fontSize:20, fontWeight:900, color:"#15803d" }}>{items.filter(x=>x.actif).length}</div>
-          <div style={{ fontSize:10, color:"#64748b" }}>Actifs</div>
-        </div>
-      </div>
-
-      {/* Liste */}
-      {loading && <div style={{ textAlign:"center", padding:32, color:"#94a3b8" }}>Chargement…</div>}
-      {!loading && filtered.length === 0 && (
-        <div style={{ textAlign:"center", padding:32, color:"#94a3b8" }}>
-          <div style={{ fontSize:36, marginBottom:8 }}>📭</div>
-          <div>{search ? "Aucun résultat" : "Aucun contenu créé"}</div>
-        </div>
-      )}
-      {filtered.map(item => {
-        const typeInfo = TYPES.find(t=>t.id===item.type) || TYPES[0];
-        return (
-          <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"14px 16px",
-            border:`1.5px solid ${item.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8,
-            background:item.actif?"#fff":"#f8f9fa", opacity:item.actif?1:0.6 }}>
-            <div style={{ width:42, height:42, borderRadius:10, background:typeInfo.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
-              {item.emoji||typeInfo.emoji}
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                <span style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>{item.titre}</span>
-                <span style={{ fontSize:10, background:typeInfo.color+"22", color:typeInfo.color, borderRadius:20, padding:"1px 8px", fontWeight:700 }}>{typeInfo.label}</span>
-                {!item.actif && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:20, padding:"1px 8px", fontWeight:700 }}>Inactif</span>}
-              </div>
-              {item.contenu && <div style={{ fontSize:12, color:"#64748b", lineHeight:1.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.contenu}</div>}
-              {item.question && <div style={{ fontSize:12, color:"#6d28d9", marginTop:2 }}>❓ {item.question}</div>}
-            </div>
-            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-              <button onClick={()=>toggleActif(item.id, item.actif)}
-                style={{ padding:"5px 10px", border:`1.5px solid ${item.actif?"#fecdd3":"#bbf7d0"}`, borderRadius:8,
-                  background:item.actif?"#fff5f5":"#f0fdf4", color:item.actif?"#dc2626":"#15803d",
-                  fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-                {item.actif?"Désactiver":"Activer"}
-              </button>
-              <button onClick={()=>openEdit(item)}
-                style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-                ✏️
-              </button>
-              <button onClick={()=>deleteItem(item.id)}
-                style={{ padding:"5px 9px", border:"1.5px solid #fee2e2", borderRadius:8, background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-                🗑️
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function HistoriqueSparkline({ pharmacieId }) {
-  const [data,   setData]   = useState([]);
-  const [metric, setMetric] = useState("ordos_jour");
-  const [period, setPeriod] = useState(30);
-  const [loading, setLoading] = useState(true);
-
-  const METRICS = [
-    { id:"ordos_jour",       label:"Ordos/jour",      color:"#60a5fa" },
-    { id:"taux_traitement",  label:"Taux traitement",  color:"#4ade80" },
-    { id:"score_activite",   label:"Score activité",   color:"#a78bfa" },
-    { id:"canal_qr_pct",     label:"% QR code",        color:"#fbbf24" },
-  ];
-
-  useEffect(() => {
-    setLoading(true);
-    fetchHistoriqueMetriques(pharmacieId, period).then(d => {
-      setData(d);
-      setLoading(false);
-    });
-  }, [pharmacieId, period]);
-
-  const currentMetric = METRICS.find(m => m.id === metric);
-  const values = data.map(d => d[metric] || 0);
-  const maxVal  = Math.max(...values, 1);
-  const minVal  = Math.min(...values, 0);
-  const range   = maxVal - minVal || 1;
-  const avg     = values.length ? Math.round(values.reduce((a,b)=>a+b,0)/values.length) : 0;
-  const last    = values[values.length-1] || 0;
-  const trend   = values.length > 1 ? last - values[values.length-2] : 0;
-
-  // SVG sparkline
-  const W = 600, H = 80;
-  const pts = values.map((v,i) => {
-    const x = values.length > 1 ? (i/(values.length-1))*W : W/2;
-    const y = H - ((v-minVal)/range)*(H-8) - 4;
-    return `${x},${y}`;
-  }).join(" ");
-
-  return (
-    <div style={{padding:"0 24px 20px"}}>
-      <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-        {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase"}}>
-            📈 Historique {period} jours
-          </div>
-          <div style={{display:"flex",gap:6}}>
-            {[7,14,30,90].map(p => (
-              <button key={p} onClick={()=>setPeriod(p)}
-                style={{padding:"3px 10px",border:`1px solid ${period===p?"#60a5fa":"#334155"}`,borderRadius:20,
-                  background:period===p?"#1e40af":"transparent",color:period===p?"#fff":"#64748b",
-                  fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                {p}j
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Sélecteur métrique */}
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-          {METRICS.map(m => (
-            <button key={m.id} onClick={()=>setMetric(m.id)}
-              style={{padding:"4px 12px",border:`1px solid ${metric===m.id?m.color:"#334155"}`,borderRadius:20,
-                background:metric===m.id?m.color+"22":"transparent",
-                color:metric===m.id?m.color:"#64748b",
-                fontSize:11,fontWeight:metric===m.id?700:400,cursor:"pointer",fontFamily:"inherit"}}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Stats rapides */}
-        <div style={{display:"flex",gap:20,marginBottom:14}}>
-          {[
-            { label:"Dernière valeur", value:last, suffix:currentMetric?.id.includes("pct")||currentMetric?.id.includes("taux")?"%" :currentMetric?.id==="score_activite"?"/100":"" },
-            { label:"Moyenne",         value:avg,  suffix:"" },
-            { label:"Tendance",        value:trend>=0?`+${trend}`:trend, suffix:"", color:trend>=0?"#4ade80":"#f87171" },
-            { label:"Max",             value:maxVal, suffix:"" },
-          ].map(s => (
-            <div key={s.label}>
-              <div style={{fontSize:20,fontWeight:900,color:s.color||currentMetric?.color||"#60a5fa"}}>{s.value}{s.suffix}</div>
-              <div style={{fontSize:10,color:"#475569"}}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Graphique SVG */}
-        {loading ? (
-          <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:12}}>Chargement…</div>
-        ) : data.length === 0 ? (
-          <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:12}}>
-            Aucune donnée — cliquez sur 📸 Snapshot pour initialiser
-          </div>
-        ) : (
-          <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block",height:80}}>
-            {/* Grille */}
-            {[0,25,50,75,100].map(pct => (
-              <line key={pct} x1={0} y1={H-(pct/100)*H} x2={W} y2={H-(pct/100)*H} stroke="#1e293b" strokeWidth={1}/>
-            ))}
-            {/* Zone remplie */}
-            <defs>
-              <linearGradient id={`grad-${metric}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={currentMetric?.color||"#60a5fa"} stopOpacity="0.3"/>
-                <stop offset="100%" stopColor={currentMetric?.color||"#60a5fa"} stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <polygon
-              points={`0,${H} ${pts} ${W},${H}`}
-              fill={`url(#grad-${metric})`}/>
-            {/* Ligne */}
-            <polyline
-              points={pts}
-              fill="none"
-              stroke={currentMetric?.color||"#60a5fa"}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"/>
-            {/* Points */}
-            {values.map((v,i) => {
-              const x = values.length>1 ? (i/(values.length-1))*W : W/2;
-              const y = H - ((v-minVal)/range)*(H-8) - 4;
-              return <circle key={i} cx={x} cy={y} r={3} fill={currentMetric?.color||"#60a5fa"}/>;
-            })}
-          </svg>
-        )}
-
-        {/* Labels dates */}
-        {data.length > 0 && (
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-            <span style={{fontSize:10,color:"#334155"}}>{data[0]?.date}</span>
-            <span style={{fontSize:10,color:"#334155"}}>{data[data.length-1]?.date}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AdminDashboardLive() {
+function AdminDashboardLive({ adminToken } = {}) {
   const [tab,      setTab]      = useState("clients");
   const [clients,  setClients]  = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -590,68 +187,23 @@ function AdminDashboardLive() {
       return;
     }
     try {
-      const sb = getSupabaseClient();
-      const { data: pharmacies } = await sb
-        .from("pharmacies")
-        .select("*, postes(*)")
-        .order("created_at", { ascending: false });
-      if (!pharmacies) { setLoading(false); return; }
-
-      const now30 = new Date(Date.now() - 30*86400000).toISOString();
-      const now7  = new Date(Date.now() - 7*86400000).toISOString();
-      const now24 = new Date(Date.now() - 86400000).toISOString();
-
-      const enriched = await Promise.all(pharmacies.map(async ph => {
-        const [
-          { count: total },
-          { count: mois },
-          { count: semaine },
-          { count: attente },
-          { data: canaux },
-          { data: offres },
-        ] = await Promise.all([
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now30),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).gte("received_at",now7),
-          sb.from("ordonnances").select("*",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("status","nouveau").lte("received_at",now24),
-          sb.from("ordonnances").select("source").eq("pharmacie_id",ph.id).gte("received_at",now30),
-          sb.from("offres_stories").select("id",{count:"exact",head:true}).eq("pharmacie_id",ph.id).eq("actif",true),
-        ]);
-
-        // Calcul canaux
-        const total_canaux = canaux?.length || 0;
-        const qr_count = canaux?.filter(o=>o.source==="qrcode").length || 0;
-        const email_count = canaux?.filter(o=>o.source==="email").length || 0;
-        const canal_qr_pct    = total_canaux ? Math.round(qr_count/total_canaux*100) : 0;
-        const canal_email_pct = total_canaux ? Math.round(email_count/total_canaux*100) : 0;
-
-        // Score activité 0-100
-        const score = Math.min(100, Math.round(
-          (mois||0)*0.4 +
-          (semaine||0)*2 +
-          (canal_qr_pct)*0.2 +
-          ((ph.postes||[]).filter(p=>p.actif&&p.pin_hash).length)*5
-        ));
-
-        // Pins configurés
-        const pins_configures = (ph.postes||[]).filter(p=>p.pin_hash).length;
-
-        return {
-          ...ph,
-          postesActifs:    (ph.postes||[]).filter(p=>p.actif).length,
-          postesTotal:     (ph.postes||[]).length,
-          ordos_total:     total || 0,
-          ordos_mois:      mois  || 0,
-          ordos_semaine:   semaine || 0,
-          ordos_attente:   attente || 0,
-          canal_qr_pct,
-          canal_email_pct,
-          offres_actives:  offres?.length || 0,
-          pins_configures,
-          score_activite:  score,
-          taux_traitement: total ? Math.round(((total-(attente||0))/total)*100) : 0,
-        };
-      }));
+      // Route via secure-data (jeton admin) — l'ancien .select("*, postes(*)") en clé anon
+      // renvoyait, entre autres, les PIN de vente en clair de toutes les pharmacies à
+      // quiconque savait appeler l'API REST Supabase, connecté ou non au backoffice.
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": supabaseKey,
+          "Authorization": `Bearer ${adminToken || ""}`,
+        },
+        body: JSON.stringify({ resource: "admin_pharmacies" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `secure-data ${res.status}`);
+      const enriched = body.data || [];
 
       setClients(enriched);
       computeGlobalMetrics(enriched);
@@ -670,7 +222,6 @@ function AdminDashboardLive() {
   }
 
   function scoreColor(s) { return s>=70?"#15803d":s>=40?"#f59e0b":"#dc2626"; }
-  function scoreBg(s)    { return s>=70?"#f0fdf4":s>=40?"#fef9f0":"#fff5f5"; }
 
   const filtered = clients.filter(c =>
     c.nom?.toLowerCase().includes(search.toLowerCase()) ||
@@ -717,7 +268,7 @@ function AdminDashboardLive() {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -793,7 +344,9 @@ function AdminDashboardLive() {
             </div>
           )
         ) : tab === "stories" ? (
-          <StoriesContentAdmin/>
+          <StoriesContentAdmin adminToken={adminToken}/>
+        ) : tab === "tarifs" ? (
+          <PricingEditor adminToken={adminToken}/>
         ) : (
           selected ? (
             <ContratEditor
@@ -801,9 +354,22 @@ function AdminDashboardLive() {
               plans={PLANS}
               onSave={async (id,plan,postes)=>{
                 setSaving(true);
-                const sb = getSupabaseClient();
-                await sb.from("pharmacies").update({plan}).eq("id",id);
-                setMsg("✅ Contrat mis à jour");
+                try {
+                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                  await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "apikey": supabaseKey,
+                      "Authorization": `Bearer ${adminToken || ""}`,
+                    },
+                    body: JSON.stringify({ resource: "admin_update_plan", params: { pharmacieId: id, plan } }),
+                  });
+                  setMsg("✅ Contrat mis à jour");
+                } catch(e) {
+                  setMsg("❌ Erreur : " + e.message);
+                }
                 setSaving(false);
                 setTimeout(()=>setMsg(""),3000);
                 loadClients();
@@ -830,284 +396,6 @@ function AdminDashboardLive() {
           )
         )}
       </div>
-    </div>
-  );
-}
-
-function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
-  const planInfo = plans[ph.plan] || {};
-  const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
-  const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
-  const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
-
-  return (
-    <div style={{background:"#1e293b",borderRadius:16,border:"1px solid #334155",overflow:"hidden"}}>
-      {/* Header client */}
-      <div style={{padding:"20px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:16}}>
-        <div style={{width:52,height:52,borderRadius:14,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>💊</div>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:900,fontSize:20,color:"#fff"}}>{ph.nom}</div>
-          <div style={{fontSize:13,color:"#64748b"}}>{ph.email} · {ph.adresse}</div>
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <span style={{padding:"4px 12px",borderRadius:20,background:planInfo.color||"#334155",color:"#fff",fontSize:12,fontWeight:700}}>{planInfo.label||ph.plan}</span>
-          {trialLeft > 0 && <span style={{padding:"4px 12px",borderRadius:20,background:"#fef3c7",color:"#92400e",fontSize:12,fontWeight:700}}>Trial · {trialLeft}j restants</span>}
-          {trialLeft <= 0 && ph.trial_ends_at && <span style={{padding:"4px 12px",borderRadius:20,background:"#fee2e2",color:"#dc2626",fontSize:12,fontWeight:700}}>Trial expiré</span>}
-        </div>
-        <button onClick={onClose} style={{background:"#0f172a",border:"1px solid #334155",color:"#64748b",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>← Retour</button>
-        <button onClick={()=>snapshotMetriquesJournalieres()} style={{background:"#1e40af",border:"none",color:"#fff",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
-          📸 Snapshot
-        </button>
-      </div>
-
-      {/* Graphique historique 30 jours */}
-      <HistoriqueSparkline pharmacieId={ph.id}/>
-
-      <div style={{padding:"0 24px 24px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-
-        {/* ── Colonne gauche ── */}
-        <div style={{display:"flex",flexDirection:"column",gap:16}}>
-
-          {/* Score global */}
-          <div style={{background:scoreBg(ph.score_activite||0),border:`1px solid ${scoreColor(ph.score_activite||0)}33`,borderRadius:12,padding:16,textAlign:"center"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Score d'activité</div>
-            <div style={{fontSize:52,fontWeight:900,color:scoreColor(ph.score_activite||0),lineHeight:1}}>{ph.score_activite||0}</div>
-            <div style={{fontSize:11,color:"#64748b",marginTop:4}}>/100 · {(ph.score_activite||0)>=70?"🟢 Engagé":(ph.score_activite||0)>=40?"🟡 Modéré":"🔴 Risque churn"}</div>
-          </div>
-
-          {/* Métriques volume */}
-          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>📋 Volume ordonnances</div>
-            {[
-              ["Ce mois",    ph.ordos_mois||0,    "#60a5fa"],
-              ["Cette semaine", ph.ordos_semaine||0, "#a78bfa"],
-              ["Total",      ph.ordos_total||0,   "#94a3b8"],
-              ["En attente", ph.ordos_attente||0, (ph.ordos_attente||0)>0?"#f87171":"#4ade80"],
-            ].map(([label, val, color]) => (
-              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontSize:13,color:"#94a3b8"}}>{label}</span>
-                <span style={{fontSize:18,fontWeight:900,color}}>{val}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Canaux */}
-          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>📡 Canaux d'envoi (30j)</div>
-            {[
-              ["📱 QR Code",  ph.canal_qr_pct||0,    "#4ade80"],
-              ["✉️ Email",    ph.canal_email_pct||0,  "#60a5fa"],
-              ["⬇️ Upload",   100-(ph.canal_qr_pct||0)-(ph.canal_email_pct||0), "#a78bfa"],
-            ].map(([label, pct, color]) => (
-              <div key={label} style={{marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
-                  <span style={{fontSize:12,fontWeight:700,color}}>{Math.max(0,pct)}%</span>
-                </div>
-                <div style={{height:6,background:"#1e293b",borderRadius:3,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${Math.max(0,pct)}%`,background:color,borderRadius:3,transition:"width 0.5s"}}/>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Colonne droite ── */}
-        <div style={{display:"flex",flexDirection:"column",gap:16}}>
-
-          {/* Performance */}
-          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>⚡ Performance</div>
-            {[
-              ["Taux de traitement", `${ph.taux_traitement||0}%`,  (ph.taux_traitement||0)>=80?"#4ade80":"#f87171"],
-              ["Ordos en attente +24h", ph.ordos_attente||0,       (ph.ordos_attente||0)===0?"#4ade80":"#f87171"],
-              ["Postes actifs",     `${ph.postesActifs||0}/${planInfo.maxPostes||"∞"}`, "#60a5fa"],
-              ["PINs configurés",   ph.pins_configures||0,          "#a78bfa"],
-              ["Offres stories actives", ph.offres_actives||0,      "#fbbf24"],
-            ].map(([label, val, color]) => (
-              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
-                <span style={{fontSize:15,fontWeight:900,color}}>{val}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Commercial */}
-          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>💰 Commercial</div>
-            {[
-              ["Plan actuel",  `${planInfo.label||ph.plan} · ${planInfo.prix||0}€/mois`, "#fff"],
-              ["MRR client",   `${planInfo.prix||0}€`,   "#4ade80"],
-              ["ARR client",   `${(planInfo.prix||0)*12}€`, "#60a5fa"],
-              ["Membre depuis", new Date(ph.created_at||Date.now()).toLocaleDateString("fr-FR"), "#94a3b8"],
-            ].map(([label, val, color]) => (
-              <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontSize:12,color:"#94a3b8"}}>{label}</span>
-                <span style={{fontSize:13,fontWeight:700,color}}>{val}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Alertes & opportunités */}
-          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>🎯 Alertes & Opportunités</div>
-            {(ph.ordos_attente||0) > 2 && (
-              <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid #f8717133",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fca5a5"}}>
-                ⚠️ {ph.ordos_attente} ordonnances non traitées depuis +24h
-              </div>
-            )}
-            {ph.plan==="starter" && (ph.ordos_mois||0)>150 && (
-              <div style={{background:"rgba(251,191,36,0.1)",border:"1px solid #fbbf2433",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fde68a"}}>
-                🚀 Volume élevé — opportunité d'upgrade Standard
-              </div>
-            )}
-            {(ph.score_activite||0) < 30 && (
-              <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid #f8717133",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#fca5a5"}}>
-                🔴 Faible activité — risque de churn
-              </div>
-            )}
-            {(ph.pins_configures||0) === 0 && (ph.postesActifs||0) > 0 && (
-              <div style={{background:"rgba(96,165,250,0.1)",border:"1px solid #60a5fa33",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#93c5fd"}}>
-                💡 Aucun PIN configuré — proposer la formation vendeur
-              </div>
-            )}
-            {(ph.offres_actives||0) === 0 && (
-              <div style={{background:"rgba(167,139,250,0.1)",border:"1px solid #a78bfa33",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#c4b5fd"}}>
-                🎯 Aucune offre stories créée — potentiel engagement patient
-              </div>
-            )}
-            {(ph.ordos_attente||0)===0 && (ph.score_activite||0)>=70 && (
-              <div style={{background:"rgba(74,222,128,0.1)",border:"1px solid #4ade8033",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#86efac"}}>
-                ✅ Client sain — aucune action requise
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg }) {
-  const [plan,        setPlan]        = useState(pharmacie.plan || "starter");
-  const [postesActifs, setPostesActifs] = useState(pharmacie.postesActifs || 1);
-
-  const currentPlan = plans[plan];
-  const maxPostes   = currentPlan?.maxPostes || 1;
-  const prix        = currentPlan?.prix || 0;
-  const oldPlan     = plans[pharmacie.plan];
-  const delta       = prix - (oldPlan?.prix || 0);
-
-  return (
-    <div style={{background:"#1e293b",borderRadius:16,padding:24,border:"1px solid #334155"}}>
-      {/* Header client */}
-      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:24,paddingBottom:16,borderBottom:"1px solid #334155"}}>
-        <div style={{width:48,height:48,borderRadius:12,background:pharmacie.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>💊</div>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>{pharmacie.nom}</div>
-          <div style={{fontSize:13,color:"#64748b"}}>{pharmacie.email}</div>
-        </div>
-        <button onClick={onClose} style={{background:"transparent",border:"1px solid #334155",color:"#64748b",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>← Retour</button>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-
-        {/* ── Choix du plan ── */}
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:12,textTransform:"uppercase",letterSpacing:1}}>Plan tarifaire</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {Object.entries(plans).map(([key, p]) => (
-              <button key={key} onClick={()=>{ setPlan(key); setPostesActifs(Math.min(postesActifs, p.maxPostes)); }}
-                style={{padding:"12px 16px",border:`2px solid ${plan===key?"#3b82f6":"#334155"}`,borderRadius:10,background:plan===key?"#1e3a5f":"transparent",cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all 0.15s"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:14,color:plan===key?"#93c5fd":"#fff"}}>{p.label}</span>
-                  <span style={{fontWeight:900,fontSize:15,color:plan===key?"#3b82f6":"#64748b"}}>{p.prix} €/mois</span>
-                </div>
-                <div style={{fontSize:11,color:"#64748b",marginTop:3}}>Jusqu'à {p.maxPostes} poste{p.maxPostes>1?"s":""}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Postes actifs ── */}
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",marginBottom:12,textTransform:"uppercase",letterSpacing:1}}>Postes actifs</div>
-          <div style={{background:"#0f172a",borderRadius:10,padding:16,marginBottom:12}}>
-            <div style={{fontSize:13,color:"#64748b",marginBottom:8}}>Postes actuellement actifs</div>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <button onClick={()=>setPostesActifs(Math.max(1,postesActifs-1))}
-                style={{width:32,height:32,border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-              <div style={{fontWeight:900,fontSize:28,color:"#fff",minWidth:40,textAlign:"center"}}>{postesActifs}</div>
-              <button onClick={()=>setPostesActifs(Math.min(maxPostes,postesActifs+1))}
-                style={{width:32,height:32,border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-              <span style={{fontSize:12,color:"#64748b"}}>/ {maxPostes} max</span>
-            </div>
-          </div>
-
-          {/* Postes existants */}
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {(pharmacie.postes || []).map((p, i) => (
-              <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#0f172a",borderRadius:8,opacity:i<postesActifs?1:0.4}}>
-                <div style={{width:8,height:8,borderRadius:4,background:i<postesActifs?"#10b981":"#334155",flexShrink:0}}/>
-                <span style={{fontSize:13,color:i<postesActifs?"#fff":"#64748b",flex:1}}>{p.nom}</span>
-                <span style={{fontSize:10,fontWeight:700,color:i<postesActifs?"#10b981":"#475569"}}>{i<postesActifs?"ACTIF":"INACTIF"}</span>
-              </div>
-            ))}
-            {(pharmacie.postes||[]).length === 0 && (
-              <div style={{fontSize:12,color:"#475569",textAlign:"center",padding:12}}>Aucun poste configuré</div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Récapitulatif + delta */}
-      <div style={{marginTop:20,padding:"14px 18px",background:"#0f172a",borderRadius:10,border:"1px solid #334155"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <div style={{fontSize:12,color:"#64748b",marginBottom:2}}>Nouveau contrat</div>
-            <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>{currentPlan?.label} — {prix} €/mois · {postesActifs} poste{postesActifs>1?"s":""}</div>
-          </div>
-          {delta !== 0 && (
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:11,color:"#64748b",marginBottom:2}}>Variation</div>
-              <div style={{fontWeight:800,fontSize:16,color:delta>0?"#10b981":"#ef4444"}}>
-                {delta>0?"+":""}{delta} €/mois
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Message + bouton */}
-      {msg && (
-        <div style={{marginTop:12,padding:"10px 14px",background:msg.startsWith("✅")?"#052e16":"#450a0a",border:`1px solid ${msg.startsWith("✅")?"#166534":"#7f1d1d"}`,borderRadius:8,fontSize:13,color:msg.startsWith("✅")?"#86efac":"#fca5a5"}} onClick={onClearMsg}>
-          {msg}
-        </div>
-      )}
-      {/* Toggle sonnette */}
-      <div style={{marginTop:16,padding:"14px 16px",background:"#1e293b",borderRadius:12,border:"1px solid #334155",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontWeight:700,fontSize:13,color:"#fff"}}>🔔 Sonnette patient</div>
-          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Appel du patient au comptoir</div>
-        </div>
-        <button
-          onClick={async()=>{
-            const newVal = pharmacie.sonnette_active === false ? true : false;
-            await updateSonnetteActive(pharmacie.id, newVal);
-            pharmacie.sonnette_active = newVal;
-            onRefresh();
-          }}
-          style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,
-            background:pharmacie.sonnette_active!==false?"#14532d":"#450a0a",
-            color:pharmacie.sonnette_active!==false?"#86efac":"#fca5a5"}}>
-          {pharmacie.sonnette_active!==false?"✅ Activée":"❌ Désactivée"}
-        </button>
-      </div>
-
-      <button onClick={()=>onSave(pharmacie.id, plan, postesActifs)} disabled={saving}
-        style={{width:"100%",marginTop:16,padding:"13px",border:"none",borderRadius:10,background:saving?"#1e3a5f":"#3b82f6",color:"#fff",fontWeight:800,fontSize:15,cursor:saving?"not-allowed":"pointer",fontFamily:"inherit"}}>
-        {saving ? "Enregistrement…" : "✅ Valider le contrat"}
-      </button>
     </div>
   );
 }
@@ -1207,288 +495,6 @@ function BillingAdmin() {
   );
 }
 
-function BillingModule({ initialView, planId, billing, onBack }) {
-  const [view, setView] = useState(initialView||"pricing");
-  const [step, setStep] = useState("details");
-  const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
-  const [checkoutBilling, setCheckoutBilling] = useState(billing||"monthly");
-  const [billingTab, setBillingTab] = useState("monthly");
-  const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:""});
-  const [cardData, setCardData] = useState({number:"",expiry:"",cvc:"",name:""});
-  const [errors, setErrors] = useState({});
-  const [createError, setCreateError] = useState("");
-  const [createdEmail, setCreatedEmail] = useState("");
-  const [createdEmailReception, setCreatedEmailReception] = useState("");
-  const [createdPlan, setCreatedPlan] = useState("");
-
-  const plan = PLAN_LIMITS[checkoutPlan]||PLAN_LIMITS.standard;
-  const price = checkoutBilling==="annual"?plan.priceAnnual:plan.price;
-
-  if (view==="creating") return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
-        <div style={{fontSize:48,marginBottom:20,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
-        <div style={{fontWeight:900,fontSize:22,color:"#0f172a",marginBottom:8}}>Création en cours…</div>
-        <div style={{fontSize:14,color:"#64748b"}}>Votre espace est en cours de configuration</div>
-      </div>
-    </div>
-  );
-
-  if (view==="success") return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
-        <div style={{fontSize:64,marginBottom:16}}>🎉</div>
-        <h2 style={{fontWeight:900,fontSize:24,color:"#0f172a",marginBottom:8}}>Compte créé !</h2>
-        <p style={{color:"#64748b",fontSize:14,marginBottom:16,lineHeight:1.7}}>
-          Essai gratuit 30 jours démarré.<br/>
-          Un email de confirmation a été envoyé à<br/>
-          <strong style={{color:"#1a3a6e"}}>{createdEmail}</strong>
-        </p>
-        {createdEmailReception && (
-          <div style={{background:"#f0f7ff",border:"1px solid #dbeafe",borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",fontSize:13}}>
-            <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:6}}>📋 Vos informations</div>
-            <div style={{color:"#475569",marginBottom:4}}>✉️ Adresse ordonnances :<br/><strong style={{fontFamily:"monospace",fontSize:12}}>{createdEmailReception}</strong></div>
-            <div style={{color:"#475569"}}>💳 Plan : <strong>{createdPlan}</strong> — 30 jours gratuits</div>
-          </div>
-        )}
-        <div style={{background:"#fef9c3",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e",marginBottom:16,textAlign:"left"}}>
-          ⚠️ Cliquez le lien dans l'email pour activer votre compte avant de vous connecter.
-        </div>
-        <button onClick={onBack} style={{width:"100%",padding:14,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>Aller à la connexion →</button>
-      </div>
-    </div>
-  );
-
-  if (view==="checkout") return (
-    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <PersistentNav onBack={onBack} currentPage="checkout" secure/>
-      <div style={{maxWidth:840,margin:"0 auto",padding:"24px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:18}}>
-        <div style={{background:"#fff",borderRadius:16,padding:28,boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
-          {step==="details"&&(
-            <>
-              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
-              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse","text","12 rue..."]].map(([k,l,t,ph])=>(
-                <div key={k} style={{marginBottom:14}}>
-                  <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
-                  <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
-                    style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors[k]?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
-                  {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
-                </div>
-              ))}
-              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
-                style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
-            </>
-          )}
-          {step==="card"&&(
-            <>
-              <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:6,marginTop:0}}>Paiement</h3>
-              <p style={{fontSize:13,color:"#94a3b8",marginBottom:18}}>Débitée uniquement après les 30 jours.</p>
-              <div style={{marginBottom:12}}>
-                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Numéro de carte</label>
-                <input placeholder="1234 5678 9012 3456" value={cardData.number} onChange={e=>setCardData(c=>({...c,number:e.target.value.replace(/\s/g,"").replace(/(.{4})/g,"$1 ").trim().slice(0,19)}))}
-                  style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                {[["expiry","MM/AA"],["cvc","CVC"]].map(([k,ph])=>(
-                  <div key={k}><input placeholder={ph} value={cardData[k]} onChange={e=>setCardData(c=>({...c,[k]:e.target.value}))}
-                    style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"monospace",boxSizing:"border-box"}}/></div>
-                ))}
-              </div>
-              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:9,padding:"9px 12px",marginBottom:16,fontSize:12,color:"#166534"}}>🔒 Données chiffrées par Stripe</div>
-              {createError && (
-                <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
-              )}
-              <button onClick={async ()=>{
-                const e={};
-                if(!form.nom) e.nom="Requis";
-                if(!form.email||!form.email.includes("@")) e.email="Email invalide";
-                if(!form.password||form.password.length<8) e.password="8 caractères minimum";
-                if(!form.pharmacie) e.pharmacie="Requis";
-                if(Object.keys(e).length){setErrors(e);return;}
-                setView("creating");
-                try {
-                  const sb = getSupabaseClient();
-                  // 1. Créer le compte Supabase Auth
-                  const { data: authData, error: authErr } = await sb.auth.signUp({
-                    email: form.email,
-                    password: form.password,
-                    options: { emailRedirectTo: window.location.origin }
-                  });
-                  if (authErr) throw authErr;
-
-                  // 2. Générer slug email réception
-                  const slug = form.pharmacie.toLowerCase()
-                    .normalize("NFD").replace(/[̀-ͯ]/g,"")
-                    .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,20);
-                  const emailReception = slug + "@in.ordomail.fr";
-                  // Code vendeur 6 chiffres unique
-                  const codeVendeur = String(Math.floor(100000 + Math.random() * 900000));
-
-                  // 3. Créer la pharmacie via Edge Function (service_role)
-                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-                  const session = authData?.session;
-                  const token = session?.access_token || "";
-
-                  const regRes = await fetch(`${supabaseUrl}/functions/v1/register-pharmacie`, {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      ...(token ? { "Authorization": `Bearer ${token}` } : {})
-                    },
-                    body: JSON.stringify({
-                      nom: form.nom,
-                      pharmacie: form.pharmacie,
-                      adresse: form.adresse || "",
-                      email: form.email,
-                      plan: checkoutPlan,
-                      emailReception,
-                    }),
-                  });
-
-                  const regData = await regRes.json();
-                  if (!regRes.ok && regRes.status !== 409) {
-                    // 409 = pharmacie déjà créée (email confirmation pending) = OK
-                    throw new Error(regData.error || "Erreur création pharmacie");
-                  }
-
-                  setCreatedEmail(form.email);
-                  setCreatedEmailReception(emailReception);
-                  setCreatedPlan(checkoutPlan);
-                  setView("success");
-                } catch(err) {
-                  setCreateError(err.message || "Erreur lors de la création");
-                  setView("checkout");
-                }
-              }} style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
-                Créer mon compte — essai gratuit 30j →
-              </button>
-            </>
-          )}
-        </div>
-        <div style={{background:"#fff",borderRadius:16,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",alignSelf:"start"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,marginBottom:12}}>RÉCAPITULATIF</div>
-          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #f1f5f9"}}>
-            <div style={{width:36,height:36,borderRadius:9,background:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{plan.icon}</div>
-            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (−20%)":"Mensuel"}</div></div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <PersistentNav onBack={onBack} currentPage="pricing"/>
-      <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
-        <div style={{textAlign:"center",marginBottom:36}}>
-          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
-          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
-          <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
-            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:14,marginBottom:32}}>
-          {PLAN_ORDER.map(pid=>{
-            const p=PLAN_LIMITS[pid]; const pr=billingTab==="annual"?p.priceAnnual:p.price; const isPopular=pid==="standard";
-            return (
-              <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
-                {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>LE PLUS CHOISI</div>}
-                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:20}}>{p.icon}</span><span style={{fontWeight:800,fontSize:17,color:"#0f172a"}}>{p.label}</span></div>
-                <div style={{marginBottom:14}}><span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span></div>
-                <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep("details");setView("checkout");}}
-                  style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
-                  Commencer gratuitement</button>
-                <div style={{fontSize:12,color:"#475569"}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PricingEditor() {
-  const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
-  const [saved,setSaved]=useState(false);
-  function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
-  function save(){plans.forEach(p=>{PLAN_LIMITS[p.id]={...p};});setSaved(true);setTimeout(()=>setSaved(false),3000);}
-  return (
-    <div style={{maxWidth:900,margin:"0 auto"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-        <div><div style={{fontWeight:800,fontSize:20,color:"#fff"}}>Éditeur de pricing</div><div style={{fontSize:13,color:"#64748b",marginTop:2}}>Modifications en temps réel</div></div>
-        <button onClick={save} style={{padding:"10px 24px",border:"none",borderRadius:10,background:saved?"#15803d":"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{saved?"✅ Sauvegardé":"💾 Sauvegarder"}</button>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:24}}>
-        {plans.map(plan=>(
-          <div key={plan.id} style={{background:"#1e293b",borderRadius:14,padding:20,border:`2px solid #334155`}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
-              <input value={plan.icon} onChange={e=>update(plan.id,"icon",e.target.value)} style={{width:34,textAlign:"center",background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:18,padding:"3px 4px",color:"#fff"}}/>
-              <input value={plan.label} onChange={e=>update(plan.id,"label",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,fontSize:15,fontWeight:700,padding:"5px 10px",color:"#fff",fontFamily:"inherit"}}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[["price","Mensuel €"],["priceAnnual","Annuel €"]].map(([field,lbl])=>(
-                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
-                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:plan.color,fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/></div>
-              ))}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[["maxPostes","Postes"],["maxOrdos","Ordo/mois"]].map(([field,lbl])=>(
-                <div key={field}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{lbl}</div>
-                  <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:700,fontSize:13,fontFamily:"monospace",outline:"none"}}/></div>
-              ))}
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="color" value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{width:30,height:30,border:"none",cursor:"pointer",borderRadius:5}}/>
-              <input value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:plan.color,fontWeight:700,fontSize:12,fontFamily:"monospace",outline:"none"}}/>
-              <div style={{width:26,height:26,borderRadius:7,background:plan.color}}/>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,marginBottom:14}}>APERÇU TEMPS RÉEL</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:12}}>
-          {plans.map(plan=>(
-            <div key={plan.id} style={{background:"#fff",borderRadius:10,padding:"14px 12px",border:`2px solid ${plan.color}33`}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}><span style={{fontSize:16}}>{plan.icon}</span><span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>{plan.label}</span></div>
-              <div style={{fontWeight:900,fontSize:22,color:plan.color}}>{plan.price}<span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}> €/mois</span></div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{plan.maxPostes===999?"Illimité":`${plan.maxPostes} postes`}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AdminDashboard({ onLogout }) {
-  return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f0f2f8"}}>
-      <header style={{background:"#0f172a",color:"#fff",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}><span>💊</span><span style={{fontWeight:800}}>OrdoMail Admin</span></div>
-        <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.3)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Déconnexion</button>
-      </header>
-      <div style={{padding:24}}>
-        <div style={{fontWeight:800,fontSize:18,color:"#1a3a6e",marginBottom:16}}>Pharmacies</div>
-        {DB.pharmacies.map(ph=>(
-          <div key={ph.id} style={{background:"#fff",borderRadius:12,padding:"14px 18px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:15}}>{ph.nom}</div>
-              <div style={{fontSize:12,color:"#94a3b8"}}>{ph.email} · Plan {ph.plan}</div>
-            </div>
-            <div style={{fontSize:12,color:"#64748b"}}>{(ph.ordonnances||[]).length} ordonnances</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export { AdminDashboard, AdminDashboardLive, ClientDetail, StoriesContentAdmin,
+export { AdminDashboardLive, ClientDetail, StoriesContentAdmin,
   HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin };
 export default AdminDashboardLive;

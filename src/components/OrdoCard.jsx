@@ -2,15 +2,17 @@
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl } from "../supabase.js";
-import { timeAgo, getOrdoAccent } from "../lib/utils.js";
+import { timeAgo, getOrdoAccent, escapeHtml } from "../lib/utils.js";
 
 
 function generateOrdoPDF(ordo) {
-  const nom = ordo.extracted?.nom || ordo.fromName || "Patient";
-  const cv  = ordo.extracted?.carteVitale || "Non disponible";
-  const med = ordo.extracted?.medecin || "Dr Inconnu";
-  const dat = ordo.extracted?.date || new Date().toLocaleDateString("fr-FR");
-  const meds = (ordo.extracted?.medicaments || []).join(", ") || "—";
+  // ⚠️ nom/cv/med/dat/medicaments proviennent du patient (formulaire non authentifié)
+  // ou de l'OCR — toujours échapper avant interpolation dans du HTML brut (anti-XSS).
+  const nom = escapeHtml(ordo.extracted?.nom || ordo.fromName || "Patient");
+  const cv  = escapeHtml(ordo.extracted?.carteVitale || "Non disponible");
+  const med = escapeHtml(ordo.extracted?.medecin || "Dr Inconnu");
+  const dat = escapeHtml(ordo.extracted?.date || new Date().toLocaleDateString("fr-FR"));
+  const meds = (ordo.extracted?.medicaments || []).map(escapeHtml).join(", ") || "—";
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -61,7 +63,7 @@ function generateOrdoPDF(ordo) {
 </div>
 <div class="meds">
   <div class="meds-label">Médicaments prescrits</div>
-  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${m}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
+  ${(ordo.extracted?.medicaments || []).map(m => `<div class="med-item">▸ ${escapeHtml(m)}</div>`).join("") || '<div class="med-item" style="color:#aaa">Aucun médicament extrait</div>'}
 </div>
 <div class="footer">
   <span>Imprimé le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"})}</span>
@@ -83,7 +85,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive }) {
+function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, interets = [] }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email  = ordo.fromEmail || "";
@@ -160,6 +162,33 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
           }
         </div>
 
+        {/* Intérêts offres du patient — voir OrdoGroup pour le même affichage
+            côté groupe. Absent ici jusqu'au 27/07/2026 : cette carte gère le
+            cas (majoritaire) d'un patient avec une seule ordonnance, jamais
+            câblée avec les intérêts contrairement à OrdoGroup (plusieurs
+            ordonnances) — le badge n'apparaissait donc jamais côté vendeur
+            pour l'immense majorité des patients. */}
+        {interets.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            {interets.map(int => (
+              <div key={int.id} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "7px 12px", marginBottom: 5,
+                background: "#fff8e1", borderRadius: 10,
+                border: "1.5px solid #fde68a",
+              }}>
+                <span style={{ fontSize: 18 }}>{int.offre_emoji || "🎁"}</span>
+                <div>
+                  <div style={{ fontSize: 11, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Intéressé(e)
+                  </div>
+                  <div style={{ fontSize: 12, color: "#78350f", fontWeight: 600 }}>{int.offre_titre}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Miniature ordonnance si dispo */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
           <div style={{ marginBottom: 14, cursor: "pointer" }} onClick={onView}>
@@ -187,7 +216,7 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
-                <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank"); }}
+                <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank", "noopener,noreferrer"); }}
                   title="Voir la fiche ordonnance PDF"
                   style={{ padding: "9px 10px", border: "1.5px solid #c7d2fe", borderRadius: 9, background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                   📄
@@ -231,7 +260,7 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
   );
 }
 
-function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive }) {
+function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive, interets = [] }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -266,6 +295,17 @@ function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, son
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 15, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+          {/* Badge intérêts — voir OrdoCard/OrdoGroup pour le détail complet, pas
+              la place pour ça sur une ligne compacte */}
+          {interets.length > 0 && (
+            <span title={interets.map(i => i.offre_titre).join(', ')} style={{
+              fontSize: 11, fontWeight: 800, padding: "2px 7px", flexShrink: 0,
+              borderRadius: 20, background: "#fef3c7",
+              color: "#92400e", border: "1px solid #fde68a",
+            }}>
+              🎯 {interets.length}
+            </span>
+          )}
         </div>
         {email && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email}</div>}
         <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{timeAgo(ordo.receivedAt)}</div>

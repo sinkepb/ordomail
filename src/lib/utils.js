@@ -1,4 +1,42 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+
+// ─── Échappement HTML (anti-XSS) ──────────────────────────────────────────────
+// À utiliser systématiquement avant d'interpoler une valeur utilisateur/patient
+// (nom, email, médicaments…) dans une chaîne HTML brute (innerHTML, window.open).
+export function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ─── Masquage des logs (données sensibles) ───────────────────────────────────
+// À utiliser dans tout console.log/error/warn qui référence un email, un
+// identifiant de pharmacie ou un code patient — ces logs finissent dans les
+// tableaux de bord d'hébergement (navigateur/Supabase) et ne doivent pas
+// exposer de données personnelles en clair.
+export function maskEmail(email) {
+  if (!email) return email;
+  const s = String(email);
+  const at = s.indexOf("@");
+  if (at <= 0) return "***";
+  return `${s[0]}***@${s.slice(at + 1)}`;
+}
+
+export function maskId(id) {
+  if (!id) return id;
+  const s = String(id);
+  return s.length <= 8 ? "***" : `${s.slice(0, 8)}…`;
+}
+
+export function maskCode(code) {
+  if (!code) return code;
+  const s = String(code);
+  return s.length <= 1 ? "***" : `${s[0]}***`;
+}
 
 // ─── Utilitaires temporels ────────────────────────────────────────────────────
 export function timeAgo(date) {
@@ -19,7 +57,15 @@ export function isSameDay(a, b) {
 
 export function toDateKey(date) {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toISOString().split("T")[0];
+  // ⚠️ Ne pas utiliser toISOString() ici : elle convertit en UTC avant de
+  // formater, donc dans un fuseau en avance sur UTC (ex. Europe l'été), les
+  // premières heures de la journée locale sont encore la veille en UTC — le
+  // calendrier affichait alors "hier" comme date du jour. On construit la clé
+  // à partir des composants de date LOCAUX du navigateur à la place.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function formatDateLabel(key) {
@@ -73,10 +119,14 @@ const useFadeIn = (ref) => {
 export { useFadeIn };
 
 // ─── Plans landing ────────────────────────────────────────────────────────────
+// Mise en avant marketing volontairement limitée à 3 paliers (25/07/2026) — le
+// palier Premium existe toujours côté produit (PLAN_LIMITS, Stripe, éditeur de
+// tarifs backoffice) mais n'est plus affiché sur cette page ; son différenciateur
+// (offres & promotions patient) est désormais porté par le palier Pro.
 const PLANS = [
   { id: "starter",  name: "Starter",  price: 19, icon: "🌱", color: "#0369a1", features: ["2 postes", "200 ordonnances/mois", "QR Code + Email", "Logs & export CSV"] },
   { id: "standard", name: "Standard", price: 39, icon: "⭐", color: C.navy,    features: ["5 postes", "1 000 ordonnances/mois", "SMTP personnalisé", "Support prioritaire"], popular: true },
-  { id: "pro",      name: "Pro",      price: 79, icon: "🏥", color: "#4c1d95", features: ["Postes illimités", "Volume illimité", "Intégration LGO", "SLA 99,9 %"] },
+  { id: "pro",      name: "Pro",      price: 79, icon: "🏥", color: "#4c1d95", features: ["15 postes", "Volume illimité", "Offres & promotions patient", "SLA 99,9 %"] },
 ];
 
 export { PLANS };
