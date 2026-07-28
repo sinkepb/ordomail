@@ -117,6 +117,9 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
   // Toggle intérêt patient pour une offre
   async function toggleInteret(story) {
+    // 🔍 Diagnostic temporaire (27/07/2026) — confirmer si le clic atteint bien
+    // ce point avant de creuser plus loin. À retirer une fois le diagnostic fait.
+    console.log('[DIAG toggleInteret] appelée, story:', story?.id, 'codePatient:', !!codePatient, 'pharmacie:', !!pharmacie?.id);
     const offreId = story.id?.toString().replace('offre-', '');
     const isOn    = !interets[offreId];
 
