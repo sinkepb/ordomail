@@ -65,6 +65,36 @@ const HEALTH_STORIES = [
   },
 ];
 
+// Génère le code email (même algo que sessionCode)
+// Code à 3 chiffres + 1 lettre (insérée à une position aléatoire) utilisé dans
+// l'adresse email dynamique (pharmacie-24K7@in.ordomail.fr) — doit être généré
+// côté client car il est intégré à l'adresse AVANT tout appel serveur.
+// ⚠️ Avant le 24/07/2026, ce code était dérivé de l'heure système (minutes/secondes),
+// donc prévisible par quiconque lisait le code source — remplacé par un tirage
+// cryptographique. La lettre insérée (25/07/2026) élargit l'espace de valeurs
+// (900 → 23 400 combinaisons) sans changer le principe : le format reste une
+// contrainte partagée avec le parsing regex côté send-email/receive-email
+// (voir ces fichiers si ce format doit encore évoluer).
+// Hissée au niveau module (28/07/2026) : PatientStories en a aussi besoin pour
+// afficher les instructions email dans la feuille "Ajouter une ordonnance" sans
+// jamais régénérer le code du patient déjà en cours.
+function generateCode() {
+  const arr = new Uint32Array(3);
+  crypto.getRandomValues(arr);
+  const digits = String(100 + (arr[0] % 900)).padStart(3, "0");
+  const letter = String.fromCharCode(65 + (arr[1] % 26)); // A-Z
+  const pos = arr[2] % 4; // position d'insertion parmi les 4 caractères finaux
+  return digits.slice(0, pos) + letter + digits.slice(pos);
+}
+
+// Construit l'adresse email avec le code patient intégré
+// Format : base@domain → base-247@domain
+// Ex : ph1@in.ordomail.fr → ph1-247@in.ordomail.fr
+function buildEmailAvecCode(baseEmail, code) {
+  const [local, domain] = baseEmail.split("@");
+  return `${local}-${code}@${domain}`;
+}
+
 function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = false }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -192,6 +222,127 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       setInterets(prev => ({ ...prev, [offreId]: !isOn }));
     }
   } // index réponse choisie
+
+  // ─── Ajouter une ordonnance au fil déjà ouvert (28/07/2026) ────────────────
+  // Avant ce correctif, la seule façon d'envoyer une ordonnance supplémentaire
+  // était le bouton "Envoyer une autre ordonnance" en fin de stories, qui
+  // appelait onRestart() → régénérait un NOUVEAU code_patient. Côté vendeur, ça
+  // créait un second groupe au lieu d'alimenter le fil déjà ouvert. Ici on
+  // réutilise toujours le même `codePatient` (jamais de régénération) : le
+  // backend (submit-ordonnance) accepte déjà n'importe quel session_code fourni
+  // par le client sans vérifier qu'il vient d'une réponse serveur précédente —
+  // c'est une étiquette, pas un jeton d'auth — donc le réutiliser ne change pas
+  // le modèle de confiance existant.
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
+  const [addStep, setAddStep]           = useState('choice'); // choice | email | sending | success | error
+  const [addError, setAddError]         = useState('');
+  const [emailCopied, setEmailCopied]   = useState(false);
+  const addFileInputRef = useRef();
+
+  function openAddSheet() {
+    setAddStep('choice');
+    setAddError('');
+    setAddSheetOpen(true);
+    logStoryEvent({ id: 'add-ordonnance', type: 'action' }, 'add_ordonnance_open');
+  }
+  function closeAddSheet() {
+    setAddSheetOpen(false);
+  }
+
+  async function handleAddFiles(selectedFiles) {
+    const arr = Array.from(selectedFiles || []);
+    if (arr.length === 0) return;
+    setAddStep('sending');
+    logStoryEvent({ id: 'add-ordonnance', type: 'action' }, 'add_ordonnance_photo_start', { meta: { count: arr.length } });
+
+    async function readAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = e => resolve(e.target.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    }
+
+    async function sendOne(file) {
+      const dataUrl   = await readAsDataUrl(file);
+      const base64    = dataUrl.split(",")[1] || "";
+      const extracted = await extractFromFile(base64, file.type, { fallbackName: nom || null });
+      const ext       = file.name.split(".").pop().toLowerCase();
+
+      if (isDemoMode) {
+        addOrdonnance(pharmacie.id, {
+          id: `qr-${Date.now()}-${Math.random()}`, fromName: (nom || "Patient").toUpperCase(),
+          subject: "Ordonnance ajoutée depuis les stories", receivedAt: new Date(),
+          status: "nouveau", source: "qrcode",
+          code_patient: codePatient,
+          attachments: [{ name: file.name, type: ext === "pdf" ? "pdf" : "image",
+            size: `${(file.size/1024).toFixed(0)} Ko`, dataUrl }],
+          extracted: extracted || { nom: (nom || "Patient").toUpperCase() },
+        });
+        return;
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const formData = new FormData();
+      formData.append("pharmacie_id", pharmacie.id);
+      formData.append("qr_token", pharmacie.qr_token || "");
+      formData.append("from_name",    (nom || "Patient").toUpperCase());
+      formData.append("patient_nom",  extracted?.nom || (nom || "Patient").toUpperCase());
+      formData.append("patient_cv",   "");
+      formData.append("medecin",      "");
+      formData.append("medicaments",  JSON.stringify([]));
+      formData.append("file",         file, file.name);
+      // Toujours le code déjà ouvert — jamais un nouveau, voir commentaire ci-dessus
+      formData.append("session_code", codePatient);
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {
+        method: "POST", body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erreur ${res.status}`);
+      }
+    }
+
+    try {
+      const results = await Promise.allSettled(arr.map(sendOne));
+      const failed  = results.filter(r => r.status === 'rejected');
+      if (failed.length === arr.length) {
+        throw new Error(failed[0].reason?.message || 'Erreur envoi');
+      }
+      setAddStep('success');
+      logStoryEvent({ id: 'add-ordonnance', type: 'action' }, 'add_ordonnance_photo_success', { meta: { count: arr.length - failed.length } });
+      setTimeout(() => setAddSheetOpen(false), 1800);
+    } catch(e) {
+      console.error('[addOrdonnance]', e.message);
+      setAddError(e.message || 'Erreur lors de l\'envoi');
+      setAddStep('error');
+    }
+  }
+
+  function openAddEmail() {
+    setAddStep('email');
+    logStoryEvent({ id: 'add-ordonnance', type: 'action' }, 'add_ordonnance_email_view');
+  }
+
+  function handleCopyAddEmail() {
+    const baseEmail = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
+    const emailAvecCode = buildEmailAvecCode(baseEmail, codePatient);
+    const doCopy = () => { setEmailCopied(true); setTimeout(() => setEmailCopied(false), 2500); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(emailAvecCode).then(doCopy).catch(() => {
+        const el = document.createElement("textarea");
+        el.value = emailAvecCode; document.body.appendChild(el);
+        el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
+      });
+    } else {
+      const el = document.createElement("textarea");
+      el.value = emailAvecCode; document.body.appendChild(el);
+      el.select(); document.execCommand("copy"); document.body.removeChild(el); doCopy();
+    }
+  }
+
   const [touchStart, setTouchStart] = useState(null);
   const timerRef = useRef(null);
   const DURATION = 6000;
@@ -699,11 +850,155 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         </div>
       )}
 
+      {/* Bouton flottant persistant — ajouter une ordonnance au fil déjà ouvert
+          (contrairement au bouton de fin de stories ci-dessous, qui redémarre
+          tout avec un nouveau code : celui-ci alimente le fil en cours).
+          En bas d'écran, mais affiché seulement à partir de la 2e story
+          (current > 0) : la toute première story est soit "Ordonnance reçue !"
+          soit, en mode email, "email-instructions" — celle-ci a un contenu
+          plus long qui va jusqu'en bas de l'écran et chevauchait ce bouton
+          quand il était affiché dès la 1ère story (constaté en test le
+          28/07/2026). À partir de la 2e story, l'espace en bas est toujours
+          libre. */}
+      {codePatient && !addSheetOpen && current > 0 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); openAddSheet(); }}
+          style={{
+            position: "absolute", right: 16, bottom: 96, zIndex: 25,
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "12px 18px", borderRadius: 28, border: "1.5px solid rgba(255,255,255,0.35)",
+            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(10px)",
+            color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          }}>
+          <span style={{ fontSize: 18 }}>＋</span> Ajouter une ordonnance
+        </button>
+      )}
+
+      {/* Feuille "Ajouter une ordonnance" — overlay + carte bas d'écran */}
+      {addSheetOpen && (
+        <div
+          onClick={(e) => { e.stopPropagation(); if (addStep !== 'sending') closeAddSheet(); }}
+          style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", background: "#1a2340", borderRadius: "22px 22px 0 0",
+              padding: "20px 22px 28px", boxShadow: "0 -8px 30px rgba(0,0,0,0.4)",
+            }}>
+            <div style={{ width: 40, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.25)", margin: "0 auto 18px" }} />
+
+            {addStep === 'choice' && (
+              <>
+                <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 4, textAlign: "center" }}>
+                  Ajouter une ordonnance
+                </div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", marginBottom: 20, textAlign: "center" }}>
+                  Elle sera rattachée à votre code {codePatient}
+                </div>
+                <button onClick={() => addFileInputRef.current?.click()} style={{
+                  width: "100%", padding: "15px 18px", marginBottom: 10, borderRadius: 16,
+                  border: "1.5px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.1)",
+                  color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  📤 Prendre une photo / choisir un fichier
+                </button>
+                <input ref={addFileInputRef} type="file" accept="image/*,.pdf" multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => { handleAddFiles(e.target.files); e.target.value = ''; }} />
+                <button onClick={openAddEmail} style={{
+                  width: "100%", padding: "15px 18px", marginBottom: 14, borderRadius: 16,
+                  border: "1.5px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.1)",
+                  color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  ✉️ Envoyer par email
+                </button>
+                <button onClick={closeAddSheet} style={{
+                  width: "100%", padding: "12px", borderRadius: 14, border: "none",
+                  background: "transparent", color: "rgba(255,255,255,0.5)", fontWeight: 600,
+                  fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  Annuler
+                </button>
+              </>
+            )}
+
+            {addStep === 'email' && (
+              <>
+                <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 16, textAlign: "center" }}>
+                  Envoyer par email
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 14, padding: "14px 18px", marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+                    Adresse à utiliser
+                  </div>
+                  <div style={{ fontSize: 14, color: "#fff", fontFamily: "monospace", wordBreak: "break-all" }}>
+                    {buildEmailAvecCode(pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`, codePatient)}
+                  </div>
+                </div>
+                <button onClick={handleCopyAddEmail} style={{
+                  width: "100%", padding: "15px 18px", marginBottom: 10, borderRadius: 16, border: "none",
+                  background: emailCopied ? "#22c55e" : "#fff", color: emailCopied ? "#fff" : "#1a2340",
+                  fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  {emailCopied ? "✅ Adresse copiée" : "📋 Copier l'adresse"}
+                </button>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center", marginBottom: 14, lineHeight: 1.5 }}>
+                  Joignez votre ordonnance en pièce jointe et envoyez — elle sera automatiquement rattachée à votre dépôt en cours.
+                </div>
+                <button onClick={() => setAddStep('choice')} style={{
+                  width: "100%", padding: "12px", borderRadius: 14, border: "none",
+                  background: "transparent", color: "rgba(255,255,255,0.5)", fontWeight: 600,
+                  fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  ← Retour
+                </button>
+              </>
+            )}
+
+            {addStep === 'sending' && (
+              <div style={{ padding: "24px 0", textAlign: "center" }}>
+                <div style={{ fontSize: 40, marginBottom: 12, animation: "spin 1s linear infinite" }}>📤</div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Ajout en cours…</div>
+              </div>
+            )}
+
+            {addStep === 'success' && (
+              <div style={{ padding: "24px 0", textAlign: "center" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Ordonnance ajoutée</div>
+              </div>
+            )}
+
+            {addStep === 'error' && (
+              <div style={{ padding: "10px 0", textAlign: "center" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Échec de l'envoi</div>
+                <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, marginBottom: 18 }}>{addError}</div>
+                <button onClick={() => setAddStep('choice')} style={{
+                  width: "100%", padding: "13px", borderRadius: 14, border: "none",
+                  background: "#fff", color: "#1a2340", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  Réessayer
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {current === allStories.length - 1 && progress > 80 && (
         <div style={{ padding: "0 24px 32px", zIndex: 10 }}>
           <button onClick={onRestart}
             style={{ width: "100%", padding: "14px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-            Envoyer une autre ordonnance
+            Terminer et repartir de zéro
           </button>
         </div>
       )}
@@ -757,33 +1052,6 @@ function PatientPage({ pharmacie, onBack }) {
 
   function removeFile(idx) {
     setFiles(prev => prev.filter((_, i) => i !== idx));
-  }
-
-  // Génère le code email (même algo que sessionCode)
-  // Code à 3 chiffres + 1 lettre (insérée à une position aléatoire) utilisé dans
-  // l'adresse email dynamique (pharmacie-24K7@in.ordomail.fr) — doit être généré
-  // côté client car il est intégré à l'adresse AVANT tout appel serveur.
-  // ⚠️ Avant le 24/07/2026, ce code était dérivé de l'heure système (minutes/secondes),
-  // donc prévisible par quiconque lisait le code source — remplacé par un tirage
-  // cryptographique. La lettre insérée (25/07/2026) élargit l'espace de valeurs
-  // (900 → 23 400 combinaisons) sans changer le principe : le format reste une
-  // contrainte partagée avec le parsing regex côté send-email/receive-email
-  // (voir ces fichiers si ce format doit encore évoluer).
-  function generateCode() {
-    const arr = new Uint32Array(3);
-    crypto.getRandomValues(arr);
-    const digits = String(100 + (arr[0] % 900)).padStart(3, "0");
-    const letter = String.fromCharCode(65 + (arr[1] % 26)); // A-Z
-    const pos = arr[2] % 4; // position d'insertion parmi les 4 caractères finaux
-    return digits.slice(0, pos) + letter + digits.slice(pos);
-  }
-
-  // Construit l'adresse email avec le code patient intégré
-  // Format : base@domain → base-247@domain
-  // Ex : ph1@in.ordomail.fr → ph1-247@in.ordomail.fr
-  function buildEmailAvecCode(baseEmail, code) {
-    const [local, domain] = baseEmail.split("@");
-    return `${local}-${code}@${domain}`;
   }
 
   function handleCopyEmail() {
