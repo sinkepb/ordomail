@@ -1,12 +1,22 @@
 # OrdoMail — Checklist de déploiement
 
-Dernière vérification live complète : **27/07/2026** (via `supabase db advisors --linked`,
+Dernière vérification live complète : **28/07/2026** (via `supabase db advisors --linked`,
 requêtes SQL directes et tests RLS live contre le projet lié `hdgpkgaznsaocczxvaix`). Ce
 document est la référence unique pour mettre en production ou auditer l'état actuel — les
 fichiers `DEPLOIEMENT_PHASE1.md` / `PHASE2.md` / `PHASE3_STRIPE.md` restent en contexte
 historique.
 
-## Historique — `offre_interets` (résolu le 27/07/2026)
+**28/07/2026 — `develop` fusionné et poussé sur `main`** (commit `4929a0b`, 35 commits),
+déclenchant le déploiement de production sur ordomail.fr. Contenu notable : tout le
+correctif `offre_interets` ci-dessous, plus un 4ᵉ bug trouvé après coup — la nouvelle edge
+function `toggle-interet` renvoyait un CORS `Access-Control-Allow-Headers` sans `apikey`
+(copié du pattern `submit-ordonnance`, qui envoie du FormData sans ce header), bloquant
+silencieusement le préflight sur le preview `develop`. Corrigé et redéployé, confirmé par
+l'utilisateur ("ça marche"). Aucun conflit lors de la fusion (les 5 commits présents
+uniquement sur `main` étaient d'anciens fix de build sur `OrdoCard.jsx` du 16/07/2026, déjà
+réconciliés avec `develop` à l'époque).
+
+## Historique — `offre_interets` (résolu le 27–28/07/2026)
 
 Trois bugs distincts, tous liés au marquage/retrait d'intérêt patient pour une offre,
 trouvés et corrigés en cascade le même jour en testant en direct contre le preview
@@ -178,3 +188,95 @@ functions). À respecter pour tout nouveau log touchant ces données.
 - [ ] Tester le paiement Stripe en mode test avant de basculer les clés live
 - [ ] Vérifier Sentry reçoit bien un événement si `VITE_SENTRY_DSN` est configuré
 - [ ] Confirmer le job pg_cron `snapshot-metriques` s'exécute (log `[snapshot] N pharmacies à traiter`)
+
+---
+
+## 7. Dette technique restante (état au 28/07/2026)
+
+Résolus depuis la dernière passe (confirmé par l'utilisateur, non re-audité en détail
+côté code) :
+- ~~Bug sonnette côté patient~~ (vendeur voit la confirmation, patient ne recevait rien).
+- ~~Vérification du déploiement production post-merge~~ (build/`APP_URL`/section 6).
+
+Par priorité décroissante :
+
+1. **`schema.sql` — dump réel** (tâche restée en attente) : la version actuelle est une
+   reconstruction manuelle, pas un `pg_dump`/export natif — probablement bloqué par les
+   permissions du projet Supabase hébergé, à retenter ou à documenter comme définitivement
+   impossible sans accès direct à la base.
+2. **Anomalie UPDATE anon silencieuse** (`offre_interets`, cause jamais élucidée malgré
+   investigation approfondie — voir commentaire dans `toggle-interet/index.ts`) :
+   contournée architecturalement, mais mériterait un ticket support Supabase si le même
+   symptôme réapparaît ailleurs (autre table, autre écriture anon).
+3. **Durcissements mineurs restés "connus et acceptés"** (section 4) : activer la
+   protection mots de passe compromis (HaveIBeenPwned) dans Supabase Auth, déplacer
+   l'extension `pg_net` hors du schéma `public` si elle devient utilisée, et traiter les
+   avertissements de performance RLS (`auth_rls_initplan`, policies multiples permissives
+   sur `offres_stories`) — aucun n'est un risque de sécurité actif.
+4. **CSP `vercel.live`** — décision utilisateur du 28/07 : laissé bloqué (widget de preview
+   Vercel uniquement, aucun impact utilisateur final). À revisiter seulement si l'équipe
+   veut utiliser le feedback widget en preview.
+
+---
+
+## 8. Prochaines évolutions produit (état au 28/07/2026)
+
+Distinct de la section 7 (dette technique) : évolutions volontaires pour augmenter la
+sécurité/qualité perçue et la valeur commerciale. Constaté par lecture directe du code —
+aucun de ces points n'est amorcé actuellement.
+
+### A. Sécurité
+
+1. **MFA/2FA pour les comptes titulaire et admin** — aucune trace de TOTP/OTP dans le
+   code (`grep` négatif sur `otp|totp|mfa`). Ce sont les comptes qui voient l'intégralité
+   des ordonnances d'une pharmacie (données de santé) : cible de choix en cas de fuite de
+   mot de passe, et argument de vente rassurant pour les pharmaciens.
+2. **Politique de rétention/purge des ordonnances** — aucune suppression automatique après
+   un délai constatée ; à documenter/implémenter pour la conformité RGPD données de santé
+   (durée de conservation définie, purge ou archivage après échéance).
+3. **Alerting actif sur erreurs edge functions en prod** — Sentry est scaffoldé mais
+   passif (capture uniquement) ; pas de règle d'alerte (email/Slack) sur pic d'erreurs ou
+   sur l'edge function `stripe-webhook` en échec (facturation).
+4. **Audit de sécurité externe (pentest)** avant d'élargir la base de clientèle — la
+   sensibilité des données (ordonnances) justifie une revue indépendante au-delà de
+   l'auto-audit déjà mené.
+
+### B. Qualité / fiabilité
+
+1. **Notifications push navigateur (PWA + service worker)** — aucun `manifest.json` ni
+   service worker dans `public/` : aujourd'hui, un vendeur qui n'a pas l'onglet Dashboard
+   ouvert ne sait pas qu'une ordonnance vient d'arriver (dépendance à 100% du Realtime en
+   onglet actif). C'est aussi la fondation technique du point C.1 ci-dessous.
+2. **Vrais tests de charge outillés** (k6/Artillery) — la charge supportée a été
+   *évaluée* (tâche #45) mais pas mesurée avec un outil de charge réel simulant un pic
+   (ex. lundi matin en pharmacie).
+3. **Vérifier/documenter la politique de backup Supabase** (PITR actif ? fréquence ?) et
+   tester une restauration à blanc — aucune trace de procédure de restauration testée.
+4. **Dashboard de monitoring interne** (taux d'échec OCR, latence edge functions, postes
+   inactifs) au-delà de Sentry, pour détecter une dégradation avant que le client ne la
+   signale.
+
+### C. Fonctionnalités à valeur ajoutée
+
+1. **Alerte nouvelle ordonnance (push/SMS/email) au vendeur/titulaire** — s'appuie sur B.1 ;
+   réduit le risque de rater une ordonnance urgente, argument commercial direct.
+2. **Gestion multi-officine / groupement** — le schéma actuel (`pharmacies`, pas de
+   `groupe_id`/notion de chaîne) ne permet pas à un titulaire de piloter plusieurs
+   officines depuis un seul compte ; pertinent si la cible inclut des groupements.
+3. **Application réelle des quotas par plan** — les plans Stripe (starter/standard/pro)
+   existent et sont facturés différemment, mais aucun quota d'usage (ordonnances/mois,
+   nombre de postes, stories actives) n'est appliqué côté code : rien n'incite
+   aujourd'hui un client `starter` à upgrader.
+4. **Intégration LGO (logiciel de gestion officinale)** — export normalisé ou connecteur
+   vers un logiciel métier existant (ex. Winpharma, LGPI) pour éviter la ressaisie ;
+   probablement le levier d'adoption le plus fort pour un usage quotidien en pharmacie.
+5. **Historique patient enrichi côté vendeur** — les dépôts sont traités au jour le jour ;
+   relier les dépôts successifs d'un même `code_patient` donnerait un historique utile au
+   vendeur (fidélisation, suivi).
+6. **Notification proactive au patient sur l'offre qui l'intéresse** — `offre_interets`
+   enregistre l'intérêt mais ne notifie jamais le patient (ex: offre bientôt expirée,
+   disponible en caisse) ; complète le mécanisme stories déjà en place.
+7. **Reporting analytics avancé pour le titulaire** — export PDF/comparatif entre postes
+   et sur plusieurs mois, en s'appuyant sur les données déjà collectées
+   (`story_metrics`, `metriques_journalieres`) mais non exploitées au-delà du dashboard
+   temps réel actuel.
