@@ -73,13 +73,14 @@ une lecture anon large sur la table pour fonctionner.
 ```bash
 supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
   ORDOMAIL_JWT_SECRET=... STRIPE_SECRET_KEY=... STRIPE_WEBHOOK_SECRET=... \
-  APP_URL=https://ordomail.fr SNAPSHOT_CRON_SECRET=...
+  APP_URL=https://ordomail.fr SNAPSHOT_CRON_SECRET=... ALERT_WEBHOOK_URL=...
 ```
 
 - [ ] `ORDOMAIL_JWT_SECRET` — secret HMAC partagé (verify-pin, verify-admin, secure-data)
 - [ ] `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` — voir `DEPLOIEMENT_PHASE3_STRIPE.md` pour la création des Price par `lookup_key`
 - [ ] `SNAPSHOT_CRON_SECRET` — partagé avec le job pg_cron qui appelle `snapshot-metriques`
 - [ ] `APP_URL` — utilisé pour l'allowlist CORS (`_shared/cors.ts`) ET les URLs de retour Stripe Checkout — **doit matcher le domaine de production exact**
+- [ ] `ALERT_WEBHOOK_URL` — **optionnel** (07/08/2026), webhook entrant Slack/Discord/Teams pour une notification immédiate sur les alertes critiques (`_shared/alert.ts`). Sans lui, les alertes restent visibles dans le panneau Monitoring du backoffice (table `alerts`), juste sans push immédiat.
 
 Déployer chaque fonction modifiée :
 ```bash
@@ -114,6 +115,7 @@ du dashboard, jamais via la CLI) — statut ci-dessous vérifié **en direct** l
 | `20260725_temps_traitement.sql` | ✅ Appliquée |
 | `20260726_pharmacie_stories_selection.sql` | ✅ Appliquée |
 | `20260726_live_advisor_fixes.sql` | ✅ Appliquée (correctifs ci-dessous) |
+| `20260807_alerts_monitoring.sql` | ⬜ À appliquer — table `alerts` (monitoring/alerting edge functions, aucun accès anon/authenticated, voir section 8) |
 
 Sur un nouveau projet Supabase (from scratch), exécuter tous ces fichiers **dans l'ordre
 chronologique** de leur préfixe de date depuis le SQL Editor, avant `schema.sql` (référence
@@ -219,27 +221,47 @@ Par priorité décroissante :
 
 ---
 
-## 8. Prochaines évolutions produit (état au 28/07/2026)
+## 8. Prochaines évolutions produit (état au 28/07/2026, mis à jour le 07/08/2026)
 
 Distinct de la section 7 (dette technique) : évolutions volontaires pour augmenter la
-sécurité/qualité perçue et la valeur commerciale. Constaté par lecture directe du code —
-aucun de ces points n'est amorcé actuellement.
+sécurité/qualité perçue et la valeur commerciale.
 
-### A. Sécurité
+### Résolu le 07/08/2026 — MFA, alerting, monitoring interne
 
-1. **MFA/2FA pour les comptes titulaire et admin** — aucune trace de TOTP/OTP dans le
-   code (`grep` négatif sur `otp|totp|mfa`). Ce sont les comptes qui voient l'intégralité
-   des ordonnances d'une pharmacie (données de santé) : cible de choix en cas de fuite de
-   mot de passe, et argument de vente rassurant pour les pharmaciens.
-2. **Politique de rétention/purge des ordonnances** — aucune suppression automatique après
+- **A.1 MFA/2FA titulaire** : implémenté via l'API native Supabase Auth (`auth.mfa.*`,
+  TOTP) — enrôlement dans [CompteSection.jsx](src/components/CompteSection.jsx) (QR code
+  + confirmation), challenge AAL2 obligatoire à la connexion dans
+  [LoginPage.jsx](src/pages/LoginPage.jsx) si un facteur est activé. Non disponible en
+  mode démo (pas de vraie session Supabase Auth à enrôler) ; non proposé au vendeur (PIN,
+  poste partagé) ni encore au backoffice admin (`ordomail_admins`, hors Supabase Auth —
+  nécessiterait une implémentation TOTP séparée si souhaitée).
+- **A.3 Alerting actif** : nouveau helper [`_shared/alert.ts`](supabase/functions/_shared/alert.ts)
+  branché sur `stripe-webhook` (signature invalide, échec de traitement d'événement),
+  `submit-ordonnance` (échec de dépôt) et `snapshot-metriques` (échecs partiels/totaux du
+  cron). Persiste dans la nouvelle table `alerts` et pousse en plus une notification
+  immédiate vers `ALERT_WEBHOOK_URL` (webhook entrant Slack/Discord/Teams) pour les
+  alertes critiques — secret optionnel, tout fonctionne sans lui via le panneau
+  Monitoring.
+- **B.4 Dashboard de monitoring interne** : nouvel onglet **🔔 Monitoring** dans le
+  backoffice OrdoMail Business ([MonitoringPanel.jsx](src/components/MonitoringPanel.jsx))
+  — liste des alertes, sévérité, résolution. Actualisation par sondage court (20s), pas un
+  abonnement Realtime : la table `alerts` n'accorde délibérément aucun accès direct à
+  anon/authenticated (lecture uniquement via `secure-data`, jeton admin vérifié), pour ne
+  pas exposer les alertes de sécurité à quiconque détient la clé anon publique.
+
+### A. Sécurité — restant
+
+1. **Politique de rétention/purge des ordonnances** — aucune suppression automatique après
    un délai constatée ; à documenter/implémenter pour la conformité RGPD données de santé
    (durée de conservation définie, purge ou archivage après échéance).
-3. **Alerting actif sur erreurs edge functions en prod** — Sentry est scaffoldé mais
-   passif (capture uniquement) ; pas de règle d'alerte (email/Slack) sur pic d'erreurs ou
-   sur l'edge function `stripe-webhook` en échec (facturation).
-4. **Audit de sécurité externe (pentest)** avant d'élargir la base de clientèle — la
+2. **Audit de sécurité externe (pentest)** avant d'élargir la base de clientèle — la
    sensibilité des données (ordonnances) justifie une revue indépendante au-delà de
-   l'auto-audit déjà mené.
+   l'auto-audit déjà mené. Pas codable — prestataire externe à mandater, idéalement après
+   la migration HDS (section 9) pour ne pas auditer une infra bientôt abandonnée.
+3. **DPO / registre des traitements (RGPD art. 30)** — désignation d'un DPO : décision
+   organisationnelle, hors périmètre technique. Un brouillon de registre des traitements
+   (même format que les pages légales — champs à compléter, à valider) peut être rédigé
+   sur demande.
 
 ### B. Qualité / fiabilité
 
@@ -252,9 +274,6 @@ aucun de ces points n'est amorcé actuellement.
    (ex. lundi matin en pharmacie).
 3. **Vérifier/documenter la politique de backup Supabase** (PITR actif ? fréquence ?) et
    tester une restauration à blanc — aucune trace de procédure de restauration testée.
-4. **Dashboard de monitoring interne** (taux d'échec OCR, latence edge functions, postes
-   inactifs) au-delà de Sentry, pour détecter une dégradation avant que le client ne la
-   signale.
 
 ### C. Fonctionnalités à valeur ajoutée
 

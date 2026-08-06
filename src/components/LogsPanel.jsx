@@ -23,11 +23,11 @@ function LogsPanel({ pharmacieId, onClose }) {
         ):(
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr style={{borderBottom:"2px solid #f0f0f0"}}>
-              {["Heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
+              {["Date & heure","Utilisateur","Rôle","Action","ID Ordonnance"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>{logs.map(l=>(
               <tr key={l.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                <td style={{padding:"8px 10px",color:"#64748b"}}>{new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
+                <td style={{padding:"8px 10px",color:"#64748b",whiteSpace:"nowrap"}}>{new Date(l.ts).toLocaleDateString("fr-FR")} {new Date(l.ts).toLocaleTimeString("fr-FR")}</td>
                 <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11}}>{l.userId}</td>
                 <td style={{padding:"8px 10px"}}><span style={{fontSize:10,fontWeight:700,background:l.userRole==="admin"?"#dbeafe":"#dcfce7",color:l.userRole==="admin"?"#1d4ed8":"#15803d",padding:"2px 7px",borderRadius:20}}>{l.userRole}</span></td>
                 <td style={{padding:"8px 10px",fontWeight:600}}>{actionLabel[l.action]||l.action}</td>

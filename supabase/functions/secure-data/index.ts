@@ -364,6 +364,37 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    if (resource === "admin_alerts") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      // Panneau Monitoring backoffice — voir _shared/alert.ts pour qui écrit ici.
+      let q = sb.from("alerts").select("*");
+      if (!params?.includeResolved) q = q.eq("resolved", false);
+      q = q.order("created_at", { ascending: false }).limit(params?.limit || 200);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_alerts_resolve") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { alertId } = params || {};
+      if (!alertId) {
+        return new Response(JSON.stringify({ error: "alertId requis" }),
+          { status: 400, headers: CORS });
+      }
+      const { error } = await sb.from("alerts")
+        .update({ resolved: true, resolved_at: new Date().toISOString() })
+        .eq("id", alertId);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 

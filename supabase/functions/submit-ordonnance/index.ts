@@ -11,6 +11,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode, validateFile } from "../_shared/upload-validation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 const MAX_SUBMISSIONS_PER_WINDOW = 20;
 const WINDOW_MINUTES = 10;
@@ -118,6 +119,18 @@ serve(async (req) => {
     );
 
   } catch(e) {
+    // Chemin critique patient : un échec ici veut dire qu'un patient n'a pas pu
+    // déposer son ordonnance sans le savoir forcément (erreur générique côté UI).
+    // Client d'alerte séparé — `sb` (créé plus haut dans le bloc try) peut ne pas
+    // être en portée si l'exception survient avant sa création.
+    const alertClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    await reportAlert(alertClient, {
+      source: "submit-ordonnance", severity: "critical",
+      message: `Échec dépôt ordonnance — ${e.message}`,
+    });
     return new Response(
       JSON.stringify({ error: e.message }),
       { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }

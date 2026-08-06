@@ -1,7 +1,7 @@
 // @version 16/07/2026 15:54 — register-form
 import { useState } from "react";
 import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
-  getSupabaseClient, isDemoMode } from "../supabase.js";
+  getSupabaseClient, isDemoMode, addAuditLog } from "../supabase.js";
 import { Btn, Input } from "../components/ui.jsx";
 
 console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
@@ -42,6 +42,62 @@ function LoginTabContent({ onLogin }) {
   const [showReset, setShowReset] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+
+  // ─── MFA (double authentification titulaire) — 07/08/2026 ────────────────
+  // authSignInEmail() (Supabase Auth signInWithPassword) réussit et pose une
+  // session même quand un facteur MFA est enrôlé — Supabase ne bloque pas le
+  // mot de passe seul, c'est à l'app de vérifier le niveau d'assurance
+  // (AAL) et de retenir l'accès tant que le code à 6 chiffres n'est pas
+  // vérifié. Voir CompteSection.jsx pour l'enrôlement.
+  const [mfaPending, setMfaPending] = useState(null); // résultat de authSignInEmail en attente
+  const [mfaFactorId, setMfaFactorId] = useState(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaError, setMfaError] = useState("");
+  const [mfaLoading, setMfaLoading] = useState(false);
+
+  async function finishEmailLogin(result) {
+    // Mode démo : pas de session Supabase Auth réelle (getSupabaseClient()
+    // renvoie null), et MFA n'est jamais proposé à l'enrôlement en démo
+    // (voir CompteSection.jsx) — rien à vérifier.
+    if (isDemoMode) {
+      onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
+      return;
+    }
+    const sb = getSupabaseClient();
+    const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.nextLevel === "aal2" && aal.nextLevel !== aal.currentLevel) {
+      const { data: factors } = await sb.auth.mfa.listFactors();
+      const factor = factors?.totp?.find(f => f.status === "verified");
+      if (factor) {
+        setMfaFactorId(factor.id);
+        setMfaPending(result);
+        setEmailLoading(false);
+        return;
+      }
+    }
+    onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
+  }
+
+  async function submitMfaCode() {
+    if (mfaCode.length !== 6) return;
+    setMfaLoading(true); setMfaError("");
+    try {
+      const sb = getSupabaseClient();
+      const { data: challenge, error: chErr } = await sb.auth.mfa.challenge({ factorId: mfaFactorId });
+      if (chErr) { setMfaError(chErr.message); setMfaLoading(false); return; }
+      const { error: verErr } = await sb.auth.mfa.verify({ factorId: mfaFactorId, challengeId: challenge.id, code: mfaCode });
+      if (verErr) { setMfaError("Code incorrect"); setMfaLoading(false); return; }
+      onLogin({role:"pharmacie", pharmacieId:mfaPending.pharmacie.id, userRole:mfaPending.userRole||"admin", userId:mfaPending.userId});
+    } catch(e) {
+      setMfaError(e.message);
+    }
+    setMfaLoading(false);
+  }
+
+  function cancelMfa() {
+    getSupabaseClient().auth.signOut().catch(()=>{});
+    setMfaPending(null); setMfaFactorId(null); setMfaCode(""); setMfaError("");
+  }
 
   async function handlePSCLogin() {
     setPscLoading(true);
@@ -334,11 +390,24 @@ function LoginTabContent({ onLogin }) {
               setEmailError("Email ou mot de passe incorrect");
               setEmailLoading(false); return;
             }
-            onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
+            finishEmailLogin(result);
           });
         }} disabled={emailLoading||!email||!password} style={{width:"100%",justifyContent:"center"}}>
           {emailLoading?"Connexion en cours…":"→ Se connecter"}
         </Btn>
+        {mfaPending && (
+          <div style={{marginTop:12,padding:"14px 16px",background:"#f0f4ff",border:"1px solid #c7d2fe",borderRadius:10}}>
+            <div style={{fontSize:12,color:"#374151",fontWeight:600,marginBottom:8}}>🛡️ Code de vérification (double authentification)</div>
+            <Input label="Code à 6 chiffres" value={mfaCode} onChange={v=>setMfaCode(v.replace(/\D/g,"").slice(0,6))} placeholder="123456" icon="🔢"/>
+            {mfaError && <div style={{color:"#dc2626",fontSize:12,marginBottom:8,padding:"6px 10px",background:"#fee2e2",borderRadius:7}}>⚠️ {mfaError}</div>}
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={submitMfaCode} disabled={mfaLoading||mfaCode.length!==6} style={{flex:1,justifyContent:"center"}}>
+                {mfaLoading?"Vérification…":"Valider"}
+              </Btn>
+              <Btn variant="secondary" onClick={cancelMfa} disabled={mfaLoading}>Annuler</Btn>
+            </div>
+          </div>
+        )}
         {isDemoMode && (
           <div style={{marginTop:8,fontSize:11,color:"#aaa",lineHeight:1.8,textAlign:"center"}}>
             Démo : <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>contact@pharmaciecentrale.fr</code> / <code style={{background:"#f0f0f0",padding:"1px 5px",borderRadius:3}}>demo123</code>
@@ -432,6 +501,14 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
 
   if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
+  // Journal d'activité (07/08/2026) : login/logout n'étaient jamais tracés malgré
+  // leurs libellés déjà prévus dans LogsPanel.jsx (actionLabel.login/logout) —
+  // seuls view/print/reopen (Dashboard.jsx) écrivaient réellement dans audit_logs.
+  async function handleLogout() {
+    addAuditLog({ userId:session?.userId, userRole:session?.userRole, pharmacieId:session?.pharmacieId, action:"logout", posteNom:session?.posteNom }).catch(()=>{});
+    await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.();
+  }
+
   // Note : toute connexion pharmacie (titulaire ou vendeur) produit une session avec
   // role:"pharmacie" — seul session.userRole distingue "admin" (titulaire) de "vendeur"
   // (voir les boutons/badges ci-dessous). Le backoffice OrdoMail Business est un flux
@@ -447,14 +524,17 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
             {session.userRole==="vendeur"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.7)",padding:"2px 8px",borderRadius:12}}>🖥️ {session.posteNom||"Vendeur"}</span>}
             {session.userRole==="admin"&&<button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",padding:"4px 11px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>💳</button>}
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
+            <button onClick={handleLogout} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
           </div>
         </div>
-        <DashboardComponent pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <DashboardComponent pharmacieId={session.pharmacieId} onLogout={handleLogout} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }
-  return <LoginPage onLogin={s=>setSession(s)} onBack={onBack}/>;
+  return <LoginPage onLogin={s=>{
+    addAuditLog({ userId:s.userId, userRole:s.userRole, pharmacieId:s.pharmacieId, action:"login", posteNom:s.posteNom }).catch(()=>{});
+    setSession(s);
+  }} onBack={onBack}/>;
 }
 
 function ResetPasswordPage({ onDone }) {
