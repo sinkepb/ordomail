@@ -91,7 +91,7 @@ function ViewerModal({ att, onClose }) {
   );
 }
 
-function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
+function PrintConfirmModal({ ordo, couleur, onConfirm }) {
   const nom    = ordo.extracted?.nom || ordo.fromName;
   const email  = ordo.fromEmail || "";
   const medecin = ordo.extracted?.medecin || "";

@@ -1,22 +1,30 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 import {
   fetchPharmaciePublic,
   isDemoMode, registerDB, getSupabaseClient,
   getCurrentSession,
 } from "./supabase.js";
 import { reportError } from "./lib/monitoring.js";
-import { LandingPage } from "./pages/LandingPage.jsx";
-import { AppLogin, ResetPasswordPage } from "./pages/LoginPage.jsx";
-import { PatientPage } from "./pages/PatientPage.jsx";
-import { LegalPage } from "./pages/LegalPage.jsx";
+// Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
+// ne doit pas télécharger le dashboard vendeur, le backoffice admin et Stripe
+// Checkout rien que pour déposer une ordonnance. Chaque route devient son
+// propre chunk ; <Suspense> plus bas affiche le même spinner que le chargement
+// de session pendant le téléchargement (quasi instantané une fois en cache).
+const LandingPage      = lazy(() => import("./pages/LandingPage.jsx").then(m => ({ default: m.LandingPage })));
+const AppLogin         = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.AppLogin })));
+const ResetPasswordPage = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.ResetPasswordPage })));
+const PatientPage      = lazy(() => import("./pages/PatientPage.jsx").then(m => ({ default: m.PatientPage })));
+const LegalPage        = lazy(() => import("./pages/LegalPage.jsx").then(m => ({ default: m.LegalPage })));
 // Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
 // (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
 // lui-même, pas besoin de les réimporter ici (même remarque que pour AdminPage.jsx).
-import { PharmacieDashboard } from "./pages/Dashboard.jsx";
+const PharmacieDashboard = lazy(() => import("./pages/Dashboard.jsx").then(m => ({ default: m.PharmacieDashboard })));
 // Seuls BillingModule et BackofficeAdmin sont utilisés ici — les autres exports de
 // AdminPage.jsx (AdminDashboardLive, ClientDetail, ContratEditor…) sont consommés en
-// interne par BackofficeAdmin lui-même, pas besoin de les réimporter ici.
-import { BillingModule, BackofficeAdmin } from "./pages/AdminPage.jsx";
+// interne par BackofficeAdmin lui-même, pas besoin de les réimporter ici. Les deux
+// pointent vers le même module — un seul chunk, dédupliqué par le cache d'import.
+const BillingModule    = lazy(() => import("./pages/AdminPage.jsx").then(m => ({ default: m.BillingModule })));
+const BackofficeAdmin  = lazy(() => import("./pages/AdminPage.jsx").then(m => ({ default: m.BackofficeAdmin })));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ORDOMAIL — App.jsx (Routeur principal)
@@ -254,23 +262,31 @@ function AppInner() {
 
   function goToCheckout(planId, billing) { setCheckoutPlan(planId||"standard"); setCheckoutBilling(billing||"monthly"); setRoute("checkout"); }
 
+  if (sessionLoading) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:42,marginBottom:12,animation:"spin 1s linear infinite"}}>💊</div>
+        <div style={{fontWeight:700,color:"#1a3a6e",fontSize:14}}>Chargement OrdoMail…</div>
+      </div>
+    </div>
+  );
+
   return (
-    <>
+    <Suspense fallback={
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:42,marginBottom:12,animation:"spin 1s linear infinite"}}>💊</div>
+          <div style={{fontWeight:700,color:"#1a3a6e",fontSize:14}}>Chargement OrdoMail…</div>
+        </div>
+      </div>
+    }>
       {route==="reset-password"&&(
         <ResetPasswordPage onDone={()=>{window.history.replaceState({},"",window.location.pathname);setRoute("landing");}}/>
       )}
       {route==="patient"&&patientPharmacieQR&&(
         <PatientPage pharmacie={patientPharmacieQR} onBack={()=>{ window.history.replaceState({},"",window.location.pathname); setRoute("landing"); setPatientPharmacieQR(null); }}/>
       )}
-      {sessionLoading && (
-        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:42,marginBottom:12,animation:"spin 1s linear infinite"}}>💊</div>
-            <div style={{fontWeight:700,color:"#1a3a6e",fontSize:14}}>Chargement OrdoMail…</div>
-          </div>
-        </div>
-      )}
-      {!sessionLoading && route==="landing"&&(
+      {route==="landing"&&(
         <LandingPage onGoToPricing={()=>setRoute("pricing")} onGoToApp={()=>setRoute("dashboard")} onGoToCheckout={goToCheckout} onGoToAdmin={()=>setRoute("backoffice")} onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>
       )}
       {route==="legal"&&<LegalPage doc={legalDoc} onBack={()=>setRoute("landing")}/>}
@@ -284,7 +300,7 @@ function AppInner() {
           DashboardComponent={PharmacieDashboard}
           PatientComponent={PatientPage}
         />}
-    </>
+    </Suspense>
   );
 }
 

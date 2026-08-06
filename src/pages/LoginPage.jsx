@@ -32,11 +32,9 @@ function LoginTabContent({ onLogin }) {
   const [code, setCode] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
-  const [codePharmacien, setCodePharmacien] = useState(""); // code 6 chiffres
   const [codeError, setCodeError] = useState("");
   const [codeLoading, setCodeLoading] = useState(false);
   const [pharmacieInfo, setPharmacieInfo] = useState(null); // pharmacie trouvée
-  const [showFallback, setShowFallback] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -54,34 +52,6 @@ function LoginTabContent({ onLogin }) {
       pscUser: result.pscUser || { prenom:"Marie", nom:"DUPONT", organisation:result.pharmacie.nom }
     });
     setPscLoading(false);
-  }
-
-  // Étape 1 : valider le code pharmacie 6 chiffres
-  async function handleCodePharmacien(code) {
-    if (code.length !== 6) return;
-    setCodeLoading(true); setCodeError("");
-    try {
-      if (isDemoMode) {
-        const db = window._ordomailDB || { pharmacies: [] };
-        const ph = db.pharmacies?.find(p => p.codeVendeur === code);
-        if (!ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
-        setPharmacieInfo(ph);
-        setMode("pin-code");
-      } else {
-        const sb = getSupabaseClient();
-        const { data: ph, error } = await sb
-          .from("pharmacies")
-          .select("id, nom, couleur, code_vendeur")
-          .eq("code_vendeur", code)
-          .maybeSingle();
-        if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
-        setPharmacieInfo(ph);
-        setMode("pin");
-      }
-    } catch(e) {
-      setCodeError("Erreur de connexion");
-    }
-    setCodeLoading(false);
   }
 
   async function handleCodePharmacieSubmit() {
@@ -103,7 +73,7 @@ function LoginTabContent({ onLogin }) {
         if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
         setPharmacieInfo(ph);
       }
-    } catch(e) { setCodeError("Erreur de connexion"); }
+    } catch { setCodeError("Erreur de connexion"); }
     setCodeLoading(false);
   }
 
@@ -164,7 +134,7 @@ function LoginTabContent({ onLogin }) {
                     if (error || !ph) { setCodeError("Code pharmacie introuvable"); setCodeLoading(false); return; }
                     setPharmacieInfo(ph);
                   }
-                } catch(e) { setCodeError("Erreur de connexion"); }
+                } catch { setCodeError("Erreur de connexion"); }
                 setCodeLoading(false);
               }
             }}
@@ -406,7 +376,7 @@ function LoginTabContent({ onLogin }) {
                       redirectTo: "https://ordomail.fr",
                     });
                     setResetSent(true);
-                  } catch(e) {
+                  } catch {
                     setEmailError("Erreur lors de l'envoi — vérifiez votre email");
                   }
                   setResetLoading(false);

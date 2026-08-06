@@ -28,7 +28,7 @@ export async function changePlan(pharmacieId, newPlan) {
   try {
     const { data, error } = await sb.functions.invoke('change-plan', { body: { pharmacieId, newPlan } });
     if (!error) return data;
-  } catch(e) {
+  } catch {
     console.warn('[changePlan] Edge Fn non disponible, fallback direct');
   }
   // Fallback : UPDATE direct en Supabase (sans Stripe)

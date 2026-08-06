@@ -18,7 +18,7 @@ function aggregateOffre(events, offreId) {
   return { vues: views.length, dureeMoyenne: avgMs, interets: interets.length };
 }
 
-function OffresSection({ pharmacie, planInfo }) {
+function OffresSection({ pharmacie }) {
   const [offres, setOffres]       = useState([]);
   const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
@@ -48,12 +48,6 @@ function OffresSection({ pharmacie, planInfo }) {
       .then(({ data }) => { if (data) setOffres(data); });
     fetchStoryMetrics(pharmacie.id).then(data => setEvents(data || []));
   }, [pharmacie?.id]);
-
-  function openNew() {
-    setEditingId(null);
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
-    setShowForm(true);
-  }
 
   function openEdit(offre) {
     setEditingId(offre.id);

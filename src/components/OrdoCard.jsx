@@ -12,7 +12,6 @@ function generateOrdoPDF(ordo) {
   const cv  = escapeHtml(ordo.extracted?.carteVitale || "Non disponible");
   const med = escapeHtml(ordo.extracted?.medecin || "Dr Inconnu");
   const dat = escapeHtml(ordo.extracted?.date || new Date().toLocaleDateString("fr-FR"));
-  const meds = (ordo.extracted?.medicaments || []).map(escapeHtml).join(", ") || "—";
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -85,10 +84,9 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, interets = [] }) {
+function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, interets = [] }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
-  const email  = ordo.fromEmail || "";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
   const uploadRef = useRef();
   const isLoading = loadingId === ordo.id;
@@ -260,7 +258,7 @@ function OrdoCard({ id, ordo, couleur, onPrint, onView, onUpload, onReopen, load
   );
 }
 
-function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, sonnetteActive, interets = [] }) {
+function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, interets = [] }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -356,12 +354,10 @@ function OrdoRow({ id, ordo, couleur, onPrint, onView, onReopen, onSonnette, son
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, couleur, onPrint, onView, onReopen, onUpload, loadingId, interets = [], onSonnette, sonnetteActive }) {
-  const [expanded, setExpanded] = useState(false);
+function OrdoGroup({ id, group, onPrint, onView, interets = [], onSonnette, sonnetteActive }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
-  const getOrdoIsNew = (o) => o.status === "nouveau";
   const nom    = group.extracted?.nom || group.fromName || "Patient";
   const accent = getOrdoAccent(group.id);
   const count  = group.ordonnances.length;

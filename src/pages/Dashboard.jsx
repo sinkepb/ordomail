@@ -325,7 +325,7 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
       const ndef = new window.NDEFReader();
       await ndef.write({ records: [{ recordType: "url", data: qrUrl }] });
       setNfcStatus("success");
-    } catch(e) { setNfcStatus("error"); }
+    } catch { setNfcStatus("error"); }
   }
 
   async function handlePrint() {
@@ -344,7 +344,7 @@ function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
           width: 600,
           color: { dark: "#000000", light: "#ffffff" },
         });
-      } catch(e) { qrSrc = ""; }
+      } catch { qrSrc = ""; }
     }
 
     const nom = pharmacie?.nom?.toUpperCase() || "VOTRE PHARMACIE";

@@ -378,7 +378,6 @@ function Footer({ onNav }) {
 
 function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, onGoToLegal }) {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileMenu, setMobileMenu] = useState(false);
   const heroRef = useRef();
   const [heroVisible, setHeroVisible] = useState(false);
 
@@ -494,7 +493,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
   );
 }
 
-function PersistentNav({ onBack, currentPage, secure }) {
+function PersistentNav({ onBack, secure }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10);
