@@ -1,5 +1,7 @@
-// ─── OCR Tesseract — traitement local HDS ────────────────────────────────────
-// Conforme HDS : traitement 100% navigateur, aucune donnée envoyée à un tiers
+// ─── OCR Tesseract — traitement local ─────────────────────────────────────────
+// Traitement 100% navigateur : l'extraction de texte ne transite par aucun
+// service tiers. Ça réduit l'exposition, mais ne suffit pas à rendre l'app
+// "conforme HDS" à soi seul — voir DEPLOIEMENT_CHECKLIST.md § évolutions produit.
 //
 // @phase3 24/07/2026 — tesseract.js et pdfjs-dist sont désormais de vraies
 // dépendances npm (package-lock.json), bundlées par Vite au lieu d'être chargées

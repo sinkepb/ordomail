@@ -303,11 +303,6 @@ function LoginTabContent({ onLogin }) {
         {isDemoMode ? (
           <>
             <BoutonProSanteConnect onClick={handlePSCLogin} loading={pscLoading}/>
-            <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8}}>
-              <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✅ Certifié HDS</span>
-              <span style={{fontSize:11,color:"#aaa"}}>·</span>
-              <span style={{fontSize:11,color:"#0369a1",fontWeight:600}}>🔒 PGSSI-S</span>
-            </div>
           </>
         ) : (
           <div style={{padding:"12px 16px",borderRadius:12,background:"#f8fafc",border:"1.5px solid #e2e8f0",display:"flex",alignItems:"center",gap:12,opacity:0.7}}>

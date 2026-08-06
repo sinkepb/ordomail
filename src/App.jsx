@@ -8,6 +8,7 @@ import { reportError } from "./lib/monitoring.js";
 import { LandingPage } from "./pages/LandingPage.jsx";
 import { AppLogin, ResetPasswordPage } from "./pages/LoginPage.jsx";
 import { PatientPage } from "./pages/PatientPage.jsx";
+import { LegalPage } from "./pages/LegalPage.jsx";
 // Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
 // (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
 // lui-même, pas besoin de les réimporter ici (même remarque que pour AdminPage.jsx).
@@ -198,6 +199,7 @@ function AppInner() {
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
   const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : (patientParam ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
+  const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam);
 
@@ -269,8 +271,9 @@ function AppInner() {
         </div>
       )}
       {!sessionLoading && route==="landing"&&(
-        <LandingPage onGoToPricing={()=>setRoute("pricing")} onGoToApp={()=>setRoute("dashboard")} onGoToCheckout={goToCheckout} onGoToAdmin={()=>setRoute("backoffice")}/>
+        <LandingPage onGoToPricing={()=>setRoute("pricing")} onGoToApp={()=>setRoute("dashboard")} onGoToCheckout={goToCheckout} onGoToAdmin={()=>setRoute("backoffice")} onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>
       )}
+      {route==="legal"&&<LegalPage doc={legalDoc} onBack={()=>setRoute("landing")}/>}
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
       {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}

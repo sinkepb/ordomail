@@ -199,7 +199,6 @@ function SecuritySection() {
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap:12 }}>
           {[
-            ["🇫🇷","Données en France","Hébergement Scaleway HDS — aucun flux vers les USA"],
             ["🔒","Chiffrement total","TLS 1.3 en transit, AES-256 au repos"],
             ["🗒️","Logs immuables","Traçabilité complète, aucune donnée médicale journalisée"],
             ["👤","OCR souverain","Extraction IA locale — l'ordonnance ne quitte pas vos serveurs"],
@@ -371,14 +370,13 @@ function Footer({ onNav }) {
           }}>
             🛡️ Espace OrdoMail Business
           </button>
-          <span style={{ fontSize:12, color:"#334155" }}>Hébergement HDS France · Données médicales sécurisées</span>
         </div>
       </div>
     </footer>
   );
 }
 
-function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin }) {
+function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, onGoToLegal }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const heroRef = useRef();
@@ -463,7 +461,14 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin }) 
       <div id="pricing"><PricingSection onGoToPricing={onGoToPricing} /></div>
       <TestimonialsSection />
       <CTASection onCTA={(action)=>{ if(action==="trial") onGoToCheckout("standard","monthly"); else onGoToApp("demo"); }} />
-      <Footer onNav={(l)=>{ if(l==="Tarifs") onGoToPricing(); if(l==="backoffice") onGoToAdmin(); }} />
+      <Footer onNav={(l)=>{
+        if(l==="Tarifs") onGoToPricing();
+        else if(l==="backoffice") onGoToAdmin();
+        else if(l==="CGU") onGoToLegal("cgu");
+        else if(l==="Politique de confidentialité" || l==="RGPD") onGoToLegal("confidentialite");
+        else if(l==="Mentions légales") onGoToLegal("mentions");
+        else if(l==="Support") window.location.href = "mailto:contact@ordomail.fr";
+      }} />
 
       <style>{`
         @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
