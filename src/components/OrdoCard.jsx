@@ -354,7 +354,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, interets = [], onSonnette, sonnetteActive }) {
+function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -490,7 +490,12 @@ function OrdoGroup({ id, group, onPrint, onView, interets = [], onSonnette, sonn
                     🖨️ Imprimer
                   </button>
                 ) : (
-                  <span style={{ fontSize: 11, color: "#15803d", fontWeight: 700 }}>✓</span>
+                  <button onClick={() => onReopen(o)} title="Remettre à traiter"
+                    style={{ padding: "4px 8px", border: "1px solid #e6a817", borderRadius: 6,
+                      background: "#fffbf0", color: "#92400e", fontSize: 11, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
+                    ✓ ↩
+                  </button>
                 )}
               </div>
             </div>
