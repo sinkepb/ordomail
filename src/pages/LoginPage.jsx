@@ -1,7 +1,7 @@
 // @version 16/07/2026 15:54 — register-form
 import { useState } from "react";
 import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
-  getSupabaseClient, isDemoMode } from "../supabase.js";
+  getSupabaseClient, isDemoMode, addAuditLog } from "../supabase.js";
 import { Btn, Input } from "../components/ui.jsx";
 
 console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
@@ -501,6 +501,14 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
 
   if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
+  // Journal d'activité (07/08/2026) : login/logout n'étaient jamais tracés malgré
+  // leurs libellés déjà prévus dans LogsPanel.jsx (actionLabel.login/logout) —
+  // seuls view/print/reopen (Dashboard.jsx) écrivaient réellement dans audit_logs.
+  async function handleLogout() {
+    addAuditLog({ userId:session?.userId, userRole:session?.userRole, pharmacieId:session?.pharmacieId, action:"logout", posteNom:session?.posteNom }).catch(()=>{});
+    await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.();
+  }
+
   // Note : toute connexion pharmacie (titulaire ou vendeur) produit une session avec
   // role:"pharmacie" — seul session.userRole distingue "admin" (titulaire) de "vendeur"
   // (voir les boutons/badges ci-dessous). Le backoffice OrdoMail Business est un flux
@@ -516,14 +524,17 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
             {session.userRole==="vendeur"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.7)",padding:"2px 8px",borderRadius:12}}>🖥️ {session.posteNom||"Vendeur"}</span>}
             {session.userRole==="admin"&&<button onClick={()=>onGoToPricing()} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",padding:"4px 11px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>💳</button>}
             <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>← Site</button>
-            <button onClick={async()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
+            <button onClick={handleLogout} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏏</button>
           </div>
         </div>
-        <DashboardComponent pharmacieId={session.pharmacieId} onLogout={async ()=>{ await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.(); }} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <DashboardComponent pharmacieId={session.pharmacieId} onLogout={handleLogout} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }
-  return <LoginPage onLogin={s=>setSession(s)} onBack={onBack}/>;
+  return <LoginPage onLogin={s=>{
+    addAuditLog({ userId:s.userId, userRole:s.userRole, pharmacieId:s.pharmacieId, action:"login", posteNom:s.posteNom }).catch(()=>{});
+    setSession(s);
+  }} onBack={onBack}/>;
 }
 
 function ResetPasswordPage({ onDone }) {

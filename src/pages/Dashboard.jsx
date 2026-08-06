@@ -830,6 +830,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id,posteNom}).catch(()=>{}); }
   async function handleFile(ordoId, file, dataUrl) {
     setLoadingId(ordoId);
+    addAuditLog({userId:userId2,userRole,pharmacieId,action:"upload",ordonnanceId:ordoId,posteNom}).catch(()=>{});
     // Upload vers Storage (ou mémoire en mode démo)
     await uploadOrdoFile(pharmacieId, ordoId, file, dataUrl);
     // Mise à jour locale immédiate
