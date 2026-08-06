@@ -10,7 +10,9 @@
 // job pg_cron côté base de données (à faire manuellement, hors du périmètre
 // de ce qui peut être automatisé depuis ce dépôt).
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 Deno.serve(async (req: Request) => {
   const CORS = corsHeaders(req, {
@@ -185,6 +187,18 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[snapshot] Terminé — ${results.ok} OK, ${results.error} erreurs`);
 
+    // Échecs partiels/totaux invisibles jusqu'ici sans lire les logs Supabase
+    // manuellement — le cron tourne la nuit, personne ne le surveille en direct.
+    if (results.error > 0) {
+      const alertClient = createClient(SUPABASE_URL, SERVICE_KEY);
+      await reportAlert(alertClient, {
+        source: "snapshot-metriques",
+        severity: results.error === pharmacies.length ? "critical" : "warning",
+        message: `${results.error} pharmacie(s) en échec sur ${pharmacies.length}`,
+        meta: { details: results.details },
+      });
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -199,6 +213,11 @@ Deno.serve(async (req: Request) => {
 
   } catch (e) {
     console.error("[snapshot] EXCEPTION:", String(e));
+    const alertClient = createClient(SUPABASE_URL, SERVICE_KEY);
+    await reportAlert(alertClient, {
+      source: "snapshot-metriques", severity: "critical",
+      message: `Exception globale — ${String(e)}`,
+    });
     return new Response(
       JSON.stringify({ success: false, error: String(e) }),
       { status: 500, headers: CORS }

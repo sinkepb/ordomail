@@ -1,6 +1,6 @@
 // Extrait de Dashboard.jsx (phase 4) — composant autonome (props + état local
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PLAN_LIMITS } from "../lib/plans.js";
 import { openInvoicePDF } from "../lib/print.jsx";
 import { Btn, Input } from "./ui.jsx";
@@ -11,6 +11,88 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
   const [pwdLoading,setPwdLoading]=useState(false);
   const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
+
+  // ─── MFA (double authentification) — 07/08/2026 ──────────────────────────
+  // API native Supabase Auth (auth.mfa.*), pas de TOTP maison. Le compte
+  // titulaire est le seul concerné ici : il voit l'intégralité des ordonnances
+  // (données de santé) de la pharmacie, c'est la cible la plus sensible en cas
+  // de mot de passe compromis. Non disponible en mode démo (pas de vraie
+  // session Supabase Auth à enrôler).
+  const [mfaFactors, setMfaFactors]   = useState([]);
+  const [mfaLoading, setMfaLoading]   = useState(!isDemoMode);
+  const [mfaEnrolling, setMfaEnrolling] = useState(false);
+  const [mfaQr, setMfaQr]             = useState(null);
+  const [mfaFactorId, setMfaFactorId] = useState(null);
+  const [mfaCode, setMfaCode]         = useState("");
+  const [mfaMsg, setMfaMsg]           = useState(null);
+  const [mfaBusy, setMfaBusy]         = useState(false);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    const sb = getSupabaseClient();
+    sb.auth.mfa.listFactors().then(({ data, error }) => {
+      if (!error && data) setMfaFactors(data.totp || []);
+      setMfaLoading(false);
+    }).catch(() => setMfaLoading(false));
+  }, []);
+
+  const activeFactor = mfaFactors.find(f => f.status === "verified");
+
+  async function startMfaEnroll() {
+    setMfaBusy(true); setMfaMsg(null);
+    try {
+      const sb = getSupabaseClient();
+      const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp" });
+      if (error) { setMfaMsg({ok:false,text:error.message}); setMfaBusy(false); return; }
+      setMfaFactorId(data.id);
+      setMfaQr(data.totp.qr_code);
+      setMfaEnrolling(true);
+    } catch(e) {
+      setMfaMsg({ok:false,text:e.message});
+    }
+    setMfaBusy(false);
+  }
+
+  async function confirmMfaEnroll() {
+    if (mfaCode.length !== 6) return;
+    setMfaBusy(true); setMfaMsg(null);
+    try {
+      const sb = getSupabaseClient();
+      const { data: challenge, error: chErr } = await sb.auth.mfa.challenge({ factorId: mfaFactorId });
+      if (chErr) { setMfaMsg({ok:false,text:chErr.message}); setMfaBusy(false); return; }
+      const { error: verErr } = await sb.auth.mfa.verify({ factorId: mfaFactorId, challengeId: challenge.id, code: mfaCode });
+      if (verErr) { setMfaMsg({ok:false,text:"Code incorrect — réessayez"}); setMfaBusy(false); return; }
+      setMfaEnrolling(false); setMfaQr(null); setMfaCode(""); setMfaFactorId(null);
+      setMfaMsg({ok:true,text:"Double authentification activée ✓"});
+      const { data } = await sb.auth.mfa.listFactors();
+      if (data) setMfaFactors(data.totp || []);
+    } catch(e) {
+      setMfaMsg({ok:false,text:e.message});
+    }
+    setMfaBusy(false);
+    setTimeout(()=>setMfaMsg(null),4000);
+  }
+
+  function cancelMfaEnroll() {
+    setMfaEnrolling(false); setMfaQr(null); setMfaCode(""); setMfaFactorId(null); setMfaMsg(null);
+  }
+
+  async function disableMfa() {
+    if (!activeFactor) return;
+    if (!window.confirm("Désactiver la double authentification sur ce compte ?")) return;
+    setMfaBusy(true); setMfaMsg(null);
+    try {
+      const sb = getSupabaseClient();
+      const { error } = await sb.auth.mfa.unenroll({ factorId: activeFactor.id });
+      if (error) { setMfaMsg({ok:false,text:error.message}); setMfaBusy(false); return; }
+      setMfaFactors(prev => prev.filter(f => f.id !== activeFactor.id));
+      setMfaMsg({ok:true,text:"Double authentification désactivée"});
+    } catch(e) {
+      setMfaMsg({ok:false,text:e.message});
+    }
+    setMfaBusy(false);
+    setTimeout(()=>setMfaMsg(null),4000);
+  }
   const plan=planInfo||PLAN_LIMITS[pharmacie.plan]||PLAN_LIMITS.starter;
   const postesActifs=(postes||[]).filter(p=>p.actif).length;
   const ordosTraitees=(pharmacie.ordonnances||[]).filter(o=>o.status==="imprime").length;
@@ -77,6 +159,43 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
             setTimeout(()=>setPwdMsg(null),3000);
           }}>{pwdLoading?"Mise à jour…":"Mettre à jour"}</Btn>
           {pwdMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:pwdMsg.ok?"#15803d":"#dc2626",padding:"6px 10px",background:pwdMsg.ok?"#dcfce7":"#fee2e2",borderRadius:7}}>{pwdMsg.text}</div>}
+        </div>
+        {/* Double authentification (MFA) */}
+        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14,marginTop:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>🛡️ Double authentification</div>
+          {isDemoMode ? (
+            <div style={{fontSize:12,color:"#94a3b8",background:"#f8fafc",borderRadius:8,padding:"10px 12px"}}>
+              Non disponible en mode démo — nécessite un compte réel.
+            </div>
+          ) : mfaLoading ? (
+            <div style={{fontSize:12,color:"#94a3b8"}}>Chargement…</div>
+          ) : mfaEnrolling ? (
+            <div style={{background:"#f8faff",borderRadius:10,padding:16}}>
+              <div style={{fontSize:12,color:"#475569",marginBottom:10,lineHeight:1.6}}>
+                Scannez ce QR code avec une application d'authentification (Google Authenticator, Authy…), puis saisissez le code à 6 chiffres généré.
+              </div>
+              {mfaQr && (
+                <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
+                  <img src={mfaQr} alt="QR code MFA" style={{width:160,height:160,background:"#fff",padding:8,borderRadius:8,border:"1px solid #e2e8f0"}}/>
+                </div>
+              )}
+              <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                <div style={{flex:1}}>
+                  <Input label="Code à 6 chiffres" value={mfaCode} onChange={v=>setMfaCode(v.replace(/\D/g,"").slice(0,6))} placeholder="123456" icon="🔢"/>
+                </div>
+                <Btn small disabled={mfaBusy||mfaCode.length!==6} onClick={confirmMfaEnroll}>{mfaBusy?"…":"Confirmer"}</Btn>
+                <Btn variant="secondary" small disabled={mfaBusy} onClick={cancelMfaEnroll}>Annuler</Btn>
+              </div>
+            </div>
+          ) : activeFactor ? (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#dcfce7",borderRadius:8,padding:"10px 12px"}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>✓ Activée</span>
+              <Btn variant="danger" small disabled={mfaBusy} onClick={disableMfa}>{mfaBusy?"…":"Désactiver"}</Btn>
+            </div>
+          ) : (
+            <Btn variant="secondary" small disabled={mfaBusy} onClick={startMfaEnroll}>{mfaBusy?"…":"Activer la double authentification"}</Btn>
+          )}
+          {mfaMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:mfaMsg.ok?"#15803d":"#dc2626",padding:"6px 10px",background:mfaMsg.ok?"#dcfce7":"#fee2e2",borderRadius:7}}>{mfaMsg.text}</div>}
         </div>
       </div>
       {/* Abonnement */}
