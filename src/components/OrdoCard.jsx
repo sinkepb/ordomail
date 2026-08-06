@@ -458,12 +458,13 @@ function OrdoGroup({ id, group, onPrint, onView, interets = [], onSonnette, sonn
             const ordImprime = o.status === "imprime";
             return (
             <div key={o.id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
               borderRadius: 8, padding: "7px 10px",
               background: ordImprime ? "#f0fdf4" : "#f8fafc",
               border: `1px solid ${ordImprime ? "#bbf7d0" : "#e2e8f0"}`,
             }}>
-              <div style={{ fontSize: 12, fontWeight: 600,
+              <div style={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 color: ordImprime ? "#15803d" : "#475569" }}>
                 {ordImprime ? "✓" : "📎"} Ordonnance {idx + 1}
                 {o.attachments?.[0]?.name && (
@@ -472,7 +473,7 @@ function OrdoGroup({ id, group, onPrint, onView, interets = [], onSonnette, sonn
                   </span>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
                 {o.attachments?.[0]?.dataUrl && (
                   <button onClick={() => onView(o)}
                     style={{ padding: "4px 8px", border: "1px solid #c7d2fe", borderRadius: 6,
