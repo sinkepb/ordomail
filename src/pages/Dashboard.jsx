@@ -1016,7 +1016,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                         if (a.dataUrl) { setViewerAtt(a); return; }
                         if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
                       }}
-                      onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});}}
+                      onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                       loadingId={loadingId}/>;
                   }
@@ -1122,9 +1122,13 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                                 🖨️ Imprimer
                               </button>
                             ) : (
-                              <span style={{fontSize:11,color:"#15803d",fontWeight:700,flexShrink:0}}>
-                                ✓ Imprimée
-                              </span>
+                              <button onClick={()=>{updateOrdo(ord.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ord.id,posteNom});}}
+                                title="Remettre à traiter"
+                                style={{padding:"4px 8px",border:"1px solid #e6a817",borderRadius:6,
+                                  background:"#fffbf0",color:"#92400e",fontSize:11,fontWeight:700,
+                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                                ✓ ↩ Remettre à traiter
+                              </button>
                             )}
                           </div>
                           );
