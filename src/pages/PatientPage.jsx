@@ -104,7 +104,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   useEffect(() => {
     console.log("[SONNETTE] écoute code:", maskCode(codePatient), "pharmacie:", maskId(pharmacie?.id));
     if (!pharmacie?.id || !codePatient) return;
-    const unsub = ecouterAppels(pharmacie.id, codePatient, (data) => {
+    const unsub = ecouterAppels(pharmacie.id, codePatient, () => {
       if ('vibrate' in navigator) navigator.vibrate([400, 200, 400, 200, 400]);
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -116,7 +116,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.3);
           osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.3);
         });
-      } catch(e) { /* AudioContext indisponible/bloqué — le bip est un bonus, pas bloquant */ }
+      } catch { /* AudioContext indisponible/bloqué — le bip est un bonus, pas bloquant */ }
       setAppele(true);
       setTimeout(() => setAppele(false), 8000);
     });
@@ -361,7 +361,6 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     : HEALTH_STORIES;
   const [allStories, setAllStories] = useState([...emailStory, ...baseStories]);
   const [interets, setInterets]     = useState({});
-  const [emailSent, setEmailSent]   = useState(false);
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
   useEffect(() => {
@@ -505,10 +504,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   }, [pharmacie?.id, isDemoMode]);
 
   const story = allStories[current];
-  const totalStories = allStories.length;
   const isQuiz = story?.type === "quiz";
   const isOffre = story?.type === "offre";
-  const couleur = pharmacie?.couleur || "#1a3a6e";
 
   // Avancer automatiquement sauf si quiz en cours
   useEffect(() => {

@@ -49,7 +49,10 @@ export async function fetchStoryMetrics(pharmacieId, params = {}) {
 // Catalogue de stories (global, stories_content) fusionné avec l'état
 // actif/inactif propre à cette pharmacie — pour l'écran titulaire de
 // sélection des stories publiées à ses patients.
-export async function fetchPharmacieStories(pharmacieId) {
+// pharmacieId non utilisé ici : callSecureData scope déjà la requête via le
+// jeton du titulaire authentifié (voir secure-data), pas via un ID fourni par
+// le client — conservé dans la signature pour la cohérence des appels.
+export async function fetchPharmacieStories(_pharmacieId) {
   if (IS_DEMO) return [];
   try {
     return await callSecureData('pharmacie_stories', {}) || [];

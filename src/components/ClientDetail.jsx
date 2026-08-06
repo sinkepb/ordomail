@@ -3,7 +3,7 @@
 import { snapshotMetriquesJournalieres } from "../supabase.js";
 import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
 
-function ClientDetail({ client: ph, plans, onClose, onRefresh }) {
+function ClientDetail({ client: ph, plans, onClose }) {
   const planInfo = plans[ph.plan] || {};
   const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
   const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";

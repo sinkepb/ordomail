@@ -20,7 +20,7 @@ export function subscribeToPharmacy(pharmacieId, callback) {
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'ordonnances',
       filter: `pharmacie_id=eq.${pharmacieId}`
-    }, payload => callback({ ...getDB()?.pharmacies?.find(p => p.id === pharmacieId) }))
+    }, () => callback({ ...getDB()?.pharmacies?.find(p => p.id === pharmacieId) }))
     .subscribe();
   return () => sb.removeChannel(channel);
 }

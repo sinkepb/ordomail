@@ -74,7 +74,7 @@ function BackofficeAdmin({ onBack }) {
       const data = await res.json();
       if (data.success) { setAdminToken(data.token || null); setAuthed(true); }
       else setErr(data.error || "Identifiants incorrects");
-    } catch(e) {
+    } catch {
       // Le service verify-admin est indisponible (réseau, fonction non déployée, config manquante).
       // ⚠️ SÉCURITÉ : ce repli ne doit JAMAIS authentifier en production. Avant le 23/07/2026, ce
       // bloc comparait à un identifiant codé en dur (admin@ordomail.fr / admin2025) shipé dans le
@@ -352,7 +352,7 @@ function AdminDashboardLive({ adminToken } = {}) {
             <ContratEditor
               pharmacie={selected}
               plans={PLANS}
-              onSave={async (id,plan,postes)=>{
+              onSave={async (id,plan)=>{
                 setSaving(true);
                 try {
                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
