@@ -1,21 +1,39 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- ORDOMAIL — Policies RLS manquantes sur audit_logs — 08/08/2026
+-- ORDOMAIL — Créer audit_logs + policies RLS — 08/08/2026
 --
--- audit_logs a RLS activée (schema.sql, ALTER TABLE ... ENABLE ROW LEVEL SECURITY)
--- mais AUCUNE policy n'a jamais été créée pour cette table — confirmé par lecture
--- complète de schema.sql et de toutes les migrations : zéro CREATE POLICY sur
--- audit_logs. Avec RLS activée et aucune policy, Postgres refuse tout accès par
--- défaut à tous les rôles non service_role. Résultat concret : depuis l'activation
--- de RLS phase 1 (23/07/2026), addAuditLog() (src/lib/supabase/audit.js, appelée
--- en anon/authenticated, jamais en service_role) échouait SILENCIEUSEMENT à
--- chaque appel — vue/impression/import/connexion/déconnexion/remise en file —
--- pour TOUS les rôles (vendeur ET titulaire), avalé par le .catch(()=>{}) de
--- chaque site d'appel. Le Journal d'activité semblait vide non pas par manque de
--- câblage React (déjà vérifié et corrigé les jours précédents) mais parce que
--- l'écriture elle-même n'a jamais atteint la base.
+-- ⚠️ Découverte en exécutant cette migration : la table audit_logs n'existe pas
+-- du tout dans le projet Supabase lié (ERREUR 42P01 relation "audit_logs" does
+-- not exist). Elle n'est définie que dans schema.sql, qui sert de référence de
+-- lecture et n'est jamais rejoué tel quel contre le projet (voir
+-- DEPLOIEMENT_CHECKLIST.md § 3) — aucune migration datée ne la crée. Conclusion
+-- réelle : le Journal d'activité n'a JAMAIS fonctionné, depuis le tout début,
+-- pas seulement depuis l'activation de RLS phase 1 comme supposé dans la
+-- version précédente de cette migration. addAuditLog()/getAuditLogs()
+-- échouaient silencieusement (table introuvable), avalé par .catch(()=>{}).
+--
+-- Cette version crée la table (IF NOT EXISTS, fidèle à schema.sql) puis les
+-- policies RLS qui lui manquaient de toute façon.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pharmacie_id  UUID NOT NULL REFERENCES pharmacies(id) ON DELETE CASCADE,
+  user_id       TEXT,           -- id poste ou uid Supabase Auth
+  user_role     TEXT,
+  poste_nom     TEXT,           -- (déduit) nom du poste vendeur, affiché dans LogsPanel
+  action        TEXT NOT NULL,  -- view|print|upload|reopen|login|logout
+  ordonnance_id UUID REFERENCES ordonnances(id) ON DELETE SET NULL,
+  metadata      JSONB,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_pharmacie
+  ON audit_logs(pharmacie_id, created_at DESC);
+
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 
 -- INSERT : ouvert à anon (vendeur — jamais de session Supabase Auth, jeton signé
 -- par verify-pin uniquement) ET authenticated (titulaire). Même modèle que
@@ -26,6 +44,7 @@ BEGIN;
 -- function dédiée. Risque résiduel : un acteur connaissant l'API REST publique
 -- pourrait polluer le journal d'une autre pharmacie avec de fausses entrées —
 -- gênant, pas une fuite de données de santé.
+DROP POLICY IF EXISTS "audit_logs_insert" ON audit_logs;
 CREATE POLICY "audit_logs_insert" ON audit_logs
   FOR INSERT
   WITH CHECK (true);
@@ -34,6 +53,7 @@ CREATE POLICY "audit_logs_insert" ON audit_logs
 -- LogsPanel n'est de toute façon affiché qu'au titulaire côté client (canAdmin,
 -- voir Dashboard.jsx) — cette policy fait respecter la même restriction côté
 -- serveur plutôt que de compter uniquement sur le filtrage client.
+DROP POLICY IF EXISTS "audit_logs_select_own_pharmacie" ON audit_logs;
 CREATE POLICY "audit_logs_select_own_pharmacie" ON audit_logs
   FOR SELECT
   TO authenticated
