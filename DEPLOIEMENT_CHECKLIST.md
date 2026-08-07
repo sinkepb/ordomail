@@ -116,6 +116,7 @@ du dashboard, jamais via la CLI) — statut ci-dessous vérifié **en direct** l
 | `20260726_pharmacie_stories_selection.sql` | ✅ Appliquée |
 | `20260726_live_advisor_fixes.sql` | ✅ Appliquée (correctifs ci-dessous) |
 | `20260807_alerts_monitoring.sql` | ⬜ À appliquer — table `alerts` (monitoring/alerting edge functions, aucun accès anon/authenticated, voir section 8) |
+| `20260808_audit_logs_policies.sql` | ⬜ **À appliquer en priorité** — `audit_logs` avait RLS activée depuis la phase 1 (23/07) mais **aucune policy** : le Journal d'activité n'a jamais réellement enregistré une seule action (vendeur ni titulaire) depuis cette date, échec silencieux avalé par `.catch(()=>{})` à chaque site d'appel. Pas un bug de câblage React — la donnée n'atteignait jamais la base. |
 
 Sur un nouveau projet Supabase (from scratch), exécuter tous ces fichiers **dans l'ordre
 chronologique** de leur préfixe de date depuis le SQL Editor, avant `schema.sql` (référence
