@@ -1114,6 +1114,20 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                                 <span style={{color:"#94a3b8",fontWeight:400}}> — {ord.attachments[0].name}</span>
                               )}
                             </span>
+                            {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
+                              <button onClick={async ()=>{
+                                  handleViewOrdo(ord.id);
+                                  const a = ord.attachments[0];
+                                  if (a.dataUrl) { setViewerAtt(a); return; }
+                                  const url = await getSignedUrl(a.path, 300);
+                                  if (url) setViewerAtt({ ...a, dataUrl: url });
+                                }}
+                                style={{padding:"4px 8px",border:"1px solid #c7d2fe",borderRadius:6,
+                                  background:"#f0f4ff",color:"#4338ca",fontSize:11,
+                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                                👁
+                              </button>
+                            )}
                             {!ordImprime ? (
                               <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
                                 style={{padding:"4px 10px",border:"none",borderRadius:6,
@@ -1141,7 +1155,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
-                    onView={()=>(async () => {
+                    onView={()=>{handleViewOrdo(o.id);(async () => {
               const a = o.attachments?.[0];
               if (!a) return;
               if (a.dataUrl) { setViewerAtt(a); return; }
@@ -1149,7 +1163,7 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
                 const url = await getSignedUrl(a.path, 300);
                 if (url) setViewerAtt({ ...a, dataUrl: url });
               }
-            })()}
+            })();}}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}/>;
                 })}
               </div>
