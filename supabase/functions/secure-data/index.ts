@@ -395,6 +395,85 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    if (resource === "admin_retention_get") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { data, error } = await sb.from("retention_settings")
+        .select("ordonnances_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_retention_set") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { days, updatedBy } = params || {};
+      const parsed = days === null ? null : Number(days);
+      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0)) {
+        return new Response(JSON.stringify({ error: "days doit être un entier positif ou null (désactive la purge)" }),
+          { status: 400, headers: CORS });
+      }
+      const { error } = await sb.from("retention_settings")
+        .update({ ordonnances_retention_days: parsed, updated_at: new Date().toISOString(), updated_by: updatedBy || null })
+        .eq("id", 1);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Recherche RGPD (droits patient — art. 12-22) : localiser TOUT l'historique
+    // des ordonnances d'un patient par son nom, au-delà de la fenêtre de 7 jours
+    // normalement chargée par le dashboard vendeur. Ne vérifie PAS l'identité du
+    // demandeur — l'UI backoffice doit rappeler explicitement de la vérifier par
+    // un autre moyen (téléphone/email) avant toute suppression.
+    if (resource === "admin_search_ordonnances") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const nom = (params?.nom || "").trim();
+      if (nom.length < 2) {
+        return new Response(JSON.stringify({ error: "Nom trop court (2 caractères minimum)" }),
+          { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("ordonnances")
+        .select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, pharmacies(nom)")
+        .or(`patient_nom.ilike.%${nom}%,from_name.ilike.%${nom}%`)
+        .order("received_at", { ascending: false })
+        .limit(100);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_delete_ordonnance") {
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
+          { status: 403, headers: CORS });
+      }
+      const { ordoId } = params || {};
+      if (!ordoId) {
+        return new Response(JSON.stringify({ error: "ordoId requis" }),
+          { status: 400, headers: CORS });
+      }
+      const { data: ordo, error: findErr } = await sb.from("ordonnances")
+        .select("id, fichier_url").eq("id", ordoId).maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!ordo) {
+        return new Response(JSON.stringify({ error: "Ordonnance introuvable" }),
+          { status: 404, headers: CORS });
+      }
+      if (ordo.fichier_url) {
+        const { error: rmErr } = await sb.storage.from("ordonnances-files").remove([ordo.fichier_url]);
+        if (rmErr) console.error("[admin_delete_ordonnance] fichier:", rmErr.message);
+      }
+      const { error: delErr } = await sb.from("ordonnances").delete().eq("id", ordoId);
+      if (delErr) throw new Error(delErr.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 

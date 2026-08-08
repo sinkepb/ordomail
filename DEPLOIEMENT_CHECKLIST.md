@@ -73,7 +73,8 @@ une lecture anon large sur la table pour fonctionner.
 ```bash
 supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
   ORDOMAIL_JWT_SECRET=... STRIPE_SECRET_KEY=... STRIPE_WEBHOOK_SECRET=... \
-  APP_URL=https://ordomail.fr SNAPSHOT_CRON_SECRET=... ALERT_WEBHOOK_URL=...
+  APP_URL=https://ordomail.fr SNAPSHOT_CRON_SECRET=... ALERT_WEBHOOK_URL=... \
+  PURGE_CRON_SECRET=...
 ```
 
 - [ ] `ORDOMAIL_JWT_SECRET` — secret HMAC partagé (verify-pin, verify-admin, secure-data)
@@ -81,6 +82,7 @@ supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
 - [ ] `SNAPSHOT_CRON_SECRET` — partagé avec le job pg_cron qui appelle `snapshot-metriques`
 - [ ] `APP_URL` — utilisé pour l'allowlist CORS (`_shared/cors.ts`) ET les URLs de retour Stripe Checkout — **doit matcher le domaine de production exact**
 - [ ] `ALERT_WEBHOOK_URL` — **optionnel** (07/08/2026), webhook entrant Slack/Discord/Teams pour une notification immédiate sur les alertes critiques (`_shared/alert.ts`). Sans lui, les alertes restent visibles dans le panneau Monitoring du backoffice (table `alerts`), juste sans push immédiat.
+- [ ] `PURGE_CRON_SECRET` — **(09/08/2026)** partagé avec le job pg_cron qui appelle `purge-ordonnances`, même schéma que `SNAPSHOT_CRON_SECRET`.
 
 Déployer chaque fonction modifiée :
 ```bash
@@ -96,7 +98,10 @@ supabase functions deploy create-checkout-session
 supabase functions deploy change-plan
 supabase functions deploy stripe-webhook
 supabase functions deploy snapshot-metriques
+supabase functions deploy purge-ordonnances
 ```
+
+⚠️ `purge-ordonnances` nécessite aussi un job pg_cron nocturne dédié (même principe que `snapshot-metriques`, à créer côté base de données) — voir `DEPLOIEMENT_PHASE4.md` pour la syntaxe du job existant à dupliquer.
 
 ---
 
@@ -117,6 +122,7 @@ du dashboard, jamais via la CLI) — statut ci-dessous vérifié **en direct** l
 | `20260726_live_advisor_fixes.sql` | ✅ Appliquée (correctifs ci-dessous) |
 | `20260807_alerts_monitoring.sql` | ⬜ À appliquer — table `alerts` (monitoring/alerting edge functions, aucun accès anon/authenticated, voir section 8) |
 | `20260808_audit_logs_policies.sql` | ⬜ **À appliquer en priorité** — `audit_logs` avait RLS activée depuis la phase 1 (23/07) mais **aucune policy** : le Journal d'activité n'a jamais réellement enregistré une seule action (vendeur ni titulaire) depuis cette date, échec silencieux avalé par `.catch(()=>{})` à chaque site d'appel. Pas un bug de câblage React — la donnée n'atteignait jamais la base. |
+| `20260809_retention_purge.sql` | ⬜ À appliquer — table `retention_settings` (purge automatique des ordonnances, RGPD art. 5.1.e). Purge **désactivée par défaut** (valeur NULL) jusqu'à ce qu'une durée soit fixée depuis le backoffice OrdoMail Business (onglet RGPD) — voir section 8. |
 
 Sur un nouveau projet Supabase (from scratch), exécuter tous ces fichiers **dans l'ordre
 chronologique** de leur préfixe de date depuis le SQL Editor, avant `schema.sql` (référence
@@ -250,19 +256,31 @@ sécurité/qualité perçue et la valeur commerciale.
   anon/authenticated (lecture uniquement via `secure-data`, jeton admin vérifié), pour ne
   pas exposer les alertes de sécurité à quiconque détient la clé anon publique.
 
+### Résolu le 09/08/2026 — Rétention/purge et outil RGPD droits patient
+
+- **Purge automatique** : edge function `purge-ordonnances` (cron nocturne, même schéma
+  que `snapshot-metriques`) + table `retention_settings` paramétrable depuis le backoffice
+  OrdoMail Business (onglet 🔐 RGPD). **Désactivée par défaut** (valeur NULL) — n'agit
+  qu'une fois une durée validée par le DPO et saisie dans le backoffice. Supprime le
+  fichier storage ET la ligne DB, journalise le nombre d'ordonnances purgées via
+  `reportAlert` (visible dans le panneau Monitoring).
+- **Outil de recherche RGPD** (droits d'accès/effacement, art. 12-22) : recherche par nom
+  patient dans tout l'historique (au-delà de la fenêtre de 7 jours du dashboard vendeur),
+  avec suppression individuelle. ⚠️ Ne vérifie pas l'identité du demandeur — outil de
+  localisation pour le personnel, pas un portail libre-service ; avertissement affiché
+  dans l'UI. Le mécanisme de vérification d'identité proprement dit reste à définir par
+  le DPO (voir registre des traitements).
+
 ### A. Sécurité — restant
 
-1. **Politique de rétention/purge des ordonnances** — aucune suppression automatique après
-   un délai constatée ; à documenter/implémenter pour la conformité RGPD données de santé
-   (durée de conservation définie, purge ou archivage après échéance).
-2. **Audit de sécurité externe (pentest)** avant d'élargir la base de clientèle — la
+1. **Audit de sécurité externe (pentest)** avant d'élargir la base de clientèle — la
    sensibilité des données (ordonnances) justifie une revue indépendante au-delà de
    l'auto-audit déjà mené. Pas codable — prestataire externe à mandater, idéalement après
    la migration HDS (section 9) pour ne pas auditer une infra bientôt abandonnée.
-3. **DPO / registre des traitements (RGPD art. 30)** — désignation d'un DPO : décision
-   organisationnelle, hors périmètre technique. Un brouillon de registre des traitements
-   (même format que les pages légales — champs à compléter, à valider) peut être rédigé
-   sur demande.
+2. **DPO / registre des traitements (RGPD art. 30)** — désignation d'un DPO : toujours une
+   décision organisationnelle, hors périmètre technique. Brouillon de registre des
+   traitements déjà rédigé (`docs/registre-traitements.md` + version Word), 7 traitements
+   identifiés, champs `[À valider]` en attente du DPO.
 
 ### B. Qualité / fiabilité
 

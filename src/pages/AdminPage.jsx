@@ -8,6 +8,7 @@ import { HistoriqueSparkline } from "../components/HistoriqueSparkline.jsx";
 import { PricingEditor } from "../components/PricingEditor.jsx";
 import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
+import { RgpdPanel } from "../components/RgpdPanel.jsx";
 
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
@@ -269,7 +270,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["monitoring","🔔 Monitoring"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -350,6 +351,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           <PricingEditor adminToken={adminToken}/>
         ) : tab === "monitoring" ? (
           <MonitoringPanel adminToken={adminToken}/>
+        ) : tab === "rgpd" ? (
+          <RgpdPanel adminToken={adminToken}/>
         ) : (
           selected ? (
             <ContratEditor
