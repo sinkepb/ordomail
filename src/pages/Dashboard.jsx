@@ -34,7 +34,7 @@ import {
 
 const APP_VERSION = "v6.1 · 13/07/2026 16:10";
 
-function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
+function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage, pharmacieId, onOpenOrdo }) {
   const [section, setSection] = useState("pharmacie");
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
@@ -86,7 +86,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["offres","🎯","Offres"],["stories","📊","Stories"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -245,6 +245,10 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
           </div>
         )}
 
+        {section==="qrcode"&&(
+          <QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>
+        )}
+
         {section==="email"&&(
           <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
             <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>✉️ Configuration email</div>
@@ -288,6 +292,10 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged }) {
               if (ph) setPostes(ph.postes || []);
             } catch(e) { console.error("[changePlan]", e.message); }
           }}/>
+        )}
+
+        {section==="journal"&&(
+          <LogsPanel pharmacieId={pharmacieId} onOpenOrdo={onOpenOrdo}/>
         )}
 
       </div>
@@ -584,20 +592,18 @@ body {
   );
 }
 
-function BottomNav({ tab, showLogs, canAdmin, setTab, setShowLogs }) {
+function BottomNav({ tab, canAdmin, setTab }) {
   const items = [
     { id: "ordonnances", icon: "📋", label: "Ordo", always: true },
-    { id: "qrcode",      icon: "📱", label: "QR Code", adminOnly: true },
     { id: "parametres",  icon: "⚙️", label: "Paramètres", adminOnly: true },
-    { id: "logs",        icon: "🗒️", label: "Logs", adminOnly: true },
   ].filter(it => !it.adminOnly || canAdmin);
-  const active = showLogs ? "logs" : tab;
+  const active = tab;
   return (
     <nav style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:200, background:"#fff", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"space-around", alignItems:"stretch", height:60 }} className="bottom-nav">
       {items.map(it => {
         const isActive = active === it.id;
         return (
-          <button key={it.id} onClick={() => { if(it.id==="logs"){setShowLogs(true);}else{setTab(it.id);setShowLogs(false);} }}
+          <button key={it.id} onClick={() => setTab(it.id)}
             style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, border:"none", background:"none", cursor:"pointer", fontFamily:"inherit", borderTop: isActive?"2px solid #1a3a6e":"2px solid transparent" }}>
             <span style={{ fontSize:20 }}>{it.icon}</span>
             <span style={{ fontSize:9, fontWeight:isActive?800:500, color:isActive?"#1a3a6e":"#94a3b8" }}>{it.label}</span>
@@ -614,7 +620,6 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
   const [interetsDuJour, setInteretsDuJour] = useState([]); // intérêts offres du jour
   const [dashLoading, setDashLoading] = useState(true);
   const [tab, setTab] = useState("ordonnances");
-  const [showLogs, setShowLogs] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [viewMode, setViewMode] = useState("grid");
@@ -870,10 +875,8 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
           </div>
         </div>
         <div style={{display:"flex",gap:2,flexShrink:0}} className="desktop-nav">
-          <button onClick={()=>{setTab("ordonnances");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="ordonnances"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="ordonnances"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>📋 Ordonnances</button>
-          {canAdmin&&<><button onClick={()=>{setTab("qrcode");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="qrcode"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="qrcode"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>📱 QR Code</button>
-          <button onClick={()=>{setTab("parametres");setShowLogs(false);}} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"&&!showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"&&!showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>
-          <button onClick={()=>setShowLogs(l=>!l)} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:showLogs?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:showLogs?700:400,fontSize:12,fontFamily:"inherit"}}>🗒️ Logs</button></>}
+          <button onClick={()=>setTab("ordonnances")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="ordonnances"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="ordonnances"?700:400,fontSize:12,fontFamily:"inherit"}}>📋 Ordonnances</button>
+          {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
@@ -881,27 +884,9 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
           <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"monospace",marginLeft:6}}>{APP_VERSION}</span>
         </div>
       </header>
-      <BottomNav tab={tab} showLogs={showLogs} canAdmin={canAdmin} setTab={setTab} setShowLogs={setShowLogs} />
+      <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} />
 
-      {showLogs&&canAdmin&&<LogsPanel
-        pharmacieId={pharmacieId}
-        onClose={()=>setShowLogs(false)}
-        onOpenOrdo={(ordoId) => {
-          setShowLogs(false);
-          setTab("ordonnances");
-          setFilterStatus("all");
-          setTimeout(() => {
-            const el = document.getElementById(`ordo-${ordoId}`);
-            if (el) {
-              el.scrollIntoView({ behavior:"smooth", block:"center" });
-              el.style.outline = "3px solid #1e40af";
-              setTimeout(() => el.style.outline = "", 2500);
-            }
-          }, 300);
-        }}
-      />}
-
-      {tab==="ordonnances"&&!showLogs&&(
+      {tab==="ordonnances"&&(
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
           <div style={{background:"#fff",borderBottom:"1px solid #e8eaf0",padding:"10px 16px",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -1172,8 +1157,21 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         </div>
       )}
 
-      {tab==="qrcode"&&canAdmin&&!showLogs&&<QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>}
-      {tab==="parametres"&&canAdmin&&!showLogs&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}/>}
+      {tab==="parametres"&&canAdmin&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}
+        qrUrl={qrUrl} onPatientPage={onPatientPage} pharmacieId={pharmacieId}
+        onOpenOrdo={(ordoId) => {
+          setTab("ordonnances");
+          setFilterStatus("all");
+          setTimeout(() => {
+            const el = document.getElementById(`ordo-${ordoId}`);
+            if (el) {
+              el.scrollIntoView({ behavior:"smooth", block:"center" });
+              el.style.outline = "3px solid #1e40af";
+              setTimeout(() => el.style.outline = "", 2500);
+            }
+          }, 300);
+        }}
+      />}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}

@@ -12,7 +12,7 @@ export async function fetchPharmacie(pharmacieId) {
   // toute façon pas besoin des postes/PIN, réservés aux écrans titulaire.
   if (getVendeurToken()) {
     const data = await callSecureData('pharmacie_info', {});
-    return data ? { ...data, postes: [] } : null;
+    return data ? { ...data, emailReception: data.email_reception, postes: [] } : null;
   }
   const sb = getSupabase();
   const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*)').eq('id', pharmacieId).single();
@@ -21,6 +21,10 @@ export async function fetchPharmacie(pharmacieId) {
   if (data && data.pharmacie_postes) {
     data.postes = data.pharmacie_postes;
   }
+  // email_reception (snake_case, colonne DB) → emailReception (camelCase, attendu par
+  // ParametresTab) : sans ce mapping l'écran "Configuration email" retombe sur l'UUID
+  // brut de la pharmacie au lieu de l'adresse lisible générée par register-pharmacie.
+  if (data) data.emailReception = data.email_reception;
   return data;
 }
 
