@@ -40,8 +40,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
   const [nom, setNom] = useState(pharmacie.nom||"");
   const [adresse, setAdresse] = useState(pharmacie.adresse||"");
   const [couleur, setCouleur] = useState(pharmacie.couleur||"#1a3a6e");
-  const [emailNotif, setEmailNotif] = useState(pharmacie.email||"");
-  const [smtpHost, setSmtpHost] = useState(pharmacie.smtp?.host||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
@@ -80,13 +78,13 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
     const pinChanges = {};
     postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
     await Promise.all([
-      onSave({nom,adresse,couleur,email:emailNotif}),
+      onSave({nom,adresse,couleur}),
       savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
     ]);
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["email","✉️","Email"],["abonnement","💳","Abonnement"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["abonnement","💳","Abonnement"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -115,6 +113,13 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
                 <span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:couleur}}>{couleur}</span>
                 <div style={{width:32,height:32,borderRadius:8,background:couleur}}/>
               </div>
+            </div>
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",border:"1px solid #dbeafe",fontSize:13}}>
+              <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
+              {pharmacie.emailReception
+                ? <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception}</code>
+                : <span style={{fontSize:12,color:"#b45309",fontWeight:600}}>⚠️ Adresse non configurée — contactez le support OrdoMail</span>}
+              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
             </div>
           </div>
         )}
@@ -247,24 +252,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
 
         {section==="qrcode"&&(
           <QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>
-        )}
-
-        {section==="email"&&(
-          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
-            <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>✉️ Configuration email</div>
-            <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",marginBottom:14,border:"1px solid #dbeafe",fontSize:13}}>
-              <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
-              {pharmacie.emailReception
-                ? <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception}</code>
-                : <span style={{fontSize:12,color:"#b45309",fontWeight:600}}>⚠️ Adresse non configurée — contactez le support OrdoMail</span>}
-              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
-            </div>
-            <Input label="Email de notification" value={emailNotif} onChange={setEmailNotif} type="email" placeholder="contact@pharmacie.fr" icon="✉️"/>
-            <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14,marginTop:4}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>SMTP personnalisé (optionnel)</div>
-              <Input label="Serveur SMTP" value={smtpHost} onChange={setSmtpHost} placeholder="smtp.gmail.com" icon="🌐"/>
-            </div>
-          </div>
         )}
 
         {section==="offres"&&(
