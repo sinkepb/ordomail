@@ -254,7 +254,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
             <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>✉️ Configuration email</div>
             <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",marginBottom:14,border:"1px solid #dbeafe",fontSize:13}}>
               <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
-              <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception||`${pharmacie.id}@in.ordomail.fr`}</code>
+              {pharmacie.emailReception
+                ? <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception}</code>
+                : <span style={{fontSize:12,color:"#b45309",fontWeight:600}}>⚠️ Adresse non configurée — contactez le support OrdoMail</span>}
               <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
             </div>
             <Input label="Email de notification" value={emailNotif} onChange={setEmailNotif} type="email" placeholder="contact@pharmacie.fr" icon="✉️"/>

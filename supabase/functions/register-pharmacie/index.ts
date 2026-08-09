@@ -34,31 +34,41 @@ Deno.serve(async (req) => {
     // Générer le code vendeur (6 chiffres unique)
     const codeVendeur = String(100000 + Math.floor(Math.random() * 900000));
 
-    // Générer email_slug depuis le nom
-    const emailSlug = nom
-      .toLowerCase()
-      .replace(/[éèêë]/g, "e")
-      .replace(/[àâä]/g, "a")
-      .replace(/[ùûü]/g, "u")
-      .replace(/[îï]/g, "i")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    // email_slug : code court "pharmacie-XXXX" (4 caractères alphanumériques), PAS dérivé
+    // du nom — deux pharmacies au nom identique ou proche (ex: deux officines "Pharmacie
+    // Centrale" dans des villes différentes) auraient sinon produit le même slug et donc
+    // violé la contrainte UNIQUE sur email_reception à l'inscription de la seconde. Le code
+    // court élimine aussi la fuite du nom de la pharmacie dans une adresse email publique.
+    const CODE_CHARS = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // sans I/O (confusion avec 1/0)
+    function generateEmailCode() {
+      const arr = new Uint8Array(4);
+      crypto.getRandomValues(arr);
+      return Array.from(arr, (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+    }
 
-    // Créer la pharmacie
-    const { data: pharmacie, error: phErr } = await supabase
-      .from("pharmacies")
-      .insert({
-        nom,
-        email,
-        email_reception: `${emailSlug}@in.ordomail.fr`,
-        email_slug:      emailSlug,
-        code_vendeur:    codeVendeur,
-        plan:            "starter",
-        sonnette_active: true,
-        couleur:         "#1a3a6e",
-      })
-      .select()
-      .single();
+    // Créer la pharmacie — retente avec un nouveau code en cas de collision sur la
+    // contrainte UNIQUE email_reception (23505), jusqu'à 5 tentatives.
+    let pharmacie, phErr, emailSlug;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      emailSlug = `pharmacie-${generateEmailCode()}`;
+      const res = await supabase
+        .from("pharmacies")
+        .insert({
+          nom,
+          email,
+          email_reception: `${emailSlug}@in.ordomail.fr`,
+          email_slug:      emailSlug,
+          code_vendeur:    codeVendeur,
+          plan:            "starter",
+          sonnette_active: true,
+          couleur:         "#1a3a6e",
+        })
+        .select()
+        .single();
+      pharmacie = res.data;
+      phErr = res.error;
+      if (!phErr || phErr.code !== "23505") break;
+    }
 
     if (phErr) {
       return new Response(

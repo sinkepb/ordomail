@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS pharmacies (
   email           TEXT UNIQUE NOT NULL,
   couleur         TEXT DEFAULT '#1a3a6e',
   logo_url        TEXT,
-  email_reception TEXT UNIQUE,                 -- ex: pharmacie-de-la-paix@in.ordomail.fr
+  email_reception TEXT UNIQUE,                 -- ex: pharmacie-56E0@in.ordomail.fr (code court, pas le nom)
   email_slug      TEXT,                        -- (déduit) partie locale de email_reception
   code_vendeur    TEXT,                        -- code à 6 chiffres, connexion vendeur (déduit: pas garanti UNIQUE en base)
   qr_token        TEXT,                        -- jeton public QR code (phase 1, 24/07/2026)
