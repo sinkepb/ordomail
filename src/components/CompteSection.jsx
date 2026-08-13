@@ -5,7 +5,7 @@ import { PLAN_LIMITS } from "../lib/plans.js";
 import { openInvoicePDF } from "../lib/print.jsx";
 import { Btn, Input } from "./ui.jsx";
 import { PlanSwitcherModal } from "./UpgradeModal.jsx";
-import { isDemoMode, getSupabaseClient } from "../supabase.js";
+import { isDemoMode, getSupabaseClient, fetchFactures } from "../supabase.js";
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
@@ -96,14 +96,38 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
   const plan=planInfo||PLAN_LIMITS[pharmacie.plan]||PLAN_LIMITS.starter;
   const postesActifs=(postes||[]).filter(p=>p.actif).length;
   const ordosTraitees=(pharmacie.ordonnances||[]).filter(o=>o.status==="imprime").length;
-  const invoices=[
-    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price},
-    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price},
-    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price},
-    {id:"INV-2025-003",date:"15/03/2025",desc:`OrdoMail ${plan.label} — Mars 2025`,amount:plan.price},
-    {id:"INV-2025-002",date:"15/02/2025",desc:`OrdoMail ${plan.label} — Fév. 2025`,amount:plan.price},
-    {id:"INV-2025-001",date:"15/01/2025",desc:`OrdoMail ${plan.label} — Jan. 2025`,amount:plan.price},
+
+  // Factures — en démo, données fictives (pas de vraie facturation Stripe à montrer).
+  // En production, on lit la table `factures` (alimentée par stripe-webhook avec le
+  // montant RÉELLEMENT payé à l'époque) plutôt que de fabriquer des lignes au prix du
+  // plan ACTUEL : sinon un changement d'abonnement réécrivait rétroactivement le prix
+  // affiché sur toutes les factures passées, y compris celles d'avant le changement.
+  const demoInvoices=[
+    {id:"INV-2025-006",date:"15/06/2025",desc:`OrdoMail ${plan.label} — Juin 2025`,amount:plan.price,statut:"paid"},
+    {id:"INV-2025-005",date:"15/05/2025",desc:`OrdoMail ${plan.label} — Mai 2025`,amount:plan.price,statut:"paid"},
+    {id:"INV-2025-004",date:"15/04/2025",desc:`OrdoMail ${plan.label} — Avril 2025`,amount:plan.price,statut:"paid"},
+    {id:"INV-2025-003",date:"15/03/2025",desc:`OrdoMail ${plan.label} — Mars 2025`,amount:plan.price,statut:"paid"},
+    {id:"INV-2025-002",date:"15/02/2025",desc:`OrdoMail ${plan.label} — Fév. 2025`,amount:plan.price,statut:"paid"},
+    {id:"INV-2025-001",date:"15/01/2025",desc:`OrdoMail ${plan.label} — Jan. 2025`,amount:plan.price,statut:"paid"},
   ];
+  const [realInvoices,setRealInvoices]=useState(null); // null = pas encore chargé
+  useEffect(()=>{
+    if (isDemoMode) return;
+    fetchFactures(pharmacie.id).then(rows=>{
+      setRealInvoices(rows.map(f=>({
+        id: f.numero || f.stripe_invoice_id,
+        date: new Date(f.created_at).toLocaleDateString("fr-FR"),
+        desc: f.period_start
+          ? `OrdoMail — ${new Date(f.period_start).toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}`
+          : "Abonnement OrdoMail",
+        amount: (f.montant_ttc||0)/100,
+        statut: f.statut,
+        pdfUrl: f.pdf_url,
+      })));
+    }).catch(()=>setRealInvoices([]));
+  },[pharmacie.id]);
+  const invoices = isDemoMode ? demoInvoices : (realInvoices||[]);
+  const statutLabel = {paid:{txt:"✓",bg:"#dcfce7",color:"#166534"},open:{txt:"⏳",bg:"#fef9c3",color:"#854d0e"},void:{txt:"✕",bg:"#f1f5f9",color:"#64748b"},uncollectible:{txt:"⚠",bg:"#fee2e2",color:"#dc2626"},draft:{txt:"…",bg:"#f1f5f9",color:"#64748b"}};
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       {/* Infos compte */}
@@ -220,22 +244,36 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
       {/* Factures */}
       <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
         <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🧾 Historique factures</div>
+        {!isDemoMode && realInvoices===null ? (
+          <div style={{fontSize:12,color:"#94a3b8",padding:"12px 0"}}>Chargement…</div>
+        ) : invoices.length===0 ? (
+          <div style={{fontSize:12,color:"#94a3b8",padding:"12px 0"}}>Aucune facture pour l'instant.</div>
+        ) : (
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>{["N°","Date","Description","Montant","",""].map(h=><th key={h} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>{invoices.map(inv=>(
+          <thead><tr style={{borderBottom:"2px solid #f0f4ff"}}>{["N°","Date","Description","Montant","",""].map((h,i)=><th key={i} style={{padding:"0 0 8px",textAlign:"left",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{invoices.map(inv=>{
+            const st = statutLabel[inv.statut] || statutLabel.paid;
+            return (
             <tr key={inv.id} style={{borderBottom:"1px solid #f8fafc"}}>
               <td style={{padding:"8px 0",fontFamily:"monospace",fontSize:10,color:"#94a3b8"}}>{inv.id}</td>
               <td style={{padding:"8px 0",color:"#475569"}}>{inv.date}</td>
               <td style={{padding:"8px 0",fontWeight:500}}>{inv.desc}</td>
-              <td style={{padding:"8px 0",fontWeight:800}}>{inv.amount} €</td>
-              <td style={{padding:"8px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓</span></td>
-              <td style={{padding:"8px 0",textAlign:"right"}}><button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄</button></td>
+              <td style={{padding:"8px 0",fontWeight:800}}>{inv.amount.toFixed(2)} €</td>
+              <td style={{padding:"8px 0"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:st.bg,color:st.color}}>{st.txt}</span></td>
+              <td style={{padding:"8px 0",textAlign:"right"}}>
+                {isDemoMode
+                  ? <button onClick={()=>openInvoicePDF(inv,pharmacie,pharmacie.plan)} style={{fontSize:11,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄</button>
+                  : inv.pdfUrl && <a href={inv.pdfUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#3b82f6",fontWeight:600,textDecoration:"none"}}>📄</a>}
+              </td>
             </tr>
-          ))}</tbody>
+          );})}</tbody>
         </table>
+        )}
+        {invoices.length>0 && (
         <div style={{marginTop:12,padding:"8px 12px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#94a3b8",display:"flex",justifyContent:"space-between"}}>
-          <span>Total 2025</span><span style={{fontWeight:700,color:"#1a1a1a"}}>{invoices.reduce((s,i)=>s+i.amount,0)} €</span>
+          <span>Total</span><span style={{fontWeight:700,color:"#1a1a1a"}}>{invoices.reduce((s,i)=>s+i.amount,0).toFixed(2)} €</span>
         </div>
+        )}
       </div>
       {/* Zone danger */}
       <div style={{background:"#fff",borderRadius:14,padding:20,border:"1px solid #fee2e2"}}>

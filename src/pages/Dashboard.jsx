@@ -32,8 +32,6 @@ import {
   appellerPatient,
 } from "../supabase.js";
 
-const APP_VERSION = "v6.1 · 13/07/2026 16:10";
-
 function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage, pharmacieId, onOpenOrdo }) {
   const [section, setSection] = useState("pharmacie");
   const [showUpgrade, setShowUpgrade] = useState(null);
@@ -603,7 +601,7 @@ function BottomNav({ tab, canAdmin, setTab }) {
   );
 }
 
-function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "admin", userId = "demo" }) {
+function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", userId = "demo" }) {
   const [pharmacie, setPharmacie] = useState(null);
   const [ordonnances, setOrdonnances] = useState([]);
   const [interetsDuJour, setInteretsDuJour] = useState([]); // intérêts offres du jour
@@ -869,8 +867,6 @@ function PharmacieDashboard({ pharmacieId, onLogout, onPatientPage, userRole = "
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
-          <button onClick={onLogout} style={{border:"1px solid rgba(255,255,255,0.35)",borderRadius:7,background:"transparent",color:"#fff",padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⏏ Quitter</button>
-          <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"monospace",marginLeft:6}}>{APP_VERSION}</span>
         </div>
       </header>
       <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} />
