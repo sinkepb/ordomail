@@ -56,8 +56,26 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [selected, setSelected] = useState(null);
   const [step, setStep] = useState("choose");
+  const [errorMsg, setErrorMsg] = useState("");
+  // Figé à l'ouverture : `pharmacie` est une prop qui se met à jour en direct une fois
+  // le changement confirmé (le parent refetch après onConfirm), donc recalculer
+  // computeImpact contre pharmacie.plan en direct ferait dire, une fois l'étape "done"
+  // atteinte, que le NOUVEAU plan == plan courant → isUpgrade devient faussement false.
+  const [initialPlan] = useState(pharmacie.plan);
 
-  const impact = selected ? computeImpact(pharmacie, postes, selected.id) : null;
+  const impact = selected ? computeImpact({ ...pharmacie, plan: initialPlan }, postes, selected.id) : null;
+
+  if (step === "error") return (
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>⚠️</div>
+      <div style={{fontWeight:900,fontSize:20,color:"#0f172a",marginBottom:8}}>Échec du changement de plan</div>
+      <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.7}}>{errorMsg || "Une erreur est survenue — rien n'a été modifié."}</div>
+      <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+        <button onClick={onClose} style={{padding:"11px 28px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Fermer</button>
+        <button onClick={()=>setStep("confirm")} style={{padding:"11px 28px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Réessayer</button>
+      </div>
+    </div>
+  );
 
   if (step === "done") return (
     <div style={{textAlign:"center",padding:"24px 0"}}>
@@ -118,19 +136,25 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
           setStep("processing");
           (async () => {
             try {
-              // Si downgrade : désactiver les postes excédentaires en Supabase
+              // Si downgrade : désactiver les postes excédentaires en Supabase.
+              // ⚠️ Utilise `postes` (prop, source de l'avertissement affiché à l'écran
+              // précédent) et non `pharmacie.postes` (peut être obsolète — pas
+              // resynchronisé avec les modifications faites dans l'onglet Postes tant
+              // qu'un refetch de la pharmacie n'a pas eu lieu).
               if (impact && impact.postesASusprimer > 0 && !isDemoMode) {
                 const sb = getSupabaseClient();
-                const actifs = (pharmacie.postes||[]).filter(p=>p.actif);
+                const actifs = (postes||[]).filter(p=>p.actif);
                 for (let i = actifs.length-1; i >= selected.maxPostes; i--) {
-                  await sb.from("postes").update({ actif: false }).eq("id", actifs[i].id);
+                  const { error } = await sb.from("pharmacie_postes").update({ actif: false }).eq("id", actifs[i].id);
+                  if (error) throw error;
                 }
               }
               await onConfirm(selected.id);
               setStep("done");
             } catch(e) {
               console.error("[PlanSwitcher]", e.message);
-              setStep("done"); // afficher done quand même
+              setErrorMsg(e.message);
+              setStep("error");
             }
           })();
         }} style={{flex:2,padding:"11px",border:"none",borderRadius:10,background:impact.isUpgrade?selected.color:"#92400e",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
