@@ -281,7 +281,7 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
         <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Les données sont conservées 90 jours.</div>
         <Btn variant="danger" small>🗑 Supprimer mon compte</Btn>
       </div>
-      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={(p)=>{onUpgrade(p);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
+      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={onUpgrade} onClose={()=>setShowPlanSwitcher(false)}/>}
     </div>
   );
 }

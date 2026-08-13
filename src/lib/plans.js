@@ -26,6 +26,7 @@ export function computeImpact(pharmacie, postes, newPlanId) {
   return {
     curr,
     next,
+    isUpgrade:       PLAN_ORDER.indexOf(newPlanId) > PLAN_ORDER.indexOf(pharmacie.plan),
     postesActuels:   actifs,
     postesASusprimer: Math.max(0, actifs - next.maxPostes),
     priceDiff:       next.price - curr.price,

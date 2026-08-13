@@ -64,7 +64,7 @@ function AbonnementSection({ pharmacie, onUpgrade }) {
           ))}</tbody>
         </table>
       </div>
-      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={pharmacie.postes||[]} onConfirm={(newPlan)=>{onUpgrade(newPlan);setShowPlanSwitcher(false);}} onClose={()=>setShowPlanSwitcher(false)}/>}
+      {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={pharmacie.postes||[]} onConfirm={onUpgrade} onClose={()=>setShowPlanSwitcher(false)}/>}
     </div>
   );
 }
