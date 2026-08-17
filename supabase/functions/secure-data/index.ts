@@ -24,6 +24,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { validateFile } from "../_shared/upload-validation.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -187,6 +188,77 @@ Deno.serve(async (req) => {
       );
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Upload du fichier d'une ordonnance (photo/PDF), depuis le Dashboard vendeur/
+    // titulaire.
+    //
+    // Audit du 17/08/2026 (finding 8, durci le 18/08/2026) : ce chemin passait
+    // avant par un appel direct sb.storage.upload() en clé anon (le vendeur n'a
+    // pas de session Supabase Auth réelle) — la policy INSERT sur
+    // storage.objects n'ayant AUCUNE restriction de chemin au-delà du bucket,
+    // n'importe quel appelant anonyme pouvait écrire un fichier arbitraire sous
+    // N'IMPORTE QUEL {pharmacie_id}/{ordonnance_id}/, y compris celui d'une
+    // pharmacie qui n'est pas la sienne. En passant par ici (clé de service,
+    // même modèle que submit-ordonnance), l'appartenance de l'ordonnance à la
+    // pharmacie de l'appelant est vérifiée AVANT d'écrire, et la policy INSERT
+    // publique sur storage.objects peut être supprimée (voir
+    // 20260818_close_storage_anon_write.sql).
+    if (resource === "ordonnances_upload_file") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      const { ordoId, fileName, fileType, fileBase64 } = params || {};
+      if (!ordoId || !fileName || !fileType || !fileBase64) {
+        return new Response(JSON.stringify({ error: "ordoId, fileName, fileType et fileBase64 requis" }),
+          { status: 400, headers: CORS });
+      }
+
+      const { data: existing, error: findErr } = await sb
+        .from("ordonnances")
+        .select("id, pharmacie_id")
+        .eq("id", ordoId)
+        .maybeSingle();
+      if (findErr || !existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Ordonnance introuvable" }),
+          { status: 404, headers: CORS });
+      }
+
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }),
+          { status: 400, headers: CORS });
+      }
+
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      if (!check.ok) {
+        return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
+      }
+
+      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${pharmacieId}/${ordoId}/ordonnance.${ext}`;
+
+      const { error: upErr } = await sb.storage
+        .from("ordonnances-files")
+        .upload(path, bytes, { contentType: fileType, upsert: true });
+      if (upErr) throw new Error(upErr.message);
+
+      await sb.from("ordonnances").update({
+        fichier_url:    path,
+        fichier_nom:    fileName,
+        fichier_type:   ext === "pdf" ? "pdf" : "image",
+        fichier_taille: `${Math.round(bytes.length / 1024)} Ko`,
+      }).eq("id", ordoId);
+
+      const { data: signed } = await sb.storage
+        .from("ordonnances-files")
+        .createSignedUrl(path, 3600);
+
+      return new Response(JSON.stringify({ success: true, path, signedUrl: signed?.signedUrl || null }),
+        { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),

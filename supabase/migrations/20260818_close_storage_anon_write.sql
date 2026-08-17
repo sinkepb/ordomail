@@ -1,0 +1,27 @@
+-- OrdoMail — ferme l'écriture anonyme ouverte sur storage.objects
+-- (finding 8 de l'audit du 17/08/2026, durcissement du 18/08/2026)
+--
+-- La policy "public_upload_ordonnances" (voir
+-- 20260818_track_storage_policies.sql) autorisait tout appelant, y compris
+-- anonyme, à écrire un fichier à N'IMPORTE QUEL chemin
+-- {pharmacie_id}/{ordonnance_id}/ du bucket ordonnances-files — aucune
+-- restriction au-delà du nom du bucket. Un tiers connaissant/devinant un
+-- pharmacie_id et un ordonnance_id (UUID) pouvait donc remplacer la photo
+-- d'ordonnance qu'un pharmacien va ouvrir et traiter par un fichier
+-- arbitraire.
+--
+-- Seul src/lib/supabase/ordonnances.js:uploadOrdoFile (upload depuis le
+-- Dashboard vendeur/titulaire) dépendait de cette policy — le vendeur n'a
+-- pas de session Supabase Auth réelle, donc pas de droit d'écriture direct
+-- sous une policy scopée par pharmacie. Ce flux passe désormais par la
+-- ressource secure-data "ordonnances_upload_file" (clé de service, après
+-- vérification que l'ordonnance appartient bien à l'appelant — même modèle
+-- que submit-ordonnance, qui utilisait déjà la clé de service et ne
+-- dépendait donc pas de cette policy).
+--
+-- Plus aucun appelant anon/authenticated n'a besoin d'écrire directement
+-- dans ce bucket : toute écriture passe par une edge function avec la clé
+-- de service (submit-ordonnance, send-email, secure-data), qui contourne
+-- RLS. La policy INSERT publique peut donc être supprimée sans régression.
+
+DROP POLICY IF EXISTS "public_upload_ordonnances" ON storage.objects;
