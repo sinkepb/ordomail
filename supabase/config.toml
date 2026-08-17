@@ -11,6 +11,14 @@
 [functions.secure-data]
 verify_jwt = false
 
+# secure-data-admin (13/08/2026, extraite de secure-data) : mêmes jetons internes
+# que ci-dessus (jeton admin émis par verify-admin) — même besoin de verify_jwt=false.
+# Oubliée à la création de la fonction : sans cette entrée, la plateforme rejette
+# le jeton admin en 401 "Invalid JWT" AVANT même que le code de la fonction ne
+# s'exécute (repéré en test live juste après le premier déploiement).
+[functions.secure-data-admin]
+verify_jwt = false
+
 # create-checkout-session est appelée juste après l'inscription (sb.auth.signUp +
 # register-pharmacie), au même moment où la confirmation email peut être encore en
 # attente — donc potentiellement sans session Supabase Auth active, comme
