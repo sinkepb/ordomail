@@ -1,6 +1,6 @@
 // ─── Ordonnances (lecture, statut, extraction OCR, upload fichier) ────────────
 // Extrait de src/supabase.js (27/07/2026) — voir src/supabase.js.
-import { IS_DEMO, getSupabase, getDB, callSecureData } from './client.js';
+import { IS_DEMO, getDB, callSecureData } from './client.js';
 import { _listeners } from './realtime.js';
 import { maskId } from '../utils.js';
 
@@ -66,14 +66,34 @@ export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
     } : o);
     return { dataUrl };
   }
-  // Mode prod : upload dans Supabase Storage
-  const sb = getSupabase();
-  const ext = file.name.split('.').pop();
-  const path = `${pharmacieId}/${ordoId}/ordonnance.${ext}`;
-  await sb.storage.from('ordonnances-files').upload(path, file, { upsert: true });
-  const { data: signed } = await sb.storage.from('ordonnances-files').createSignedUrl(path, 3600);
-  await callSecureData('ordonnances_update', { ordoId, patch: { fichier_url: path, fichier_nom: file.name } });
-  return { dataUrl: signed?.signedUrl, path };
+  // Mode prod : upload via secure-data (clé de service), pas en direct.
+  //
+  // Avant le 18/08/2026, cet upload passait par un appel direct
+  // sb.storage.upload() en clé anon (le vendeur n'a pas de session Supabase
+  // Auth réelle) — la policy INSERT sur storage.objects n'ayant aucune
+  // restriction de chemin au-delà du bucket, n'importe quel appelant anonyme
+  // pouvait écrire un fichier arbitraire dans le dossier de N'IMPORTE QUELLE
+  // pharmacie. secure-data vérifie maintenant que l'ordonnance appartient
+  // bien à l'appelant avant d'écrire (même modèle que submit-ordonnance).
+  const fileBase64 = await fileToBase64(file);
+  const { path, signedUrl } = await callSecureData('ordonnances_upload_file', {
+    ordoId, fileName: file.name, fileType: file.type, fileBase64,
+  });
+  return { dataUrl: signedUrl, path };
+}
+
+// Encode un File en base64 pur (sans préfixe data:...;base64,) — par blocs
+// pour éviter une pile d'appel trop profonde sur les gros fichiers
+// (String.fromCharCode.apply sur un tableau de plusieurs Mo).
+async function fileToBase64(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 // ─── Normaliser une ordonnance DB Supabase → format UI ───────────────────────
