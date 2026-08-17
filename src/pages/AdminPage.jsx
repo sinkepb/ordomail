@@ -194,7 +194,7 @@ function AdminDashboardLive({ adminToken } = {}) {
       // quiconque savait appeler l'API REST Supabase, connecté ou non au backoffice.
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+      const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -204,7 +204,7 @@ function AdminDashboardLive({ adminToken } = {}) {
         body: JSON.stringify({ resource: "admin_pharmacies" }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || `secure-data ${res.status}`);
+      if (!res.ok) throw new Error(body?.error || `secure-data-admin ${res.status}`);
       const enriched = body.data || [];
 
       setClients(enriched);
@@ -363,7 +363,7 @@ function AdminDashboardLive({ adminToken } = {}) {
                 try {
                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
                   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-                  await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+                  await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",

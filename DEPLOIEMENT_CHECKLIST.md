@@ -6,6 +6,38 @@ document est la référence unique pour mettre en production ou auditer l'état 
 fichiers `DEPLOIEMENT_PHASE1.md` / `PHASE2.md` / `PHASE3_STRIPE.md` restent en contexte
 historique.
 
+## 0. Environnements
+
+| | Local (poste dev) | Preview (branche `develop`) | Production (branche `main`) |
+|---|---|---|---|
+| Frontend | `npm run dev` (localhost:5173) | Netlify — déploiement branche `develop` | Netlify — déploiement branche `main`, ordomail.fr |
+| Supabase | Projet **ordomail-preview** (`uygaqxruuxpfhvzjuksy`) | Projet **ordomail-preview** (`uygaqxruuxpfhvzjuksy`) | Projet **ordomail** (`hdgpkgaznsaocczxvaix`) |
+| Données | Test, réinitialisables | Test, partagées, à nettoyer périodiquement | Réelles — **données de santé, jamais de données de test** |
+| Déploiement | Manuel | Automatique à chaque push sur `develop` | Automatique à chaque merge sur `main` |
+
+**13/08/2026 — séparation preview/production.** Jusqu'à cette date, `develop` (et le
+développement local) pointaient vers le projet Supabase de **production**
+(`hdgpkgaznsaocczxvaix`) — toute la recette, les tests manuels et les vérifications en
+direct faites pendant les sessions de développement touchaient donc de vraies ordonnances
+de vrais patients. Le projet `ordomail-preview` a été créé ce jour-là (même schéma, région
+`eu-west-1`, rejoué depuis `supabase/migrations/` — **pas de copie des données de
+production**, qui sont des données de santé au sens RGPD art. 9 et n'ont rien à faire sur
+un environnement moins surveillé). `.env.local` pointe désormais vers `ordomail-preview`.
+
+Reste à faire (voir § 1) : configurer sur Netlify une valeur de `VITE_SUPABASE_URL` /
+`VITE_SUPABASE_ANON_KEY` spécifique à la branche `develop`, distincte de celle de
+`main` — jusqu'ici Netlify n'avait qu'un seul jeu de variables partagé par toutes les
+branches.
+
+Pour recréer `ordomail-preview` à l'identique (disaster recovery) ou en créer un nouveau
+du même genre :
+```bash
+supabase projects create ordomail-preview --org-id <org-id> --db-password <mdp-fort> --region eu-west-1
+# attendre que le projet passe à ACTIVE_HEALTHY (supabase projects list), puis :
+supabase db push --project-ref <ref-du-nouveau-projet> --password <mdp-fort> --include-all
+# noter l'URL + anon key : supabase projects api-keys --project-ref <ref>
+```
+
 **28/07/2026 — `develop` fusionné et poussé sur `main`** (commit `4929a0b`, 35 commits),
 déclenchant le déploiement de production sur ordomail.fr. Contenu notable : tout le
 correctif `offre_interets` ci-dessous, plus un 4ᵉ bug trouvé après coup — la nouvelle edge
@@ -44,7 +76,7 @@ une lecture anon large sur la table pour fonctionner.
 
 ---
 
-## 1. Frontend (Vercel/Netlify)
+## 1. Frontend (Netlify)
 
 - [ ] `npm run build` passe sans erreur
 - [ ] `npm test` passe (44 tests Vitest — JWT, validation upload, checkout, plan webhook, masquage logs, XSS, dates)
@@ -54,15 +86,20 @@ une lecture anon large sur la table pour fonctionner.
       sans ces secrets, ne bloque pas un contributeur standard.
 - [ ] `npm run test:e2e` passe (Playwright, mode démo uniquement — voir `e2e/README.md`
       pour ce qui est couvert et pourquoi le paiement Stripe réel ne l'est pas)
-- [ ] Variables d'environnement de production configurées (Vercel/Netlify → Environment Variables) :
+- [ ] Variables d'environnement configurées **par contexte** (Netlify → Site configuration
+      → Environment variables → bouton "Options" sur chaque variable → "Different value for
+      different deploy contexts"). Deux jeux de valeurs distincts, jamais partagés :
 
-  | Variable | Valeur |
-  |---|---|
-  | `VITE_DEMO_MODE` | `false` (⚠️ le build refuse de démarrer si `false` sans config Supabase valide — comportement voulu) |
-  | `VITE_SUPABASE_URL` | URL du projet Supabase |
-  | `VITE_SUPABASE_ANON_KEY` | Clé anon (publique) |
-  | `VITE_APP_URL` | URL canonique du domaine (ex: `https://ordomail.fr`) |
-  | `VITE_SENTRY_DSN` | DSN Sentry (optionnel — monitoring désactivé si vide) |
+  | Variable | Contexte "Production" (branche `main`) | Contexte "Branch deploys" / branche `develop` |
+  |---|---|---|
+  | `VITE_DEMO_MODE` | `false` | `false` |
+  | `VITE_SUPABASE_URL` | URL du projet `ordomail` (prod) | URL du projet `ordomail-preview` |
+  | `VITE_SUPABASE_ANON_KEY` | Clé anon `ordomail` (prod) | Clé anon `ordomail-preview` |
+  | `VITE_APP_URL` | `https://ordomail.fr` | URL de preview Netlify de la branche |
+  | `VITE_SENTRY_DSN` | DSN Sentry (optionnel) | laisser vide (pas de bruit prod dans Sentry) |
+
+  ⚠️ `VITE_DEMO_MODE=false` refuse de démarrer sans config Supabase valide — comportement
+  voulu, pour ne jamais retomber silencieusement en mode démo en preview/prod.
 
 - [ ] Domaine configuré et HTTPS actif (voir README § Nom de domaine)
 

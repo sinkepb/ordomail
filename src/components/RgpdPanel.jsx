@@ -13,7 +13,7 @@ import { useState, useEffect } from "react";
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -23,7 +23,7 @@ async function callSecureData(resource, params, adminToken) {
     body: JSON.stringify({ resource, params }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data ${resource} : erreur ${res.status}`);
+  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
   return body;
 }
 

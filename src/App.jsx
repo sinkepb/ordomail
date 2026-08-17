@@ -4,7 +4,7 @@ import {
   isDemoMode, registerDB, getSupabaseClient,
   getCurrentSession,
 } from "./supabase.js";
-import { reportError } from "./lib/monitoring.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 // Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
 // ne doit pas télécharger le dashboard vendeur, le backoffice admin et Stripe
 // Checkout rien que pour déposer une ordonnance. Chaque route devient son
@@ -46,73 +46,6 @@ console.log("isDemoMode:", typeof isDemoMode !== "undefined" ? isDemoMode : "❌
 // ── Pages ────────────────────────────────────────────────────────────────────
 
 // ── Components ───────────────────────────────────────────────────────────────
-
-// ── Error Boundary — affiche l'erreur au lieu d'une page blanche ─────────────
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, info: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error, info) {
-    console.error("[ErrorBoundary]", error, info);
-    reportError(error, { componentStack: info?.componentStack }); // no-op sans VITE_SENTRY_DSN
-    this.setState({ info });
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{
-          minHeight: "100vh", background: "#0f172a",
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-          padding: 32, fontFamily: "monospace"
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>💥</div>
-          <div style={{ color: "#f87171", fontWeight: 900, fontSize: 20, marginBottom: 12 }}>
-            Erreur OrdoMail
-          </div>
-          <div style={{
-            background: "#1e293b", border: "1px solid #f87171",
-            borderRadius: 12, padding: 20, maxWidth: 700, width: "100%",
-            marginBottom: 16
-          }}>
-            <div style={{ color: "#fca5a5", fontSize: 14, marginBottom: 8, fontWeight: 700 }}>
-              {this.state.error?.name}: {this.state.error?.message}
-            </div>
-            <pre style={{ color: "#94a3b8", fontSize: 11, whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 300 }}>
-              {this.state.error?.stack}
-            </pre>
-          </div>
-          {this.state.info && (
-            <div style={{
-              background: "#1e293b", border: "1px solid #334155",
-              borderRadius: 12, padding: 20, maxWidth: 700, width: "100%",
-              marginBottom: 16
-            }}>
-              <div style={{ color: "#64748b", fontSize: 12, marginBottom: 8 }}>Component Stack:</div>
-              <pre style={{ color: "#94a3b8", fontSize: 11, whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 200 }}>
-                {this.state.info.componentStack}
-              </pre>
-            </div>
-          )}
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              background: "#3b82f6", color: "#fff", border: "none",
-              borderRadius: 8, padding: "10px 24px", fontSize: 14,
-              fontWeight: 700, cursor: "pointer", fontFamily: "monospace"
-            }}>
-            🔄 Recharger
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 // ── Données démo (mock) ───────────────────────────────────────────────────────
 
