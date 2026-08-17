@@ -14,6 +14,7 @@ import { StoriesSection } from "../components/StoriesSection.jsx";
 import { Btn, Input } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { QRCode } from "../components/QRCode.jsx";
+import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
@@ -101,6 +102,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
       <div style={{flex:1,overflow:"auto",padding:16}}>
 
         {section==="pharmacie"&&(
+          <ErrorBoundary compact label="Pharmacie">
           <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
             <Input label="Nom de la pharmacie" value={nom} onChange={setNom} placeholder="Pharmacie..." icon="🏥"/>
             <Input label="Adresse" value={adresse} onChange={setAdresse} placeholder="12 rue..." icon="📍"/>
@@ -120,9 +122,11 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
               <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
             </div>
           </div>
+          </ErrorBoundary>
         )}
 
         {section==="postes"&&(
+          <ErrorBoundary compact label="Postes">
           <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
             <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>🖥️ Gestion des postes</div>
             {/* Code pharmacie pour connexion vendeurs */}
@@ -246,19 +250,27 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
               <div style={{marginTop:8,fontSize:11,color:"#64748b",lineHeight:1.6}}>ℹ️ C'est le titulaire qui crée et modifie les codes PIN depuis cette page.</div>
             </div>
           </div>
+          </ErrorBoundary>
         )}
 
         {section==="qrcode"&&(
+          <ErrorBoundary compact label="QR Code">
           <QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>
+          </ErrorBoundary>
         )}
 
         {section==="offres"&&(
+          <ErrorBoundary compact label="Offres">
           <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
+          </ErrorBoundary>
         )}
         {section==="stories"&&(
+          <ErrorBoundary compact label="Stories">
           <StoriesSection pharmacie={pharmacie}/>
+          </ErrorBoundary>
         )}
         {section==="abonnement"&&(
+          <ErrorBoundary compact label="Abonnement">
           <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
@@ -269,9 +281,11 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
               console.error("[changePlan]", e.message);
             }
           }}/>
+          </ErrorBoundary>
         )}
 
         {section==="compte"&&(
+          <ErrorBoundary compact label="Compte">
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
             try {
               await changePlan(pharmacie.id, newPlan);
@@ -279,10 +293,13 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
               if (ph) setPostes(ph.postes || []);
             } catch(e) { console.error("[changePlan]", e.message); }
           }}/>
+          </ErrorBoundary>
         )}
 
         {section==="journal"&&(
+          <ErrorBoundary compact label="Journal d'activité">
           <LogsPanel pharmacieId={pharmacieId} onOpenOrdo={onOpenOrdo}/>
+          </ErrorBoundary>
         )}
 
       </div>
@@ -872,6 +889,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
       <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} />
 
       {tab==="ordonnances"&&(
+        <ErrorBoundary compact label="Ordonnances">
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:60}}>
           <div style={{background:"#fff",borderBottom:"1px solid #e8eaf0",padding:"10px 16px",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -1140,23 +1158,28 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
             )}
           </div>
         </div>
+        </ErrorBoundary>
       )}
 
-      {tab==="parametres"&&canAdmin&&<ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}
-        qrUrl={qrUrl} onPatientPage={onPatientPage} pharmacieId={pharmacieId}
-        onOpenOrdo={(ordoId) => {
-          setTab("ordonnances");
-          setFilterStatus("all");
-          setTimeout(() => {
-            const el = document.getElementById(`ordo-${ordoId}`);
-            if (el) {
-              el.scrollIntoView({ behavior:"smooth", block:"center" });
-              el.style.outline = "3px solid #1e40af";
-              setTimeout(() => el.style.outline = "", 2500);
-            }
-          }, 300);
-        }}
-      />}
+      {tab==="parametres"&&canAdmin&&(
+        <ErrorBoundary compact label="Paramètres">
+        <ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}
+          qrUrl={qrUrl} onPatientPage={onPatientPage} pharmacieId={pharmacieId}
+          onOpenOrdo={(ordoId) => {
+            setTab("ordonnances");
+            setFilterStatus("all");
+            setTimeout(() => {
+              const el = document.getElementById(`ordo-${ordoId}`);
+              if (el) {
+                el.scrollIntoView({ behavior:"smooth", block:"center" });
+                el.style.outline = "3px solid #1e40af";
+                setTimeout(() => el.style.outline = "", 2500);
+              }
+            }, 300);
+          }}
+        />
+        </ErrorBoundary>
+      )}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}

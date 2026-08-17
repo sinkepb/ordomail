@@ -1,24 +1,28 @@
 // OrdoMail — Edge Function secure-data
 // @phase1-security 23/07/2026
+// @isolation-pannes 13/08/2026 — resserrée aux ressources scopées à une pharmacie
+// (vendeur/titulaire). Les 12 ressources backoffice OrdoMail Business ont été
+// déplacées vers secure-data-admin (fonction et déploiement séparés) : un bug ou
+// un déploiement raté sur l'admin n'affecte plus jamais ce flux, celui dont
+// dépend directement le métier (consultation/impression des ordonnances).
 //
-// Remplace les lectures directes en clé anon (fetchOrdonnances, offre_interets,
-// liste des pharmacies côté backoffice) qui reposaient sur des policies RLS
-// permissives pour fonctionner avec des sessions "vendeur" non authentifiées.
-// Confirmé en audit : une requête REST anonyme suffisait à lire les ordonnances
-// (données de santé) de n'importe quelle pharmacie.
+// Remplace les lectures directes en clé anon (fetchOrdonnances, offre_interets)
+// qui reposaient sur des policies RLS permissives pour fonctionner avec des
+// sessions "vendeur" non authentifiées. Confirmé en audit : une requête REST
+// anonyme suffisait à lire les ordonnances (données de santé) de n'importe
+// quelle pharmacie.
 //
 // Toute lecture passe maintenant par ici et par une vérification serveur de
-// l'appelant :
+// l'appelant (voir _shared/resolveCaller.ts) :
 //   - jeton vendeur émis par verify-pin (rôle "vendeur", scope = une pharmacie)
-//   - jeton admin émis par verify-admin (rôle "admin", accès backoffice)
 //   - session Supabase Auth du titulaire (email/mot de passe), résolue via
 //     pharmacie_users
 //
-// Nécessite le secret de fonction ORDOMAIL_JWT_SECRET (le même que verify-pin
-// et verify-admin — supabase secrets set ORDOMAIL_JWT_SECRET=...).
+// Nécessite le secret de fonction ORDOMAIL_JWT_SECRET (le même que verify-pin,
+// verify-admin et secure-data-admin — supabase secrets set ORDOMAIL_JWT_SECRET=...).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyToken } from "../_shared/jwt.ts";
+import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
@@ -41,29 +45,9 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    // ── Identifier l'appelant ────────────────────────────────────────────────
-    let pharmacieId: string | null = null;
-    let isAdmin = false;
+    const { pharmacieId } = await resolveCaller(bearer, jwtSecret, sb);
 
-    const internal = bearer ? await verifyToken(bearer, jwtSecret) : { valid: false as const, error: "" };
-    if (internal.valid && internal.payload.role === "vendeur") {
-      pharmacieId = String(internal.payload.pharmacie_id);
-    } else if (internal.valid && internal.payload.role === "admin") {
-      isAdmin = true;
-    } else if (bearer) {
-      // Ni jeton vendeur ni jeton admin — tenter une session Supabase Auth (titulaire)
-      const { data: userData } = await sb.auth.getUser(bearer);
-      if (userData?.user) {
-        const { data: link } = await sb
-          .from("pharmacie_users")
-          .select("pharmacie_id")
-          .eq("id", userData.user.id)
-          .maybeSingle();
-        if (link) pharmacieId = link.pharmacie_id;
-      }
-    }
-
-    if (!pharmacieId && !isAdmin) {
+    if (!pharmacieId) {
       return new Response(JSON.stringify({ error: "Authentification requise" }),
         { status: 401, headers: CORS });
     }
@@ -202,275 +186,6 @@ Deno.serve(async (req) => {
         { onConflict: "pharmacie_id,story_id" },
       );
       if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ success: true }), { headers: CORS });
-    }
-
-    if (resource === "admin_pharmacies") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      // Colonnes volontairement limitées : jamais smtp_pass_enc ni autres secrets internes,
-      // et surtout jamais les PIN/pin_hash des postes (l'ancien .select("*, postes(*)") côté
-      // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
-      const { data: pharmacies, error: phErr } = await sb
-        .from("pharmacies")
-        .select("id, nom, email, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash)")
-        .order("created_at", { ascending: false });
-      if (phErr) throw new Error(phErr.message);
-
-      const now30 = new Date(Date.now() - 30 * 86400000).toISOString();
-      const now7  = new Date(Date.now() - 7 * 86400000).toISOString();
-      const now24 = new Date(Date.now() - 86400000).toISOString();
-
-      const enriched = await Promise.all((pharmacies || []).map(async (ph: any) => {
-        const [
-          { count: total },
-          { count: mois },
-          { count: semaine },
-          { count: attente },
-          { data: canaux },
-          { data: offres },
-        ] = await Promise.all([
-          sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id),
-          sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).gte("received_at", now30),
-          sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).gte("received_at", now7),
-          sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).eq("status", "nouveau").lte("received_at", now24),
-          sb.from("ordonnances").select("source").eq("pharmacie_id", ph.id).gte("received_at", now30),
-          sb.from("offres_stories").select("id", { count: "exact", head: true }).eq("pharmacie_id", ph.id).eq("actif", true),
-        ]);
-
-        const totalCanaux    = canaux?.length || 0;
-        const qrCount        = canaux?.filter((o: any) => o.source === "qrcode").length || 0;
-        const emailCount     = canaux?.filter((o: any) => o.source === "email").length || 0;
-        const canalQrPct     = totalCanaux ? Math.round(qrCount / totalCanaux * 100) : 0;
-        const canalEmailPct  = totalCanaux ? Math.round(emailCount / totalCanaux * 100) : 0;
-        const postes         = ph.pharmacie_postes || [];
-        const pinsConfigures = postes.filter((p: any) => p.pin_hash).length;
-
-        const score = Math.min(100, Math.round(
-          (mois || 0) * 0.4 + (semaine || 0) * 2 + canalQrPct * 0.2 +
-          postes.filter((p: any) => p.actif && p.pin_hash).length * 5
-        ));
-
-        // On ne renvoie jamais pharmacie_postes brut (contient pin_hash) — seulement les agrégats.
-        const { pharmacie_postes, ...phSafe } = ph;
-        return {
-          ...phSafe,
-          postesActifs: postes.filter((p: any) => p.actif).length,
-          postesTotal: postes.length,
-          ordos_total: total || 0,
-          ordos_mois: mois || 0,
-          ordos_semaine: semaine || 0,
-          ordos_attente: attente || 0,
-          canal_qr_pct: canalQrPct,
-          canal_email_pct: canalEmailPct,
-          offres_actives: offres?.length || 0,
-          pins_configures: pinsConfigures,
-          score_activite: score,
-          taux_traitement: total ? Math.round(((total - (attente || 0)) / total) * 100) : 0,
-        };
-      }));
-
-      return new Response(JSON.stringify({ data: enriched }), { headers: CORS });
-    }
-
-    if (resource === "admin_pricing") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { data, error } = await sb.from("pricing_plans").select("*").order("sort_order", { ascending: true });
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
-    }
-
-    if (resource === "admin_update_pricing") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { plans } = params || {};
-      if (!Array.isArray(plans) || !plans.length) {
-        return new Response(JSON.stringify({ error: "plans requis (tableau)" }),
-          { status: 400, headers: CORS });
-      }
-      const rows = plans.map((p: any, i: number) => ({
-        id: p.id,
-        label: p.label,
-        icon: p.icon,
-        color: p.color,
-        price: Number(p.price) || 0,
-        price_annual: Number(p.priceAnnual) || 0,
-        max_postes: Number(p.maxPostes) || 0,
-        max_ordos: Number(p.maxOrdos) || 0,
-        sort_order: i,
-        updated_at: new Date().toISOString(),
-      }));
-      const { error } = await sb.from("pricing_plans").upsert(rows, { onConflict: "id" });
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ success: true }), { headers: CORS });
-    }
-
-    if (resource === "admin_stories") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { data, error } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
-    }
-
-    if (resource === "admin_stories_write") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { action, id, payload } = params || {};
-      if (action === "create") {
-        if (!payload) return new Response(JSON.stringify({ error: "payload requis" }), { status: 400, headers: CORS });
-        const { data, error } = await sb.from("stories_content").insert(payload).select().single();
-        if (error) throw new Error(error.message);
-        return new Response(JSON.stringify({ data }), { headers: CORS });
-      }
-      if (action === "update") {
-        if (!id || !payload) return new Response(JSON.stringify({ error: "id et payload requis" }), { status: 400, headers: CORS });
-        const { error } = await sb.from("stories_content").update(payload).eq("id", id);
-        if (error) throw new Error(error.message);
-        return new Response(JSON.stringify({ success: true }), { headers: CORS });
-      }
-      if (action === "delete") {
-        if (!id) return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
-        const { error } = await sb.from("stories_content").delete().eq("id", id);
-        if (error) throw new Error(error.message);
-        return new Response(JSON.stringify({ success: true }), { headers: CORS });
-      }
-      return new Response(JSON.stringify({ error: `action inconnue: ${action}` }), { status: 400, headers: CORS });
-    }
-
-    if (resource === "admin_update_plan") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { pharmacieId: targetPharmacieId, plan } = params || {};
-      if (!targetPharmacieId || !plan) {
-        return new Response(JSON.stringify({ error: "pharmacieId et plan requis" }),
-          { status: 400, headers: CORS });
-      }
-      const { error } = await sb.from("pharmacies").update({ plan }).eq("id", targetPharmacieId);
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ success: true }), { headers: CORS });
-    }
-
-    if (resource === "admin_alerts") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      // Panneau Monitoring backoffice — voir _shared/alert.ts pour qui écrit ici.
-      let q = sb.from("alerts").select("*");
-      if (!params?.includeResolved) q = q.eq("resolved", false);
-      q = q.order("created_at", { ascending: false }).limit(params?.limit || 200);
-      const { data, error } = await q;
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
-    }
-
-    if (resource === "admin_alerts_resolve") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { alertId } = params || {};
-      if (!alertId) {
-        return new Response(JSON.stringify({ error: "alertId requis" }),
-          { status: 400, headers: CORS });
-      }
-      const { error } = await sb.from("alerts")
-        .update({ resolved: true, resolved_at: new Date().toISOString() })
-        .eq("id", alertId);
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ success: true }), { headers: CORS });
-    }
-
-    if (resource === "admin_retention_get") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { data, error } = await sb.from("retention_settings")
-        .select("ordonnances_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
-    }
-
-    if (resource === "admin_retention_set") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { days, updatedBy } = params || {};
-      const parsed = days === null ? null : Number(days);
-      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0)) {
-        return new Response(JSON.stringify({ error: "days doit être un entier positif ou null (désactive la purge)" }),
-          { status: 400, headers: CORS });
-      }
-      const { error } = await sb.from("retention_settings")
-        .update({ ordonnances_retention_days: parsed, updated_at: new Date().toISOString(), updated_by: updatedBy || null })
-        .eq("id", 1);
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ success: true }), { headers: CORS });
-    }
-
-    // Recherche RGPD (droits patient — art. 12-22) : localiser TOUT l'historique
-    // des ordonnances d'un patient par son nom, au-delà de la fenêtre de 7 jours
-    // normalement chargée par le dashboard vendeur. Ne vérifie PAS l'identité du
-    // demandeur — l'UI backoffice doit rappeler explicitement de la vérifier par
-    // un autre moyen (téléphone/email) avant toute suppression.
-    if (resource === "admin_search_ordonnances") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const nom = (params?.nom || "").trim();
-      if (nom.length < 2) {
-        return new Response(JSON.stringify({ error: "Nom trop court (2 caractères minimum)" }),
-          { status: 400, headers: CORS });
-      }
-      const { data, error } = await sb.from("ordonnances")
-        .select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, pharmacies(nom)")
-        .or(`patient_nom.ilike.%${nom}%,from_name.ilike.%${nom}%`)
-        .order("received_at", { ascending: false })
-        .limit(100);
-      if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
-    }
-
-    if (resource === "admin_delete_ordonnance") {
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
-          { status: 403, headers: CORS });
-      }
-      const { ordoId } = params || {};
-      if (!ordoId) {
-        return new Response(JSON.stringify({ error: "ordoId requis" }),
-          { status: 400, headers: CORS });
-      }
-      const { data: ordo, error: findErr } = await sb.from("ordonnances")
-        .select("id, fichier_url").eq("id", ordoId).maybeSingle();
-      if (findErr) throw new Error(findErr.message);
-      if (!ordo) {
-        return new Response(JSON.stringify({ error: "Ordonnance introuvable" }),
-          { status: 404, headers: CORS });
-      }
-      if (ordo.fichier_url) {
-        const { error: rmErr } = await sb.storage.from("ordonnances-files").remove([ordo.fichier_url]);
-        if (rmErr) console.error("[admin_delete_ordonnance] fichier:", rmErr.message);
-      }
-      const { error: delErr } = await sb.from("ordonnances").delete().eq("id", ordoId);
-      if (delErr) throw new Error(delErr.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
