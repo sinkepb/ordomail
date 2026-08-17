@@ -457,11 +457,15 @@ BEGIN;
 COMMIT;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- STORAGE BUCKETS (à créer/vérifier via dashboard Supabase — policies non
--- auditées dans les phases 1-3, voir DEPLOIEMENT_PHASE1.md "limites connues")
+-- STORAGE BUCKETS — policies trackées dans
+-- migrations/20260818_track_storage_policies.sql (audit du 17/08/2026,
+-- finding 8 : jusqu'ici créées à la main via le dashboard, jamais trackées).
 -- ─────────────────────────────────────────────────────────────────────────────
--- Bucket: ordonnances-files (privé)
+-- Bucket: ordonnances-files (privé — confirmé en base, public=false)
 --   Dossier: {pharmacie_id}/{ordonnance_id}/
 --   Accès prévu : via signed URLs (getSignedUrl, 5-60 min selon l'usage)
--- Bucket: logos-pharmacies (public)
+-- Bucket: logos-pharmacies (privé — confirmé en base, public=false ; ce
+--   commentaire affirmait "public" à tort, contredit par le bucket réel ET
+--   par le test src/lib/supabase/__tests__/rls.live.test.js:196, qui
+--   attend explicitement public=false)
 --   Dossier: {pharmacie_id}/
