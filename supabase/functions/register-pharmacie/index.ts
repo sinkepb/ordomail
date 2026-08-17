@@ -77,13 +77,57 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Lier l'utilisateur à la pharmacie
+    // Lier l'utilisateur à la pharmacie.
+    //
+    // Audit du 17/08/2026 : ce bloc faisait confiance à userId tel que fourni
+    // par le client, sans aucune vérification — un appelant pouvait fournir
+    // l'id de n'importe quel autre utilisateur Supabase Auth existant pour se
+    // faire lier comme "admin" d'une pharmacie qu'il vient de créer, sur un
+    // compte qui n'est pas le sien.
+    //
+    // On ne lie que si le client a demandé une liaison (userId fourni, comme
+    // avant — préserve le comportement des appelants qui ne le fournissent
+    // pas, ex: BillingModule.jsx qui lie via un autre mécanisme). L'identité
+    // est ensuite vérifiée côté serveur avant d'écrire :
+    //   - si une session Supabase Auth est jointe (Authorization: Bearer),
+    //     l'identité qu'elle porte fait foi et doit correspondre à userId ;
+    //   - sinon (cas normal ici : juste après signUp() avec confirmation
+    //     email en attente, authData.session encore null côté client — voir
+    //     LoginPage.jsx RegisterForm), userId est revérifié via l'API admin :
+    //     l'utilisateur doit réellement exister et son email doit
+    //     correspondre exactement à l'email d'inscription de cette requête.
+    // Dans tous les cas où la vérification échoue, la liaison est refusée
+    // (mais la pharmacie reste créée : la liaison peut être reprise plus
+    // tard, pas de risque à bloquer uniquement cette étape).
     if (userId) {
-      await supabase.from("pharmacie_users").insert({
-        id:           userId,
-        pharmacie_id: pharmacie.id,
-        role:         "admin",
-      });
+      let verifiedUserId: string | null = null;
+      const authHeader = req.headers.get("authorization") || "";
+      const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+      if (bearer) {
+        const { data: authUser } = await supabase.auth.getUser(bearer);
+        if (authUser?.user && authUser.user.id === userId) {
+          verifiedUserId = authUser.user.id;
+        } else {
+          console.warn("[register-pharmacie] session fournie mais userId ne correspond pas — liaison ignorée:", maskId(userId));
+        }
+      } else {
+        const { data: lookup } = await supabase.auth.admin.getUserById(userId);
+        const candidate = lookup?.user;
+        if (candidate && candidate.email && candidate.email.toLowerCase() === String(email).toLowerCase()) {
+          verifiedUserId = candidate.id;
+        } else {
+          console.warn("[register-pharmacie] userId fourni non vérifiable (email non correspondant) — liaison ignorée:", maskId(userId));
+        }
+      }
+
+      if (verifiedUserId) {
+        await supabase.from("pharmacie_users").insert({
+          id:           verifiedUserId,
+          pharmacie_id: pharmacie.id,
+          role:         "admin",
+        });
+      }
     }
 
     // Créer 2 postes vendeurs par défaut

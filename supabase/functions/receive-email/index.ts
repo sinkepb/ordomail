@@ -9,6 +9,7 @@
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
+import { verifyWebhookSecret } from "../_shared/webhook-secret.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -20,7 +21,17 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 200, headers: CORS });
   }
 
+  // Audit du 17/08/2026 — voir _shared/webhook-secret.ts : sans ce contrôle,
+  // n'importe qui pouvait injecter une fausse ordonnance dans la file de
+  // n'importe quelle pharmacie.
+  if (!verifyWebhookSecret(req)) {
+    console.warn("[receive-email] secret webhook absent ou invalide — appel rejeté");
+    return new Response(JSON.stringify({ success: false, error: "Non autorisé" }),
+      { status: 401, headers: CORS });
+  }
+
   try {
+    const postmarkSecret = new URL(req.url).searchParams.get("secret") || "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const dbHeaders   = {
@@ -64,7 +75,10 @@ Deno.serve(async (req) => {
     console.log("[receive-email] code extrait:", maskCode(codePatient));
 
     // ── 2. Appeler send-email avec l'adresse SANS le code ───────────────────
-    const sendEmailUrl = `${supabaseUrl}/functions/v1/send-email`;
+    // Le secret webhook est transmis à send-email : cet appel interne doit
+    // passer le même contrôle que n'importe quel autre appelant (voir
+    // _shared/webhook-secret.ts) — pas de passe-droit "appel interne".
+    const sendEmailUrl = `${supabaseUrl}/functions/v1/send-email?secret=${encodeURIComponent(postmarkSecret)}`;
     const sendRes = await fetch(sendEmailUrl, {
       method: "POST",
       headers: {

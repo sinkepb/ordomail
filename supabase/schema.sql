@@ -397,6 +397,14 @@ ALTER TABLE pricing_plans            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE story_metrics            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pharmacie_stories_selection ENABLE ROW LEVEL SECURITY;
 
+-- ⚠️ Audit du 17/08/2026 : jamais eu RLS depuis sa création (lecture anonyme
+-- confirmée par test REST direct, toutes pharmacies confondues). Corrigé par
+-- migrations/20260817_secure_appels_patient.sql (ENABLE+FORCE RLS ; SELECT
+-- réservé au titulaire de sa pharmacie ; notification patient migrée vers
+-- Realtime Broadcast, voir src/lib/supabase/sonnette.js).
+ALTER TABLE appels_patient           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE appels_patient           FORCE ROW LEVEL SECURITY;
+
 -- ⚠️ Vérification live du 26/07/2026 : ces deux tables n'avaient en réalité
 -- JAMAIS eu RLS activée en prod (malgré ce que ce fichier affirmait plus haut) —
 -- anon disposait de SELECT/INSERT/UPDATE/DELETE/TRUNCATE complet dessus,

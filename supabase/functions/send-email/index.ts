@@ -6,6 +6,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
+import { verifyWebhookSecret } from "../_shared/webhook-secret.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -41,6 +42,14 @@ function cleanEmail(email: string): string {
 }
 
 serve(async (req) => {
+  // Audit du 17/08/2026 — voir _shared/webhook-secret.ts : send-email est
+  // aussi joignable directement (pas seulement via receive-email), le
+  // contrôle doit donc être répété ici, pas seulement dans receive-email.
+  if (!verifyWebhookSecret(req)) {
+    console.warn("[send-email] secret webhook absent ou invalide — appel rejeté");
+    return new Response("Non autorisé", { status: 401 });
+  }
+
   const p = await req.json();
 
   // ── 1. Parser l'adresse To ──────────────────────────────────────────────────

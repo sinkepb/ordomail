@@ -33,3 +33,15 @@ verify_jwt = false
 # tous les webhooks Stripe avant même d'atteindre la vérification de signature.
 [functions.stripe-webhook]
 verify_jwt = false
+
+# receive-email / send-email reçoivent les webhooks Postmark (inbound email) —
+# Postmark n'envoie jamais de JWT Supabase. Ces deux fonctions n'avaient
+# AUCUNE authentification (repéré à l'audit du 17/08/2026, exploitable pour
+# injecter une fausse ordonnance dans la file de n'importe quelle pharmacie) :
+# elles vérifient maintenant elles-mêmes un secret partagé transmis en
+# paramètre d'URL (voir supabase/functions/_shared/webhook-secret.ts).
+[functions.receive-email]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false
