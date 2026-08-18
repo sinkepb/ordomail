@@ -133,20 +133,25 @@ function AppInner() {
   const isRecovery  = hashType === "recovery" && !!hashToken;
   const patientParam = urlParams.get("patient");
   const qrTokenParam = urlParams.get("t"); // jeton public par pharmacie porté par le QR code (phase 1 sécurité)
+  // QR code pré-imprimé (18/08/2026) : porte uniquement un token opaque, résolu
+  // côté serveur (resolve-qr-code) vers {pharmacie_id, qr_token} — le goodie est
+  // imprimé avant qu'aucune pharmacie n'existe, donc son URL ne peut pas encoder
+  // pharmacie_id comme le fait l'ancien lien ?patient=&t=.
+  const qrCodeParam = urlParams.get("qr");
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");
   // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : (patientParam ? "patient" : "landing");
+  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : "landing");
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
-  const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam);
+  const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam);
 
   // ── Restaurer la session Supabase après refresh ───────────────────────────────
   useEffect(() => {
-    if (isDemoMode || isRecovery || patientParam) { setSessionLoading(false); return; }
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {
@@ -189,6 +194,27 @@ function AppInner() {
       // le revérifiera côté serveur contre la valeur stockée pour cette pharmacie.
       setPatientPharmacieQR({ ...ph, qr_token: qrTokenParam });
     }).catch(() => setRoute("landing"));
+  }, []);
+
+  // Résoudre un QR code pré-imprimé (?qr=<token>, 18/08/2026) : le goodie est
+  // imprimé avant qu'aucune pharmacie n'existe, donc contrairement à ?patient=&t=
+  // ci-dessus, son URL ne porte qu'un token opaque — resolve-qr-code le traduit
+  // en {pharmacie_id, qr_token}, puis tout redevient identique au parcours
+  // ?patient=&t= déjà en place (mêmes fetchPharmaciePublic/setPatientPharmacieQR).
+  useEffect(() => {
+    if (!qrCodeParam || patientParam) return;
+    if (isDemoMode) { setRoute("landing"); return; }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    fetch(`${supabaseUrl}/functions/v1/resolve-qr-code?token=${encodeURIComponent(qrCodeParam)}`, {
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    })
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then(({ pharmacie_id, qr_token }) => fetchPharmaciePublic(pharmacie_id).then(ph => {
+        if (!ph) { setRoute("landing"); return; }
+        setPatientPharmacieQR({ ...ph, qr_token });
+      }))
+      .catch(() => setRoute("landing"));
   }, []);
   const [checkoutPlan, setCheckoutPlan] = useState("standard");
   const [checkoutBilling, setCheckoutBilling] = useState("monthly");

@@ -362,6 +362,30 @@ CREATE INDEX IF NOT EXISTS idx_submission_log_pharmacie_date
   ON submission_log(pharmacie_id, created_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- QR CODES PRÉ-IMPRIMÉS (18/08/2026)
+--
+-- Stock de QR codes générés à l'avance (imprimés sur des goodies physiques
+-- avant même qu'une pharmacie n'existe), associés manuellement par le staff
+-- à une pharmacie au moment de l'envoi postal — voir secure-data-admin
+-- (admin_qrcodes_generate/list/assign) et resolve-qr-code (résolution
+-- publique côté patient). `code` = identifiant court imprimé sur le goodie,
+-- tapé par le staff pour l'association. `token` = secret long porté par
+-- l'URL scannée (?qr=<token>), jamais exposé via `code`.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS qr_codes (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  code          TEXT UNIQUE NOT NULL,
+  token         TEXT UNIQUE NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'genere' CHECK (status IN ('genere','attribue')),
+  pharmacie_id  UUID REFERENCES pharmacies(id) ON DELETE SET NULL,
+  batch_label   TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  assigned_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_qr_codes_status    ON qr_codes(status);
+CREATE INDEX IF NOT EXISTS idx_qr_codes_pharmacie ON qr_codes(pharmacie_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
 --
 -- État courant après la migration phase 1 (supabase/migrations/20260723_phase1_security.sql) :
@@ -415,6 +439,12 @@ ALTER TABLE pin_verification_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pin_verification_attempts FORCE ROW LEVEL SECURITY;
 ALTER TABLE submission_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE submission_log FORCE ROW LEVEL SECURITY;
+
+-- qr_codes : accès service_role uniquement (edge functions resolve-qr-code
+-- et secure-data-admin), aucune policy anon/authenticated dès la création —
+-- même régime que pricing_plans/pin_verification_attempts.
+ALTER TABLE qr_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE qr_codes FORCE ROW LEVEL SECURITY;
 
 -- Fonction helper : pharmacie de l'utilisateur Supabase Auth connecté (titulaire uniquement)
 -- ⚠️ Même correctif que check_admin_password ci-dessus : EXECUTE retiré de PUBLIC

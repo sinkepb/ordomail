@@ -267,6 +267,98 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    // ── QR codes pré-imprimés (18/08/2026) ──────────────────────────────────
+    // Génération de lots + association manuelle par le staff au moment de
+    // l'envoi postal du goodie — voir supabase/migrations/20260818_qr_codes.sql
+    // et resolve-qr-code (résolution côté patient).
+    if (resource === "admin_qrcodes_generate") {
+      const count = Number(params?.count) || 0;
+      const batchLabel = params?.batchLabel ? String(params.batchLabel).slice(0, 200) : null;
+      if (!count || count < 1 || count > 2000) {
+        return new Response(JSON.stringify({ error: "count requis (1 à 2000)" }),
+          { status: 400, headers: CORS });
+      }
+      // Alphabet sans I/O/0/1 (confusion visuelle) — même choix que register-pharmacie.
+      const CODE_CHARS = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+      function randomCode(): string {
+        const arr = new Uint8Array(6);
+        crypto.getRandomValues(arr);
+        return "QR-" + Array.from(arr, (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+      }
+      function randomToken(): string {
+        const arr = new Uint8Array(24);
+        crypto.getRandomValues(arr);
+        return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+      }
+      const seenCodes = new Set<string>();
+      const seenTokens = new Set<string>();
+      const rows: { code: string; token: string; status: string; batch_label: string | null }[] = [];
+      while (rows.length < count) {
+        const code = randomCode();
+        if (seenCodes.has(code)) continue;
+        const token = randomToken();
+        if (seenTokens.has(token)) continue;
+        seenCodes.add(code); seenTokens.add(token);
+        rows.push({ code, token, status: "genere", batch_label: batchLabel });
+      }
+      const { data, error } = await sb.from("qr_codes").insert(rows).select();
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_qrcodes_list") {
+      let q = sb.from("qr_codes")
+        .select("id, code, status, batch_label, created_at, assigned_at, pharmacie_id, pharmacies(nom, email)")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (params?.status) q = q.eq("status", params.status);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      // Recherche sur code OU nom/email de la pharmacie liée — filtrage en mémoire
+      // (volume admin-only, borné à 500 lignes) plutôt qu'un OR PostgREST à travers
+      // une relation, plus simple et suffisant ici.
+      const search = String(params?.search || "").toLowerCase().trim();
+      const filtered = search
+        ? (data || []).filter((r: any) =>
+            r.code?.toLowerCase().includes(search) ||
+            r.pharmacies?.nom?.toLowerCase().includes(search) ||
+            r.pharmacies?.email?.toLowerCase().includes(search))
+        : (data || []);
+      return new Response(JSON.stringify({ data: filtered }), { headers: CORS });
+    }
+
+    if (resource === "admin_qrcodes_assign") {
+      const code = String(params?.code || "").trim().toUpperCase();
+      const targetPharmacieId = params?.pharmacieId?.toString();
+      if (!code || !targetPharmacieId) {
+        return new Response(JSON.stringify({ error: "code et pharmacieId requis" }),
+          { status: 400, headers: CORS });
+      }
+      const { data: already } = await sb
+        .from("qr_codes")
+        .select("id")
+        .eq("pharmacie_id", targetPharmacieId)
+        .eq("status", "attribue")
+        .maybeSingle();
+      if (already) {
+        return new Response(JSON.stringify({ error: "Cette pharmacie a déjà un goodie associé" }),
+          { status: 409, headers: CORS });
+      }
+      const { data, error } = await sb
+        .from("qr_codes")
+        .update({ pharmacie_id: targetPharmacieId, status: "attribue", assigned_at: new Date().toISOString() })
+        .eq("code", code)
+        .eq("status", "genere")
+        .select()
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) {
+        return new Response(JSON.stringify({ error: "Code inconnu ou déjà attribué" }),
+          { status: 404, headers: CORS });
+      }
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 
