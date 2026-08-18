@@ -11,6 +11,39 @@ import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 
+// ─── Persistance de la session admin (18/08/2026) ─────────────────────────────
+// adminToken était un simple useState, jamais persisté : tout rechargement de
+// page vidait l'état React et repassait par l'écran de connexion — signalé
+// comme gênant en usage réel. sessionStorage (pas localStorage) : survit à un
+// rechargement dans le même onglet, sans laisser le jeton traîner
+// indéfiniment sur une machine partagée. Le jeton expire de toute façon après
+// 4h côté serveur (verify-admin/index.ts, ADMIN_TOKEN_TTL_SECONDS) — on lit
+// son exp ici uniquement pour l'UX (éviter d'afficher des panneaux cassés
+// avec un jeton déjà expiré) ; la vérification qui compte reste côté serveur
+// (resolveCaller/verifyToken dans secure-data-admin).
+const ADMIN_TOKEN_KEY = "ordomail_admin_token";
+
+function base64UrlDecode(str) {
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + ((4 - (str.length % 4)) % 4), "=");
+  return atob(padded);
+}
+
+function readStoredAdminToken() {
+  try {
+    const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return null;
+    const payload = JSON.parse(base64UrlDecode(token.split(".")[1]));
+    if (payload.exp && Date.now() / 1000 >= payload.exp) {
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+      return null;
+    }
+    return token;
+  } catch {
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    return null;
+  }
+}
+
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
@@ -57,8 +90,8 @@ const DB = {
 
 
 function BackofficeAdmin({ onBack }) {
-  const [authed,     setAuthed]     = useState(false);
-  const [adminToken, setAdminToken] = useState(null);
+  const [authed,     setAuthed]     = useState(() => !!readStoredAdminToken());
+  const [adminToken, setAdminToken] = useState(() => readStoredAdminToken());
   const [email,      setEmail]      = useState("");
   const [pwd,        setPwd]        = useState("");
   const [err,        setErr]        = useState("");
@@ -75,7 +108,10 @@ function BackofficeAdmin({ onBack }) {
         body: JSON.stringify({ email, password: pwd }),
       });
       const data = await res.json();
-      if (data.success) { setAdminToken(data.token || null); setAuthed(true); }
+      if (data.success) {
+        if (data.token) sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+        setAdminToken(data.token || null); setAuthed(true);
+      }
       else setErr(data.error || "Identifiants incorrects");
     } catch {
       // Le service verify-admin est indisponible (réseau, fonction non déployée, config manquante).
@@ -133,7 +169,7 @@ function BackofficeAdmin({ onBack }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,0.07)",border:"1px solid #334155",color:"#94a3b8",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-          <button onClick={()=>{ setAuthed(false); setAdminToken(null); }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+          <button onClick={()=>{ sessionStorage.removeItem(ADMIN_TOKEN_KEY); setAuthed(false); setAdminToken(null); }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
         </div>
       </header>
       <AdminDashboardLive adminToken={adminToken}/>
