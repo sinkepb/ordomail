@@ -218,6 +218,90 @@ function generateOrdoPDF(ordo) {
 }
 
 
+// ─── Planche imprimable de QR codes pré-générés (backoffice, 18/08/2026) ──────
+// Même mécanisme de livraison que openInvoicePDF (Blob → nouvel onglet →
+// bouton d'impression intégré) — voir QrCodesAdmin.jsx pour l'appelant.
+// Les QR sont générés directement via le module "qrcode" vendorisé (comme
+// QRCode.jsx) mais en boucle ici plutôt que via le composant React : un lot
+// peut compter plusieurs centaines de codes, inutile de payer N cycles de
+// montage/state React pour ça.
+async function generateQrSheetHTML(qrCodes, batchLabel) {
+  const mod = await import("qrcode");
+  const QR = mod.default || mod;
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr";
+
+  const cells = await Promise.all((qrCodes || []).map(async (qr) => {
+    const url = `${baseUrl}/?qr=${qr.token}`;
+    const dataUrl = await QR.toDataURL(url, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 260,
+      color: { dark: "#000000", light: "#ffffff" },
+      type: "image/png",
+    });
+    return { code: escapeHtml(qr.code || ""), dataUrl };
+  }));
+
+  const safeBatchLabel = escapeHtml(batchLabel || `Lot du ${new Date().toLocaleDateString("fr-FR")}`);
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Planche QR codes — ${safeBatchLabel}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a1a; background: #fff; padding: 30px; }
+  @media print {
+    body { padding: 10mm; }
+    .no-print { display: none !important; }
+    @page { margin: 10mm; }
+    .qr-cell { break-inside: avoid; }
+  }
+  .sheet-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #1a3a6e; }
+  .sheet-title { font-size: 18px; font-weight: 900; color: #1a3a6e; }
+  .sheet-meta { font-size: 12px; color: #64748b; }
+  .qr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .qr-cell { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px 10px; text-align: center; }
+  .qr-brand { font-size: 12px; font-weight: 800; color: #1a3a6e; margin-bottom: 6px; }
+  .qr-cta { font-size: 10px; color: #64748b; margin-bottom: 10px; }
+  .qr-cell img { width: 100%; max-width: 160px; height: auto; }
+  .qr-code { margin-top: 8px; font-family: monospace; font-size: 11px; color: #94a3b8; letter-spacing: 1px; }
+  .print-btn { position: fixed; bottom: 24px; right: 24px; background: #1a3a6e; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(26,58,110,0.4); }
+</style>
+</head>
+<body>
+
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Sauvegarder PDF</button>
+
+<div class="sheet-header">
+  <div class="sheet-title">💊 OrdoMail — Planche QR codes</div>
+  <div class="sheet-meta">${safeBatchLabel} · ${cells.length} code${cells.length > 1 ? "s" : ""}</div>
+</div>
+
+<div class="qr-grid">
+  ${cells.map(c => `
+  <div class="qr-cell">
+    <div class="qr-brand">💊 OrdoMail</div>
+    <div class="qr-cta">Scannez pour déposer votre ordonnance</div>
+    <img src="${c.dataUrl}" alt="QR ${c.code}">
+    <div class="qr-code">${c.code}</div>
+  </div>`).join("")}
+</div>
+
+</body>
+</html>`;
+}
+
+async function openQrSheetPDF(qrCodes, batchLabel) {
+  const html = await generateQrSheetHTML(qrCodes, batchLabel);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank", "noopener,noreferrer");
+  if (win) win.focus();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF };
