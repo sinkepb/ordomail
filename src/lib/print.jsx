@@ -225,6 +225,14 @@ function generateOrdoPDF(ordo) {
 // QRCode.jsx) mais en boucle ici plutôt que via le composant React : un lot
 // peut compter plusieurs centaines de codes, inutile de payer N cycles de
 // montage/state React pour ça.
+//
+// SVG (pas PNG) : ces codes finissent sur des goodies physiques imprimés en
+// grand format — un PNG figé à une largeur fixe deviendrait flou en agrandi.
+// Le SVG est vectoriel, net à n'importe quelle taille d'impression. Le
+// balisage <svg> vient entièrement de la bibliothèque "qrcode" à partir
+// d'une URL que l'on construit nous-mêmes (baseUrl + token généré serveur,
+// aucune saisie utilisateur) — pas de risque d'injection à l'interpoler
+// directement dans le HTML généré, contrairement à c.code qui reste échappé.
 async function generateQrSheetHTML(qrCodes, batchLabel) {
   const mod = await import("qrcode");
   const QR = mod.default || mod;
@@ -232,14 +240,13 @@ async function generateQrSheetHTML(qrCodes, batchLabel) {
 
   const cells = await Promise.all((qrCodes || []).map(async (qr) => {
     const url = `${baseUrl}/?qr=${qr.token}`;
-    const dataUrl = await QR.toDataURL(url, {
+    const svg = await QR.toString(url, {
+      type: "svg",
       errorCorrectionLevel: "M",
       margin: 2,
-      width: 260,
       color: { dark: "#000000", light: "#ffffff" },
-      type: "image/png",
     });
-    return { code: escapeHtml(qr.code || ""), dataUrl };
+    return { code: escapeHtml(qr.code || ""), svg };
   }));
 
   const safeBatchLabel = escapeHtml(batchLabel || `Lot du ${new Date().toLocaleDateString("fr-FR")}`);
@@ -265,7 +272,7 @@ async function generateQrSheetHTML(qrCodes, batchLabel) {
   .qr-cell { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px 10px; text-align: center; }
   .qr-brand { font-size: 12px; font-weight: 800; color: #1a3a6e; margin-bottom: 6px; }
   .qr-cta { font-size: 10px; color: #64748b; margin-bottom: 10px; }
-  .qr-cell img { width: 100%; max-width: 160px; height: auto; }
+  .qr-cell svg { width: 100%; max-width: 160px; height: auto; display: block; margin: 0 auto; }
   .qr-code { margin-top: 8px; font-family: monospace; font-size: 11px; color: #94a3b8; letter-spacing: 1px; }
   .print-btn { position: fixed; bottom: 24px; right: 24px; background: #1a3a6e; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(26,58,110,0.4); }
 </style>
@@ -284,7 +291,7 @@ async function generateQrSheetHTML(qrCodes, batchLabel) {
   <div class="qr-cell">
     <div class="qr-brand">💊 OrdoMail</div>
     <div class="qr-cta">Scannez pour déposer votre ordonnance</div>
-    <img src="${c.dataUrl}" alt="QR ${c.code}">
+    ${c.svg}
     <div class="qr-code">${c.code}</div>
   </div>`).join("")}
 </div>
