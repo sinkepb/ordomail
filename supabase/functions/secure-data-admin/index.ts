@@ -307,8 +307,10 @@ Deno.serve(async (req) => {
     }
 
     if (resource === "admin_qrcodes_list") {
+      // token inclus : cette ressource est déjà gate isAdmin (voir plus haut), le
+      // visualiseur QR du backoffice (👁️ Voir) en a besoin pour reconstruire l'URL.
       let q = sb.from("qr_codes")
-        .select("id, code, status, batch_label, created_at, assigned_at, pharmacie_id, pharmacies(nom, email)")
+        .select("id, code, token, status, batch_label, created_at, assigned_at, pharmacie_id, pharmacies(nom, email)")
         .order("created_at", { ascending: false })
         .limit(500);
       if (params?.status) q = q.eq("status", params.status);
@@ -357,6 +359,21 @@ Deno.serve(async (req) => {
           { status: 404, headers: CORS });
       }
       return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_qrcodes_delete") {
+      const id = params?.id?.toString();
+      if (!id) {
+        return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
+      }
+      // Pas de garde particulière sur le statut ici : supprimer un code déjà
+      // attribué est une action admin volontaire (ex. sticker envoyé par erreur,
+      // décommissionné) — le front avertit explicitement dans ce cas avant
+      // d'appeler cette ressource. La pharmacie concernée garde de toute façon
+      // son lien ?patient=&t= habituel, indépendant de qr_codes.
+      const { error } = await sb.from("qr_codes").delete().eq("id", id);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
