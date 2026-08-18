@@ -6,6 +6,7 @@
 // sombre #0f172a/#1e293b/#334155).
 import { useState, useEffect } from "react";
 import { openQrSheetPDF } from "../lib/print.jsx";
+import { QRCode } from "./QRCode.jsx";
 
 function QrCodesAdmin({ adminToken } = {}) {
   const [count, setCount] = useState(100);
@@ -26,6 +27,9 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [listLoading, setListLoading] = useState(true);
   const [listStatus, setListStatus] = useState("");
   const [listSearch, setListSearch] = useState("");
+  const [listErr, setListErr] = useState("");
+  const [viewingQr, setViewingQr] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -89,6 +93,23 @@ function QrCodesAdmin({ adminToken } = {}) {
     setAssigning(false);
   }
 
+  async function handleDelete(row) {
+    const msg = row.status === "attribue"
+      ? `⚠️ ${row.code} est ACTUELLEMENT ATTRIBUÉ à ${row.pharmacies?.nom || "une pharmacie"}. Le supprimer invalidera le sticker physique déjà envoyé (le QR ne redirigera plus vers rien) — la pharmacie garde son lien habituel depuis son Dashboard, indépendant de ce code. Confirmer la suppression ?`
+      : `Supprimer le code ${row.code} ?`;
+    if (!window.confirm(msg)) return;
+    setDeletingId(row.id); setListErr("");
+    try {
+      await callSecureData("admin_qrcodes_delete", { id: row.id });
+      if (viewingQr?.id === row.id) setViewingQr(null);
+      loadList();
+    } catch (e) {
+      setListErr("Échec de la suppression : " + e.message);
+    }
+    setDeletingId(null);
+  }
+
+  const qrBaseUrl = typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr";
   const filteredPharmacies = pharmaSearch
     ? pharmacies.filter(p =>
         p.nom?.toLowerCase().includes(pharmaSearch.toLowerCase()) ||
@@ -184,6 +205,7 @@ function QrCodesAdmin({ adminToken } = {}) {
           ))}
           <button onClick={loadList} style={{ padding: "8px 14px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>↻</button>
         </div>
+        {listErr && <div style={{ marginBottom: 14, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{listErr}</div>}
         {listLoading ? (
           <div style={{ color: "#64748b", fontSize: 13, padding: 20, textAlign: "center" }}>Chargement…</div>
         ) : list.length === 0 ? (
@@ -198,6 +220,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                   <th style={{ textAlign: "left", padding: "8px 10px", color: "#64748b", fontSize: 11 }}>Pharmacie</th>
                   <th style={{ textAlign: "left", padding: "8px 10px", color: "#64748b", fontSize: 11 }}>Lot</th>
                   <th style={{ textAlign: "left", padding: "8px 10px", color: "#64748b", fontSize: 11 }}>Généré le</th>
+                  <th style={{ textAlign: "right", padding: "8px 10px", color: "#64748b", fontSize: 11 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -212,6 +235,16 @@ function QrCodesAdmin({ adminToken } = {}) {
                     <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>{r.pharmacies ? `${r.pharmacies.nom} (${r.pharmacies.email})` : "—"}</td>
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{r.batch_label || "—"}</td>
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button onClick={() => setViewingQr(r)} title="Voir le QR"
+                        style={{ background: "none", border: "1px solid #334155", borderRadius: 6, padding: "4px 8px", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginRight: 6 }}>
+                        👁️
+                      </button>
+                      <button onClick={() => handleDelete(r)} disabled={deletingId === r.id} title="Supprimer"
+                        style={{ background: "none", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 8px", color: "#fca5a5", cursor: deletingId === r.id ? "default" : "pointer", fontSize: 12, opacity: deletingId === r.id ? 0.5 : 1 }}>
+                        🗑️
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -219,6 +252,30 @@ function QrCodesAdmin({ adminToken } = {}) {
           </div>
         )}
       </div>
+
+      {/* ── Modale de visualisation ───────────────────────────────────── */}
+      {viewingQr && (
+        <div onClick={() => setViewingQr(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 28, textAlign: "center", maxWidth: 320 }}>
+            <div style={{ background: "#fff", borderRadius: 10, padding: 16, display: "inline-block", marginBottom: 16 }}>
+              <QRCode url={`${qrBaseUrl}/?qr=${viewingQr.token}`} size={200} />
+            </div>
+            <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{viewingQr.code}</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+              {viewingQr.status === "attribue"
+                ? `Attribué à ${viewingQr.pharmacies?.nom || "—"}`
+                : "En stock, pas encore attribué"}
+            </div>
+            {viewingQr.batch_label && <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>{viewingQr.batch_label}</div>}
+            <button onClick={() => setViewingQr(null)}
+              style={{ marginTop: 8, padding: "8px 20px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
