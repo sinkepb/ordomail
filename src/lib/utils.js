@@ -119,10 +119,10 @@ const useFadeIn = (ref) => {
 export { useFadeIn };
 
 // ─── Plans landing ────────────────────────────────────────────────────────────
-// Mise en avant marketing volontairement limitée à 3 paliers (25/07/2026) — le
-// palier Premium existe toujours côté produit (PLAN_LIMITS, Stripe, éditeur de
-// tarifs backoffice) mais n'est plus affiché sur cette page ; son différenciateur
-// (offres & promotions patient) est désormais porté par le palier Pro.
+// 3 paliers (19/08/2026 : le palier Premium a été retiré du produit entier —
+// PLAN_LIMITS, Stripe, éditeur de tarifs backoffice — aucun tarif Stripe n'a
+// jamais existé pour lui et aucun client n'était dessus). Son différenciateur
+// (offres & promotions patient) est porté par le palier Pro.
 const PLANS = [
   { id: "starter",  name: "Starter",  price: 19, icon: "🌱", color: "#0369a1", features: ["2 postes", "200 ordonnances/mois", "QR Code + Email", "Logs & export CSV"] },
   { id: "standard", name: "Standard", price: 39, icon: "⭐", color: C.navy,    features: ["5 postes", "1 000 ordonnances/mois", "SMTP personnalisé", "Support prioritaire"], popular: true },

@@ -191,7 +191,6 @@ function AdminDashboardLive({ adminToken } = {}) {
     starter:  { label:"Starter",  prix:19,  maxPostes:2,   color:"#0369a1" },
     standard: { label:"Standard", prix:39,  maxPostes:5,   color:"#1a3a6e" },
     pro:      { label:"Pro",      prix:79,  maxPostes:15,  color:"#4c1d95" },
-    premium:  { label:"Premium",  prix:119, maxPostes:999, color:"#b45309" },
   };
 
   useEffect(() => { loadClients(); }, []);

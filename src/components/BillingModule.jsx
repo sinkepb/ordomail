@@ -9,6 +9,15 @@ import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { getSupabaseClient } from "../supabase.js";
 
+// Validation légère de format (pas de géocodage/API externe) : présence d'un
+// numéro+rue plausible et d'un code postal français à 5 chiffres. Ne vérifie
+// pas que l'adresse existe réellement, seulement qu'elle est correctement
+// formée avant de l'envoyer à register-pharmacie.
+function isValidAddress(s) {
+  const t = (s || "").trim();
+  return t.length >= 8 && /\d{5}/.test(t);
+}
+
 function BillingModule({ initialView, planId, billing, onBack }) {
   const [view, setView] = useState(initialView||"pricing");
   const [step, setStep] = useState("details");
@@ -84,7 +93,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
           {step==="details"&&(
             <>
               <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
-              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse","text","12 rue..."]].map(([k,l,t,ph])=>(
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse *","text","12 rue de la Paix, 75001 Paris"]].map(([k,l,t,ph])=>(
                 <div key={k} style={{marginBottom:14}}>
                   <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
                   <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
@@ -92,7 +101,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                   {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
                 </div>
               ))}
-              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
+              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";if(!isValidAddress(form.adresse))e.adresse="Adresse complète requise (numéro, rue, code postal)";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
                 style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
             </>
           )}
@@ -113,6 +122,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                 if(!form.email||!form.email.includes("@")) e.email="Email invalide";
                 if(!form.password||form.password.length<8) e.password="8 caractères minimum";
                 if(!form.pharmacie) e.pharmacie="Requis";
+                if(!isValidAddress(form.adresse)) e.adresse="Adresse complète requise (numéro, rue, code postal)";
                 if(Object.keys(e).length){setErrors(e);return;}
                 setView("creating");
                 try {
@@ -193,7 +203,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
           <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,marginBottom:12}}>RÉCAPITULATIF</div>
           <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #f1f5f9"}}>
             <div style={{width:36,height:36,borderRadius:9,background:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{plan.icon}</div>
-            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (−20%)":"Mensuel"}</div></div>
+            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (1 mois offert)":"Mensuel"}</div></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
@@ -213,7 +223,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
           <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
           <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
           <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
-            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+            {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
             ))}
           </div>
