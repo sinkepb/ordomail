@@ -26,6 +26,9 @@ export {
   registerDB,
   setVendeurToken,
   clearVendeurToken,
+  setPendingCheckout,
+  getPendingCheckout,
+  clearPendingCheckout,
 } from './lib/supabase/client.js';
 
 export {

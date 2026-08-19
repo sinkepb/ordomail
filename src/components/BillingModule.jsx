@@ -7,7 +7,7 @@
 import { useState, useEffect } from "react";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
-import { getSupabaseClient } from "../supabase.js";
+import { getSupabaseClient, setPendingCheckout } from "../supabase.js";
 
 // Validation légère de format (pas de géocodage/API externe) : présence d'un
 // numéro+rue plausible et d'un code postal français à 5 chiffres. Ne vérifie
@@ -18,7 +18,7 @@ function isValidAddress(s) {
   return t.length >= 8 && /\d{5}/.test(t);
 }
 
-function BillingModule({ initialView, planId, billing, onBack }) {
+function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId, resumeEmail }) {
   const [view, setView] = useState(initialView||"pricing");
   const [step, setStep] = useState("details");
   const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
@@ -56,6 +56,29 @@ function BillingModule({ initialView, planId, billing, onBack }) {
         <div style={{fontSize:48,marginBottom:20,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
         <div style={{fontWeight:900,fontSize:22,color:"#0f172a",marginBottom:8}}>Création en cours…</div>
         <div style={{fontSize:14,color:"#64748b"}}>Votre espace est en cours de configuration</div>
+      </div>
+    </div>
+  );
+
+  // Compte + pharmacie créés, mais pas encore de session (confirmation email
+  // requise sur ce projet) — distinct de "success" (retour réel de Stripe
+  // Checkout après paiement) pour ne pas prétendre que l'essai a démarré alors
+  // que le paiement n'a pas encore eu lieu. Le paiement reprend automatiquement
+  // après le clic sur le lien de confirmation (voir App.jsx, effet "Restaurer
+  // la session" + setPendingCheckout ci-dessous).
+  if (view==="awaiting-confirmation") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontSize:64,marginBottom:16}}>📧</div>
+        <h2 style={{fontWeight:900,fontSize:24,color:"#0f172a",marginBottom:8}}>Compte créé !</h2>
+        <p style={{color:"#64748b",fontSize:14,marginBottom:16,lineHeight:1.7}}>
+          Un email de confirmation a été envoyé à<br/>
+          <strong style={{color:"#1a3a6e"}}>{createdEmail}</strong>
+        </p>
+        <div style={{background:"#fef9c3",border:"1px solid #fde68a",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#92400e",marginBottom:16,textAlign:"left",lineHeight:1.6}}>
+          ⚠️ Cliquez le lien reçu par email — vous serez automatiquement redirigé vers le paiement sécurisé (carte requise, débitée uniquement après les 30 jours d'essai).
+        </div>
+        <button onClick={onBack} style={{width:"100%",padding:14,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>Retour à l'accueil</button>
       </div>
     </div>
   );
@@ -117,6 +140,40 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                 <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
               )}
               <button disabled={redirecting} onClick={async ()=>{
+                // Reprise (19/08/2026) : compte + pharmacie déjà créés (voir
+                // App.jsx, route "finish-subscription") — juste choisir un plan
+                // et finaliser le paiement avec la session déjà active. Ni
+                // signUp() (le compte existe déjà, échouerait) ni
+                // register-pharmacie (la pharmacie existe déjà) ne sont
+                // rejoués ici.
+                if (resumePharmacieId) {
+                  setRedirecting(true); setCreateError("");
+                  try {
+                    const sb = getSupabaseClient();
+                    const { data: { session } } = await sb.auth.getSession();
+                    if (!session) throw new Error("Session expirée — reconnectez-vous.");
+                    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                    const ckRes = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+                      body: JSON.stringify({
+                        pharmacieId: resumePharmacieId,
+                        plan: checkoutPlan,
+                        billing: checkoutBilling,
+                        email: resumeEmail || session.user.email,
+                        appUrl: window.location.origin,
+                      }),
+                    });
+                    const ckData = await ckRes.json();
+                    if (!ckRes.ok || !ckData.url) throw new Error(ckData.error || "Erreur lors de la préparation du paiement");
+                    window.location.href = ckData.url;
+                  } catch(err) {
+                    setCreateError(err.message || "Erreur lors de la préparation du paiement");
+                    setRedirecting(false);
+                  }
+                  return;
+                }
+
                 const e={};
                 if(!form.nom) e.nom="Requis";
                 if(!form.email||!form.email.includes("@")) e.email="Email invalide";
@@ -168,11 +225,25 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                     throw new Error(regData.error || "Erreur création pharmacie");
                   }
 
-                  // 4. Rediriger vers Stripe Checkout (carte réelle, essai 30 jours)
+                  // 4. Sans session (confirmation email requise, cas réel sur ce
+                  // projet), create-checkout-session échouerait en 401 (aucun
+                  // Authorization à envoyer) — mémoriser l'intention de paiement,
+                  // reprise automatiquement après confirmation (voir App.jsx).
+                  if (!token) {
+                    setPendingCheckout({ pharmacieId: regData.pharmacie_id, plan: checkoutPlan, billing: checkoutBilling, email: form.email });
+                    setCreatedEmail(form.email);
+                    setCreatedEmailReception(emailReception);
+                    setCreatedPlan(checkoutPlan);
+                    setView("awaiting-confirmation");
+                    return;
+                  }
+
+                  // 5. Session déjà active (confirmation désactivée, ou déjà
+                  // confirmée) — rediriger vers Stripe Checkout directement.
                   setRedirecting(true);
                   const ckRes = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                     body: JSON.stringify({
                       pharmacieId: regData.pharmacie_id,
                       plan: checkoutPlan,
@@ -220,8 +291,8 @@ function BillingModule({ initialView, planId, billing, onBack }) {
       <PersistentNav onBack={onBack} currentPage="pricing"/>
       <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
         <div style={{textAlign:"center",marginBottom:36}}>
-          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
-          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
+          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>{resumePharmacieId ? "Finalisez votre abonnement" : "Choisissez votre plan"}</h1>
+          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>{resumePharmacieId ? "Votre compte est confirmé — choisissez votre plan pour activer votre essai gratuit de 30 jours." : "30 jours gratuits · Sans carte bancaire"}</p>
           <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
             {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
@@ -239,7 +310,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
                   <span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span>
                   {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {pr*12} € facturés / an</div>}
                 </div>
-                <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep("details");setView("checkout");}}
+                <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep(resumePharmacieId?"card":"details");setView("checkout");}}
                   style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
                   Commencer gratuitement</button>
                 <div style={{fontSize:12,color:"#475569"}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>

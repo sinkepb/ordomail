@@ -3,6 +3,7 @@ import {
   fetchPharmaciePublic,
   isDemoMode, registerDB, getSupabaseClient,
   getCurrentSession,
+  getPendingCheckout, clearPendingCheckout,
 } from "./supabase.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 // Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
@@ -170,6 +171,11 @@ function AppInner() {
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam);
   const [authError, setAuthError] = useState(() => hashErrorCode ? friendlyAuthError(hashErrorCode, hashErrorDescription) : null);
+  // Compte confirmé mais jamais passé par Stripe Checkout (ex. confirmation
+  // d'email cliquée sur un autre appareil que celui de l'inscription, donc pas
+  // d'intention de paiement en localStorage sur CET appareil) — voir l'effet
+  // "Restaurer la session" plus bas et route "finish-subscription".
+  const [resumeSubscription, setResumeSubscription] = useState(null);
 
   // Nettoyer le hash d'erreur de l'URL une fois lu, pour ne pas le ré-afficher à
   // chaque rechargement/navigation de cette même page.
@@ -180,6 +186,13 @@ function AppInner() {
   }, []);
 
   // ── Restaurer la session Supabase après refresh ───────────────────────────────
+  // Sert aussi de point de reprise après confirmation d'email (19/08/2026) :
+  // ce projet exige la confirmation d'email, donc signUp() (BillingModule.jsx)
+  // ne renvoie aucune session tant que le lien reçu par email n'est pas cliqué —
+  // create-checkout-session (qui exige une vraie session) ne peut donc pas être
+  // appelé dans la foulée de l'inscription. Le clic sur le lien de confirmation
+  // ramène ici avec une session tout juste établie (detectSessionInUrl, déjà
+  // actif côté client Supabase) : c'est le moment de reprendre le paiement.
   useEffect(() => {
     if (isDemoMode || isRecovery || patientParam || qrCodeParam) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
@@ -192,6 +205,57 @@ function AppInner() {
             .eq("id", session.user.id)
             .maybeSingle();
           if (link) {
+            const { data: ph } = await sb
+              .from("pharmacies")
+              .select("stripe_subscription_id")
+              .eq("id", link.pharmacie_id)
+              .maybeSingle();
+
+            if (ph && !ph.stripe_subscription_id) {
+              const pending = getPendingCheckout();
+              if (pending && pending.pharmacieId === link.pharmacie_id) {
+                // Même appareil que l'inscription : reprise automatique, sans
+                // action de l'utilisateur au-delà du clic sur le lien email.
+                clearPendingCheckout();
+                try {
+                  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                  const res = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "apikey": supabaseKey,
+                      "Authorization": `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({
+                      pharmacieId: pending.pharmacieId,
+                      plan: pending.plan,
+                      billing: pending.billing,
+                      email: pending.email || session.user.email,
+                      appUrl: window.location.origin,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.url) { window.location.href = data.url; return; }
+                  console.warn("[Reprise checkout]", data.error || `erreur ${res.status}`);
+                } catch (e) {
+                  console.warn("[Reprise checkout]", e.message);
+                }
+                // Échec de la reprise auto (réseau, tarif Stripe manquant…) — se
+                // rabat sur l'écran de reprise manuelle plutôt que de laisser
+                // l'utilisateur bloqué sans issue.
+              }
+              // Autre appareil que l'inscription (pas d'intention en
+              // localStorage ICI), ou reprise automatique en échec : filet de
+              // sécurité — ne JAMAIS laisser un compte confirmé sans abonnement
+              // Stripe atterrir directement dans le dashboard (déjà rencontré
+              // une fois avec l'ancien RegisterForm, corrigé plus tôt).
+              setResumeSubscription({ pharmacieId: link.pharmacie_id, email: session.user.email });
+              setRoute("finish-subscription");
+              setSessionLoading(false);
+              return;
+            }
+
             window.__ordomailSession = {
               pharmacieId: link.pharmacie_id,
               userRole: link.role,
@@ -288,6 +352,9 @@ function AppInner() {
       {route==="legal"&&<LegalPage doc={legalDoc} onBack={()=>setRoute("landing")}/>}
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
+      {route==="finish-subscription"&&resumeSubscription&&(
+        <BillingModule initialView="pricing" resumePharmacieId={resumeSubscription.pharmacieId} resumeEmail={resumeSubscription.email} onBack={()=>setRoute("landing")}/>
+      )}
       {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}
       {(route==="dashboard"||route==="admin")&&<AppLogin
           onBack={()=>setRoute("landing")}

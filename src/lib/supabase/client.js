@@ -152,3 +152,25 @@ export function onAuthStateChange(callback) {
   const { data: { subscription } } = sb.auth.onAuthStateChange(callback);
   return () => subscription.unsubscribe();
 }
+
+// ─── Intention de paiement en attente (19/08/2026) ────────────────────────────
+// Ce projet Supabase exige la confirmation d'email : signUp() ne renvoie aucune
+// session tant que le lien reçu par email n'est pas cliqué, donc
+// create-checkout-session (qui exige une vraie session) ne peut pas être appelé
+// dans la foulée de l'inscription. On mémorise ici le plan/billing choisis pour
+// les reprendre automatiquement dès qu'une session existe (voir App.jsx, effet
+// "Restaurer la session"). localStorage (pas sessionStorage comme le jeton
+// admin) : doit survivre à la fermeture de l'onglet — la confirmation par email
+// se fait typiquement dans un nouvel onglet/une nouvelle fenêtre — et ne
+// contient aucun secret, juste un choix de plan non sensible.
+const PENDING_CHECKOUT_KEY = 'ordomail_pending_checkout';
+
+export function setPendingCheckout(intent) {
+  try { localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(intent)); } catch { /* stockage indisponible, tant pis */ }
+}
+export function getPendingCheckout() {
+  try { return JSON.parse(localStorage.getItem(PENDING_CHECKOUT_KEY)); } catch { return null; }
+}
+export function clearPendingCheckout() {
+  try { localStorage.removeItem(PENDING_CHECKOUT_KEY); } catch { /* ignore */ }
+}
