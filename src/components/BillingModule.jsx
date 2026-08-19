@@ -193,7 +193,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
           <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,marginBottom:12}}>RÉCAPITULATIF</div>
           <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #f1f5f9"}}>
             <div style={{width:36,height:36,borderRadius:9,background:`${plan.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{plan.icon}</div>
-            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (−20%)":"Mensuel"}</div></div>
+            <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (1 mois offert)":"Mensuel"}</div></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
@@ -213,7 +213,7 @@ function BillingModule({ initialView, planId, billing, onBack }) {
           <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>Choisissez votre plan</h1>
           <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>30 jours gratuits · Sans carte bancaire</p>
           <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
-            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+            {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
             ))}
           </div>

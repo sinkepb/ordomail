@@ -227,14 +227,19 @@ function PricingSection({ onGoToPricing }) {
           <p style={{ fontSize:16, color:C.slate, marginBottom:24 }}>30 jours gratuits · Sans carte bancaire · Résiliable à tout moment</p>
           {/* Toggle billing */}
           <div style={{ display:"inline-flex", background:C.surface, borderRadius:10, padding:3, gap:3 }}>
-            {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+            {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBilling(k)} style={{ padding:"7px 18px", border:"none", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:billing===k?700:500, background:billing===k?"#fff":"transparent", color:billing===k?C.ink:C.muted, boxShadow:billing===k?"0 1px 4px rgba(0,0,0,0.08)":"none", transition:"all 0.15s" }}>{l}</button>
             ))}
           </div>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap:14, marginBottom:24 }}>
           {PLANS.map(p=>{
-            const price = billing==="annual" ? Math.round(p.price*0.8) : p.price;
+            // 11 mois facturés = 12 mois de service (1 mois offert) — total exact
+            // ci-dessous aligné sur le Price Stripe price_{plan}_annual réel
+            // (price × 11), l'équivalent mensuel affiché est arrondi séparément
+            // pour éviter un écart d'arrondi entre les deux lignes affichées.
+            const annualTotal = p.price * 11;
+            const price = billing==="annual" ? Math.round(annualTotal/12) : p.price;
             return (
               <div key={p.id} style={{ borderRadius:16, padding:"24px 22px", border:p.popular?`2px solid ${p.color}`:`2px solid ${C.border}`, background:"#fff", boxShadow:p.popular?`0 8px 32px ${p.color}20`:"none", position:"relative", display:"flex", flexDirection:"column" }}>
                 {p.popular && <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", background:p.color, color:"#fff", fontSize:10, fontWeight:800, padding:"3px 12px", borderRadius:20, letterSpacing:0.5 }}>LE PLUS CHOISI</div>}
@@ -248,7 +253,7 @@ function PricingSection({ onGoToPricing }) {
                   {billing==="annual" && (
                     <>
                       <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>
-                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {price*12}€ facturés / an</div>
+                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {annualTotal}€ facturés une fois par an (1 mois offert)</div>
                     </>
                   )}
                 </div>

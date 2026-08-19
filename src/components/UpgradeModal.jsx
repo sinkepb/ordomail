@@ -169,7 +169,7 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
       <div style={{marginBottom:18}}>
         <h3 style={{fontWeight:900,fontSize:18,color:"#0f172a",marginBottom:4,marginTop:0}}>Changer de plan</h3>
         <div style={{display:"inline-flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:3}}>
-          {[["monthly","Mensuel"],["annual","Annuel −20%"]].map(([k,l])=>(
+          {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
             <button key={k} onClick={()=>setBillingCycle(k)} style={{padding:"5px 14px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:billingCycle===k?700:500,background:billingCycle===k?"#fff":"transparent",color:billingCycle===k?"#1a1a1a":"#94a3b8"}}>{l}</button>
           ))}
         </div>
