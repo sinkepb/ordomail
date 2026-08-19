@@ -45,6 +45,27 @@ serve(async (req) => {
       const { data:ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id",inv.customer).single();
       if (ph) await supabase.from("factures").upsert({ pharmacie_id:ph.id, stripe_invoice_id:inv.id, montant_ttc:inv.amount_paid, statut:"paid", pdf_url:inv.invoice_pdf, created_at:new Date(inv.created*1000).toISOString() }, { onConflict:"stripe_invoice_id" });
     }
+    // Échec de prélèvement automatique (carte refusée, fonds insuffisants…) — jusqu'ici
+    // aucun événement Stripe lié à un échec de paiement n'était traité : le statut de
+    // l'abonnement finissait par se mettre à jour via customer.subscription.updated
+    // (Stripe le fait passer par past_due puis canceled après épuisement des relances),
+    // mais rien ne rendait l'échec visible au moment où il se produit — ni dans
+    // `factures`, ni en alerte. montant_ttc utilise amount_due (ce qui était dû) et non
+    // amount_paid (qui vaut 0 pour une facture en échec) ; statut reflète l'état réel
+    // renvoyé par Stripe (généralement "open" tant que les relances automatiques
+    // continuent, "uncollectible" une fois épuisées).
+    if (event.type === "invoice.payment_failed") {
+      const inv = obj as Stripe.Invoice;
+      const { data:ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id",inv.customer).single();
+      if (ph) {
+        await supabase.from("factures").upsert({ pharmacie_id:ph.id, stripe_invoice_id:inv.id, montant_ttc:inv.amount_due, statut:inv.status || "open", pdf_url:inv.invoice_pdf, created_at:new Date(inv.created*1000).toISOString() }, { onConflict:"stripe_invoice_id" });
+        await reportAlert(supabase, {
+          source: "stripe-webhook", severity: "warning",
+          message: `Échec de prélèvement — pharmacie ${ph.id}, facture ${inv.id}`,
+          meta: { pharmacieId: ph.id, invoiceId: inv.id, amountDue: inv.amount_due },
+        });
+      }
+    }
   } catch (e) {
     // Événement Stripe valide et signé, mais échec de son traitement côté
     // OrdoMail (DB indisponible, contrainte violée…) — la facturation peut
