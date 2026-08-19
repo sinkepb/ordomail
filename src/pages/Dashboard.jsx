@@ -8,7 +8,6 @@ import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
-import { AbonnementSection } from "../components/AbonnementSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
 import { Btn, Input } from "../components/ui.jsx";
@@ -83,7 +82,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["abonnement","💳","Abonnement"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -269,29 +268,18 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
           <StoriesSection pharmacie={pharmacie}/>
           </ErrorBoundary>
         )}
-        {section==="abonnement"&&(
-          <ErrorBoundary compact label="Abonnement">
-          <AbonnementSection pharmacie={pharmacie} onUpgrade={async (newPlan)=>{
-            try {
-              await changePlan(pharmacie.id, newPlan);
-              // Recharger la pharmacie (plan à jour) depuis le parent, qui possède l'état
-              const ph = await onPlanChanged?.();
-              if (ph) setPostes(ph.postes || []);
-            } catch(e) {
-              console.error("[changePlan]", e.message);
-            }
-          }}/>
-          </ErrorBoundary>
-        )}
-
         {section==="compte"&&(
           <ErrorBoundary compact label="Compte">
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
-            try {
-              await changePlan(pharmacie.id, newPlan);
-              const ph = await onPlanChanged?.();
-              if (ph) setPostes(ph.postes || []);
-            } catch(e) { console.error("[changePlan]", e.message); }
+            // Ne PAS avaler l'erreur ici : PlanSwitcher (UpgradeModal.jsx) attend que
+            // cette promesse rejette pour afficher son écran "Échec du changement de
+            // plan" — avant ce correctif, l'erreur était juste loggée en console et
+            // PlanSwitcher passait à "done" comme si tout s'était bien passé, alors
+            // que changePlan() pouvait avoir échoué (voir aussi billing.js:
+            // changePlan() ne retombe plus sur une mise à jour DB seule sans Stripe).
+            await changePlan(pharmacie.id, newPlan);
+            const ph = await onPlanChanged?.();
+            if (ph) setPostes(ph.postes || []);
           }}/>
           </ErrorBoundary>
         )}
@@ -1192,5 +1180,5 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   );
 }
 
-export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, AbonnementSection, CompteSection, ParametresTab };
+export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, CompteSection, ParametresTab };
 export default PharmacieDashboard;

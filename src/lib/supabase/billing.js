@@ -24,18 +24,22 @@ export async function changePlan(pharmacieId, newPlan) {
     return { success: true };
   }
   const sb = getSupabase();
-  // Essayer via Edge Function (avec Stripe) d'abord
-  try {
-    const { data, error } = await sb.functions.invoke('change-plan', { body: { pharmacieId, newPlan } });
-    if (!error) return data;
-  } catch {
-    console.warn('[changePlan] Edge Fn non disponible, fallback direct');
+  // Toujours passer par l'edge function (change-plan met à jour l'abonnement
+  // Stripe ET pharmacies.plan). Avant le 19/08/2026, un échec de cet appel
+  // retombait sur un simple UPDATE de pharmacies.plan sans jamais toucher
+  // Stripe — l'app affichait le nouveau plan mais Stripe continuait de
+  // prélever l'ancien prix au renouvellement suivant, désynchro invisible
+  // jusqu'à ce que le client remarque le mauvais montant. Laisser l'erreur
+  // remonter permet à PlanSwitcher (UpgradeModal.jsx) d'afficher son écran
+  // d'échec au lieu de faire croire que le changement a réussi.
+  const { data, error } = await sb.functions.invoke('change-plan', { body: { pharmacieId, newPlan } });
+  if (error) {
+    let message = error.message || 'Échec du changement de plan';
+    try {
+      const body = await error.context?.json();
+      if (body?.error) message = body.error;
+    } catch { /* garde le message par défaut */ }
+    throw new Error(message);
   }
-  // Fallback : UPDATE direct en Supabase (sans Stripe)
-  const { error: updateErr } = await sb
-    .from('pharmacies')
-    .update({ plan: newPlan })
-    .eq('id', pharmacieId);
-  if (updateErr) throw updateErr;
-  return { success: true };
+  return data;
 }

@@ -113,6 +113,20 @@ const DB = {
 if (typeof window !== 'undefined') window._ordomailDB = DB;
 registerDB(DB);
 
+// Messages lisibles pour les erreurs renvoyées par Supabase Auth dans le hash
+// d'URL des liens email (confirmation, recovery…). error_code n'est pas
+// toujours présent selon la version de GoTrue ; on retombe sur
+// error_description (brute, mais mieux que rien) si absent.
+const AUTH_ERROR_MESSAGES = {
+  otp_expired: "Le lien reçu par email a expiré ou a déjà été utilisé. Redemandez un nouvel email.",
+  access_denied: "Ce lien n'est plus valide. Redemandez un nouvel email.",
+};
+function friendlyAuthError(code, description) {
+  if (code && AUTH_ERROR_MESSAGES[code]) return AUTH_ERROR_MESSAGES[code];
+  if (description) return decodeURIComponent(description.replace(/\+/g, " "));
+  return "Le lien reçu par email est invalide.";
+}
+
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
 function AppInner() {
@@ -131,6 +145,13 @@ function AppInner() {
   const hashType    = hashParams.get("type");
   const hashToken   = hashParams.get("access_token");
   const isRecovery  = hashType === "recovery" && !!hashToken;
+  // Supabase Auth redirige les liens email (confirmation, recovery…) invalides/expirés
+  // avec l'erreur dans le hash (#error=access_denied&error_code=otp_expired&...) plutôt
+  // que dans le corps d'une réponse — rien ne lisait ce paramètre jusqu'ici, la page
+  // atterrissait silencieusement sur l'accueil sans que l'utilisateur comprenne pourquoi
+  // son lien "ne marche pas".
+  const hashErrorCode = hashParams.get("error_code");
+  const hashErrorDescription = hashParams.get("error_description");
   const patientParam = urlParams.get("patient");
   const qrTokenParam = urlParams.get("t"); // jeton public par pharmacie porté par le QR code (phase 1 sécurité)
   // QR code pré-imprimé (18/08/2026) : porte uniquement un token opaque, résolu
@@ -148,6 +169,15 @@ function AppInner() {
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam);
+  const [authError, setAuthError] = useState(() => hashErrorCode ? friendlyAuthError(hashErrorCode, hashErrorDescription) : null);
+
+  // Nettoyer le hash d'erreur de l'URL une fois lu, pour ne pas le ré-afficher à
+  // chaque rechargement/navigation de cette même page.
+  useEffect(() => {
+    if (hashErrorCode) {
+      window.history.replaceState({}, "", window.location.pathname + window.location.search);
+    }
+  }, []);
 
   // ── Restaurer la session Supabase après refresh ───────────────────────────────
   useEffect(() => {
@@ -231,6 +261,13 @@ function AppInner() {
   );
 
   return (
+    <>
+    {authError && (
+      <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"#450a0a",color:"#fca5a5",padding:"12px 20px",display:"flex",justifyContent:"center",alignItems:"center",gap:14,fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}>
+        <span>⚠️ {authError}</span>
+        <button onClick={()=>setAuthError(null)} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:6,color:"#fca5a5",padding:"2px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>✕</button>
+      </div>
+    )}
     <Suspense fallback={
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
         <div style={{textAlign:"center"}}>
@@ -260,6 +297,7 @@ function AppInner() {
           PatientComponent={PatientPage}
         />}
     </Suspense>
+    </>
   );
 }
 

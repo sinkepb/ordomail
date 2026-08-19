@@ -460,7 +460,7 @@ function LoginTabContent({ onLogin }) {
   );
 }
 
-function LoginPage({ onLogin, onBack }) {
+function LoginPage({ onLogin, onBack, onGoToPricing }) {
   const [tab, setTab] = useState("login"); // login | register
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a3a6e 0%,#15623a 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -481,7 +481,7 @@ function LoginPage({ onLogin, onBack }) {
           </div>
           {tab==="login" && <LoginTabContent onLogin={onLogin}/>}
           {tab==="register" && (
-            <RegisterForm onLogin={onLogin} />
+            <RegisterRedirect onLogin={onLogin} onGoToPricing={onGoToPricing} />
           )}
         </div>
         <div style={{textAlign:"center",marginTop:16}}>
@@ -534,7 +534,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
   return <LoginPage onLogin={s=>{
     addAuditLog({ userId:s.userId, userRole:s.userRole, pharmacieId:s.pharmacieId, action:"login", posteNom:s.posteNom }).catch(()=>{});
     setSession(s);
-  }} onBack={onBack}/>;
+  }} onBack={onBack} onGoToPricing={onGoToPricing}/>;
 }
 
 function ResetPasswordPage({ onDone }) {
@@ -627,70 +627,41 @@ function ResetPasswordPage({ onDone }) {
 
 export { BoutonProSanteConnect, LoginTabContent, LoginPage, AppLogin, ResetPasswordPage };
 export default AppLogin
-// ── Formulaire de création de compte pharmacie ────────────────────────────
-function RegisterForm({ onLogin }) {
-  const [nom,     setNom]     = useState("");
-  const [email,   setEmail]   = useState("");
-  const [pwd,     setPwd]     = useState("");
-  const [tel,     setTel]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
-  const [success, setSuccess] = useState(false);
-
-  async function handleRegister() {
-    if (!nom || !email || !pwd) { setError("Nom, email et mot de passe requis"); return; }
-    if (pwd.length < 6) { setError("Mot de passe : 6 caractères minimum"); return; }
-    setLoading(true); setError("");
-    try {
-      if (isDemoMode) {
-        onLogin({ role:"pharmacie", pharmacieId:"demo-"+Date.now(), userRole:"admin",
-          pscUser:{ prenom:"Demo", nom, organisation:nom } });
-        return;
-      }
-      const sb = getSupabaseClient();
-      const { data: authData, error: authErr } = await sb.auth.signUp({ email, password: pwd });
-      if (authErr) { setError(authErr.message); setLoading(false); return; }
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const res = await fetch(`${supabaseUrl}/functions/v1/register-pharmacie`, {
-        method: "POST",
-        headers: { "Content-Type":"application/json", "apikey": supabaseKey },
-        body: JSON.stringify({ nom, email, tel, userId: authData.user?.id }),
-      });
-      const data = await res.json();
-      if (!data.success) { setError(data.error || "Erreur création compte"); setLoading(false); return; }
-      setSuccess(true);
-    } catch(e) { setError("Erreur : " + e.message); }
-    setLoading(false);
-  }
-
-  if (success) return (
-    <div style={{textAlign:"center",padding:"20px 0"}}>
-      <div style={{fontSize:48,marginBottom:12}}>✅</div>
-      <div style={{fontWeight:800,fontSize:16,color:"#15803d",marginBottom:8}}>Compte créé !</div>
-      <div style={{fontSize:13,color:"#64748b"}}>Vérifiez votre email pour confirmer votre compte.</div>
-    </div>
-  );
-
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Nom de votre pharmacie *"
-        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
-      <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email professionnel *" type="email"
-        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
-      <input value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="Mot de passe (6 car. min) *" type="password"
-        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
-      <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone (optionnel)"
-        style={{padding:"11px 14px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
-      {error && <div style={{fontSize:12,color:"#dc2626",background:"#fee2e2",padding:"8px 12px",borderRadius:8}}>{error}</div>}
-      <button onClick={handleRegister} disabled={loading}
-        style={{padding:"13px",border:"none",borderRadius:10,background:loading?"#94a3b8":"#1a3a6e",
-          color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
-        {loading ? "Création..." : "🚀 Démarrer l'essai gratuit"}
-      </button>
-      <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>
-        30 jours gratuits · Sans engagement · Sans carte bancaire
+// ── Onglet "Créer un compte" de l'écran Connexion ──────────────────────────
+// Jusqu'au 19/08/2026, ce formulaire dupliquait sa propre création de compte
+// (signUp + register-pharmacie) en parallèle de celle de BillingModule.jsx,
+// sans jamais passer par create-checkout-session : un compte créé ici
+// n'avait jamais de stripe_subscription_id, restait bloqué en plan starter
+// (change-plan refuse tout changement sans abonnement Stripe actif — voir
+// supabase/functions/change-plan/index.ts:46) et n'était jamais facturé
+// après l'essai, sans même avoir enregistré de carte — deux implémentations
+// de "créer un compte" incohérentes entre elles. Redirige désormais vers le
+// même parcours que BillingModule (Essai gratuit / tarifs), seule
+// implémentation réelle : carte exigée, vrai abonnement Stripe créé.
+function RegisterRedirect({ onLogin, onGoToPricing }) {
+  if (isDemoMode) {
+    // Pas de vraie création de compte en démo (pas de session Supabase Auth,
+    // pas d'appel Stripe) — un raccourci direct reste légitime ici.
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontSize:13,color:"#64748b",textAlign:"center",marginBottom:4}}>Mode démo — compte fictif</div>
+        <button onClick={()=>onLogin({ role:"pharmacie", pharmacieId:"demo-"+Date.now(), userRole:"admin",
+          pscUser:{ prenom:"Demo", nom:"Pharmacie Démo", organisation:"Pharmacie Démo" } })}
+          style={{padding:"13px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+          🚀 Démarrer l'essai gratuit (démo)
+        </button>
       </div>
+    );
+  }
+  return (
+    <div style={{textAlign:"center",padding:"12px 0"}}>
+      <div style={{fontSize:13,color:"#64748b",marginBottom:20,lineHeight:1.7}}>
+        La création de compte se fait depuis nos tarifs — vous choisissez votre plan, puis votre carte est enregistrée (débitée uniquement après les 30 jours d'essai gratuit).
+      </div>
+      <button onClick={()=>onGoToPricing?.()}
+        style={{width:"100%",padding:"13px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+        🚀 Voir les tarifs et démarrer l'essai →
+      </button>
     </div>
   );
 }
