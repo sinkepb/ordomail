@@ -36,7 +36,15 @@ serve(async (req) => {
             meta: { subId: sub.id, lookupKey },
           });
         }
-        await supabase.from("pharmacies").update({ plan, plan_status:sub.status }).eq("id",ph.id);
+        // ⚠️ Ré-audit du 19/08/2026 : stripe_subscription_id n'était JAMAIS écrit nulle
+        // part (grep sur tout le repo) — App.jsx s'en sert désormais comme signal
+        // "abonnement Stripe actif ?" pour décider dashboard vs reprise de paiement
+        // (voir l'effet "Restaurer la session"), donc cette colonne restant toujours
+        // NULL renvoyait TOUT LE MONDE, y compris un client déjà abonné, vers l'écran
+        // de paiement à chaque connexion. Un client réel (dr PATOGAN, sub_1TwZYJ...)
+        // était concerné en production au moment de la découverte — corrigé manuellement
+        // en base pour lui, ce correctif couvre tous les abonnements à venir.
+        await supabase.from("pharmacies").update({ plan, plan_status:sub.status, stripe_subscription_id:sub.id }).eq("id",ph.id);
         await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
       }
     }
