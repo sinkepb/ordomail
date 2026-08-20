@@ -194,7 +194,14 @@ function AppInner() {
   // ramène ici avec une session tout juste établie (detectSessionInUrl, déjà
   // actif côté client Supabase) : c'est le moment de reprendre le paiement.
   useEffect(() => {
-    if (isDemoMode || isRecovery || patientParam || qrCodeParam) { setSessionLoading(false); return; }
+    // checkoutReturn exclu (19/08/2026, repéré par revue de code indépendante) :
+    // un retour ?checkout=success juste après un vrai paiement Stripe est déjà
+    // géré par le useEffect de montage de BillingModule (affiche "success").
+    // Sans cette exclusion, cet effet-ci pouvait renvoyer le même utilisateur
+    // vers "finish-subscription" si le webhook Stripe (asynchrone) n'avait pas
+    // encore eu le temps d'écrire stripe_subscription_id — lui redemandant de
+    // payer alors qu'il vient tout juste de le faire.
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam || checkoutReturn) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {

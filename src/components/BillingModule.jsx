@@ -216,6 +216,15 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                       email: form.email,
                       plan: checkoutPlan,
                       emailReception,
+                      // ⚠️ Ré-audit du 19/08/2026 : ce champ manquait ici depuis toujours
+                      // (repéré par revue de code indépendante) — register-pharmacie ne lie
+                      // le compte à pharmacie_users que si userId est fourni (voir son code,
+                      // durci plus tôt dans la session pour vérifier ce userId côté serveur).
+                      // Sans lui, AUCUN vrai signup ne créait de ligne pharmacie_users : la
+                      // session restaurée après confirmation d'email ne trouvait jamais de
+                      // lien, et rien de la suite (dashboard, reprise de paiement) ne pouvait
+                      // fonctionner.
+                      userId: authData.user?.id,
                     }),
                   });
 
