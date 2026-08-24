@@ -30,6 +30,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [listErr, setListErr] = useState("");
   const [viewingQr, setViewingQr] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -236,7 +237,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{r.batch_label || "—"}</td>
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
                     <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button onClick={() => setViewingQr(r)} title="Voir le QR"
+                      <button onClick={() => { setLinkCopied(false); setViewingQr(r); }} title="Voir le QR"
                         style={{ background: "none", border: "1px solid #334155", borderRadius: 6, padding: "4px 8px", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginRight: 6 }}>
                         👁️
                       </button>
@@ -263,6 +264,18 @@ function QrCodesAdmin({ adminToken } = {}) {
               <QRCode url={`${qrBaseUrl}/?qr=${viewingQr.token}`} size={200} />
             </div>
             <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{viewingQr.code}</div>
+            <div
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(`${qrBaseUrl}/?qr=${viewingQr.token}`);
+                  setLinkCopied(true);
+                } catch { /* clipboard indisponible, le lien reste sélectionnable manuellement */ }
+              }}
+              title="Cliquer pour copier"
+              style={{ fontFamily: "monospace", fontSize: 11, color: "#93c5fd", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "8px 10px", marginBottom: 10, wordBreak: "break-all", cursor: "pointer" }}>
+              {`${qrBaseUrl}/?qr=${viewingQr.token}`}
+            </div>
+            {linkCopied && <div style={{ fontSize: 11, color: "#86efac", marginBottom: 10 }}>✓ Lien copié</div>}
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
               {viewingQr.status === "attribue"
                 ? `Attribué à ${viewingQr.pharmacies?.nom || "—"}`
