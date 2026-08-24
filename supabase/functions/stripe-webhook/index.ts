@@ -9,7 +9,16 @@ serve(async (req) => {
   const sig = req.headers.get("stripe-signature")!;
   const body = await req.text();
   let event: Stripe.Event;
-  try { event = stripe.webhooks.constructEvent(body, sig, Deno.env.get("STRIPE_WEBHOOK_SECRET")!); }
+  // ⚠️ Ré-audit du 20/08/2026 : constructEvent (synchrone) utilise SubtleCrypto
+  // en mode synchrone, indisponible dans le runtime Deno des edge functions —
+  // échouait TOUJOURS avec "SubtleCryptoProvider cannot be used in a
+  // synchronous context", quel que soit le secret configuré. constructEventAsync
+  // fait la même vérification en asynchrone (WebCrypto natif), compatible Deno.
+  // Repéré en testant un événement réellement signé contre le webhook — jamais
+  // un seul événement Stripe n'avait dû être accepté depuis la création de
+  // cette fonction, indépendamment du bug STRIPE_WEBHOOK_SECRET absent corrigé
+  // juste avant.
+  try { event = await stripe.webhooks.constructEventAsync(body, sig, Deno.env.get("STRIPE_WEBHOOK_SECRET")!); }
   catch(e) {
     // Signature invalide : secret désynchronisé (rotation Stripe) ou tentative
     // de forger un événement — dans les deux cas, la facturation peut être
@@ -20,7 +29,15 @@ serve(async (req) => {
     });
     return new Response(`Signature invalide: ${e.message}`, { status:400 });
   }
-  const { data:obj } = event.data;
+  // ⚠️ Ré-audit du 20/08/2026 : `const { data:obj } = event.data` cherchait une
+  // clé "data" DANS event.data — Stripe fournit event.data.object, pas
+  // event.data.data. obj était donc TOUJOURS undefined, faisant échouer (ou
+  // no-opant silencieusement selon le type d'événement) tout traitement réel
+  // depuis la création de cette fonction — indépendamment des deux bugs de
+  // vérification de signature corrigés juste avant (secret absent, puis
+  // constructEvent synchrone incompatible Deno). Confirmé en envoyant un
+  // événement réellement signé au webhook.
+  const obj = event.data.object;
   try {
     if (["customer.subscription.created","customer.subscription.updated"].includes(event.type)) {
       const sub = obj as Stripe.Subscription;
