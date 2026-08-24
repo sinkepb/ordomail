@@ -353,7 +353,20 @@ Deno.serve(async (req) => {
         .eq("status", "genere")
         .select()
         .maybeSingle();
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Ré-audit du 20/08/2026 : le SELECT ci-dessus (ligne ~339) et cet UPDATE
+        // sont deux allers-retours séparés — une course entre deux appels
+        // concurrents pour la même pharmacie pouvait passer les deux avant que
+        // l'un des deux ne committe. L'index unique partiel
+        // idx_qr_codes_one_attribue_per_pharmacie (migration 20260820) rend
+        // cet UPDATE atomique : le perdant de la course échoue ici en 23505
+        // au lieu de réussir silencieusement.
+        if (error.code === "23505") {
+          return new Response(JSON.stringify({ error: "Cette pharmacie a déjà un goodie associé" }),
+            { status: 409, headers: CORS });
+        }
+        throw new Error(error.message);
+      }
       if (!data) {
         return new Response(JSON.stringify({ error: "Code inconnu ou déjà attribué" }),
           { status: 404, headers: CORS });
