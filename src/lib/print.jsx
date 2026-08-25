@@ -337,7 +337,12 @@ async function generatePosterHTML({ url, pharmacieName }) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; }
+  /* Sans print-color-adjust: exact, Chrome/Safari suppriment par défaut les
+     couleurs de fond, dégradés et box-shadow à l'impression (économie d'encre) —
+     le dégradé radial de fond ET les badges numérotés 1/2/3 (cercles pleins
+     #0B7A54) disparaissaient tous les deux à l'impression pour cette raison,
+     pas un bug de mise en page. */
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { margin: 0; padding: 0; }
   @page { size: A4; margin: 0; }
   @media print { .no-print { display: none !important; } }
@@ -380,9 +385,9 @@ async function generatePosterHTML({ url, pharmacieName }) {
   <p style="position:relative;text-align:center;margin:12px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-0.01em;color:#2E4B3F;white-space:nowrap;">ENVOYEZ VOTRE ORDONNANCE</p>
 
   <div style="position:relative;display:flex;flex-direction:column;align-items:center;margin-top:14px;">
-    <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:8px 18px 8px 12px;box-shadow:0 8px 22px rgba(11,122,84,0.12);">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
-      <span style="font-family:'Manrope';font-weight:700;font-size:15px;color:#12241C;">Ouvrez l'appareil photo et scannez</span>
+    <div style="display:flex;align-items:center;gap:14px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:14px 28px 14px 18px;box-shadow:0 8px 22px rgba(11,122,84,0.12);">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
+      <span style="font-family:'Manrope';font-weight:700;font-size:30px;color:#12241C;">Ouvrez l'appareil photo et scannez</span>
     </div>
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" stroke="#16C079" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="margin-top:8px;"><path d="M12 3v19"></path><path d="M4 16l8 9 8-9"></path></svg>
   </div>
