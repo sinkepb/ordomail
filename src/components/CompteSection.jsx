@@ -134,7 +134,7 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
       <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
         <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>👤 Informations du compte</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-          {[["Email",pharmacie.email],["Pharmacie",pharmacie.nom],["Membre depuis",new Date(pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
+          {[["Email",pharmacie.email],["Pharmacie",pharmacie.nom],["Membre depuis",new Date(pharmacie.created_at||pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
             <div key={l} style={{background:"#f8f9ff",borderRadius:10,padding:"10px 13px"}}>
               <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{l}</div>
               <div style={{fontSize:13,fontWeight:600,color:"#1a1a1a"}}>{v}</div>
