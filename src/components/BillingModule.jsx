@@ -32,6 +32,31 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
   const [createdEmailReception, setCreatedEmailReception] = useState("");
   const [createdPlan, setCreatedPlan] = useState("");
 
+  // Autocomplétion d'adresse (API Adresse — data.gouv.fr, base officielle
+  // française, publique et gratuite, aucune clé requise) : suggère des
+  // adresses réellement existantes et déjà bien formées, pour éviter les
+  // adresses mal formatées ou fictives à l'inscription. isValidAddress reste
+  // la validation de repli si le client tape sans choisir de suggestion.
+  const [adresseSuggestions, setAdresseSuggestions] = useState([]);
+  const [adresseFocused, setAdresseFocused] = useState(false);
+  const [adresseLoading, setAdresseLoading] = useState(false);
+  useEffect(() => {
+    const q = form.adresse.trim();
+    if (q.length < 4) { setAdresseSuggestions([]); return; }
+    setAdresseLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=5`);
+        const data = await res.json();
+        setAdresseSuggestions(data.features || []);
+      } catch {
+        setAdresseSuggestions([]);
+      }
+      setAdresseLoading(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [form.adresse]);
+
   // Retour depuis Stripe Checkout (redirection pleine page — le state React d'avant
   // le départ vers Stripe est perdu, on lit juste le paramètre de retour).
   useEffect(() => {
@@ -116,7 +141,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
           {step==="details"&&(
             <>
               <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
-              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"],["adresse","Adresse *","text","12 rue de la Paix, 75001 Paris"]].map(([k,l,t,ph])=>(
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"]].map(([k,l,t,ph])=>(
                 <div key={k} style={{marginBottom:14}}>
                   <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
                   <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
@@ -124,6 +149,32 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
                 </div>
               ))}
+              <div style={{marginBottom:14,position:"relative"}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Adresse *</label>
+                <input type="text" placeholder="12 rue de la Paix, 75001 Paris" value={form.adresse}
+                  onChange={e=>setForm(f=>({...f,adresse:e.target.value}))}
+                  onFocus={()=>setAdresseFocused(true)}
+                  onBlur={()=>setTimeout(()=>setAdresseFocused(false),150)}
+                  autoComplete="off"
+                  style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors.adresse?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                {errors.adresse&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors.adresse}</div>}
+                {adresseFocused && (adresseLoading || adresseSuggestions.length>0) && (
+                  <div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:2,background:"#fff",border:"1px solid #e2e8f0",borderRadius:9,boxShadow:"0 8px 20px rgba(0,0,0,0.1)",zIndex:20,overflow:"hidden"}}>
+                    {adresseLoading && adresseSuggestions.length===0 && (
+                      <div style={{padding:"10px 12px",fontSize:13,color:"#94a3b8"}}>Recherche…</div>
+                    )}
+                    {adresseSuggestions.map(feat=>(
+                      <div key={feat.properties.id}
+                        onMouseDown={()=>{setForm(f=>({...f,adresse:feat.properties.label}));setAdresseSuggestions([]);setAdresseFocused(false);}}
+                        style={{padding:"10px 12px",fontSize:13,color:"#1e293b",cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        📍 {feat.properties.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";if(!isValidAddress(form.adresse))e.adresse="Adresse complète requise (numéro, rue, code postal)";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
                 style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
             </>
