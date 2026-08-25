@@ -445,6 +445,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
               : ["#065f46", "#047857"],
             title: s.titre,
             text: s.type !== "quiz" ? s.contenu : null,
+            image: s.image_url || null,
             type: s.type, // "info" | "quiz" | "conseil"
             question: s.question || null,
             answers: s.reponses ? JSON.parse(s.reponses) : null,
@@ -495,6 +496,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 bg: [o.couleur || "#1a3a6e", (o.couleur || "#1a3a6e") + "99"],
                 title: o.titre,
                 text: o.description || "",
+                image: o.image_url || null,
                 type: "offre",
                 badge: o.badge || null,
               }));
@@ -606,7 +608,10 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       onTouchEnd={isProPlan ? handleTouchEnd : undefined}
       style={{
         minHeight: "100vh", width: "100%",
-        background: `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
+        background: story.image
+          ? `linear-gradient(160deg, ${r1}dd 0%, ${r2}dd 100%), url(${story.image}) center/cover`
+          : `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
+        backgroundBlendMode: story.image ? "multiply" : "normal",
         display: "flex", flexDirection: "column",
         position: "relative", overflow: "hidden",
         userSelect: "none",

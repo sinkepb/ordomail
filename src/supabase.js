@@ -29,6 +29,7 @@ export {
   setPendingCheckout,
   getPendingCheckout,
   clearPendingCheckout,
+  callSecureData,
 } from './lib/supabase/client.js';
 
 export {

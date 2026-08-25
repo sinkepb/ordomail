@@ -18,6 +18,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { validateFile } from "../_shared/upload-validation.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -168,6 +169,34 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ success: true }), { headers: CORS });
       }
       return new Response(JSON.stringify({ error: `action inconnue: ${action}` }), { status: 400, headers: CORS });
+    }
+
+    // Illustration d'une story santé — bucket public "story-images" (voir
+    // migrations/20260825_stories_offres_images.sql) : contenu éditorial déjà
+    // visible de tout patient, pas une donnée de santé comme ordonnances-files,
+    // donc URL publique directe plutôt qu'une URL signée à renouveler.
+    if (resource === "admin_stories_upload_image") {
+      const { fileName, fileType, fileBase64 } = params || {};
+      if (!fileName || !fileType || !fileBase64) {
+        return new Response(JSON.stringify({ error: "fileName, fileType et fileBase64 requis" }),
+          { status: 400, headers: CORS });
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
+      }
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      if (!check.ok) {
+        return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
+      }
+      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `stories/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await sb.storage.from("story-images").upload(path, bytes, { contentType: fileType, upsert: false });
+      if (upErr) throw new Error(upErr.message);
+      const { data: pub } = sb.storage.from("story-images").getPublicUrl(path);
+      return new Response(JSON.stringify({ url: pub.publicUrl }), { headers: CORS });
     }
 
     if (resource === "admin_update_plan") {

@@ -257,8 +257,42 @@ Deno.serve(async (req) => {
         .from("ordonnances-files")
         .createSignedUrl(path, 3600);
 
-      return new Response(JSON.stringify({ success: true, path, signedUrl: signed?.signedUrl || null }),
+      return new Response(JSON.stringify({ data: { success: true, path, signedUrl: signed?.signedUrl || null } }),
         { headers: CORS });
+    }
+
+    // Illustration d'une offre pharmacie — bucket public "story-images" (voir
+    // migrations/20260825_stories_offres_images.sql), même bucket que les stories
+    // santé admin. Chemin préfixé par pharmacieId (déjà vérifié par
+    // resolveCaller ci-dessus) : pas de vérification d'appartenance d'offre
+    // nécessaire, l'offre peut ne pas encore exister au moment de l'upload
+    // (créée juste après avec l'URL obtenue ici).
+    if (resource === "offre_upload_image") {
+      const { fileName, fileType, fileBase64 } = params || {};
+      if (!fileName || !fileType || !fileBase64) {
+        return new Response(JSON.stringify({ error: "fileName, fileType et fileBase64 requis" }),
+          { status: 400, headers: CORS });
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
+      }
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      if (!check.ok) {
+        return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
+      }
+      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `offres/${pharmacieId}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await sb.storage.from("story-images").upload(path, bytes, { contentType: fileType, upsert: false });
+      if (upErr) throw new Error(upErr.message);
+      const { data: pub } = sb.storage.from("story-images").getPublicUrl(path);
+      // { data: {...} } : lib/supabase/client.js:callSecureData renvoie body.data,
+      // pas le body brut (contrairement au callSecureData local de secure-data-admin) —
+      // ordonnances_upload_file suit désormais la même forme (corrigé le 25/08/2026,
+      // renvoyait avant `undefined` à l'appelant faute de wrapper data).
+      return new Response(JSON.stringify({ data: { url: pub.publicUrl } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),

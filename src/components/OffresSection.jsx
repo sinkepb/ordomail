@@ -1,7 +1,18 @@
 // Extrait de Dashboard.jsx (phase 4) — composant autonome (props + état local
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
-import { getSupabaseClient, isDemoMode, fetchStoryMetrics } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData } from "../supabase.js";
+
+// Encode un File en base64 pur (sans préfixe data:...;base64,) — même helper que
+// src/lib/supabase/ordonnances.js:fileToBase64, dupliqué pour un composant autonome.
+async function fileToBase64(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(binary);
+}
 
 function formatDuree(ms) {
   if (!ms) return "—";
@@ -23,9 +34,25 @@ function OffresSection({ pharmacie }) {
   const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"" });
   const [saving, setSaving]       = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [imgError, setImgError]   = useState("");
   const sb = getSupabaseClient();
+
+  async function handleImageUpload(file) {
+    if (!file || isDemoMode) return;
+    setUploadingImg(true);
+    setImgError("");
+    try {
+      const fileBase64 = await fileToBase64(file);
+      const { url } = await callSecureData("offre_upload_image", { fileName: file.name, fileType: file.type, fileBase64 });
+      setForm(f => ({ ...f, image_url: url }));
+    } catch (e) {
+      setImgError("Échec de l'envoi de l'image : " + e.message);
+    }
+    setUploadingImg(false);
+  }
 
   const TYPES = [
     { id:"promo",    label:"Promotion",   emoji:"🏷️" },
@@ -53,7 +80,7 @@ function OffresSection({ pharmacie }) {
     setEditingId(offre.id);
     setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
       emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
-      actif:offre.actif, date_fin:offre.date_fin||"" });
+      actif:offre.actif, date_fin:offre.date_fin||"", image_url:offre.image_url||"" });
     setShowForm(true);
   }
 
@@ -76,7 +103,7 @@ function OffresSection({ pharmacie }) {
         setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
       }
     }
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"" });
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"" });
     setEditingId(null);
     setShowForm(false);
     setSaving(false);
@@ -139,6 +166,25 @@ function OffresSection({ pharmacie }) {
             rows={2}
             style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
 
+          {/* Image (optionnelle) */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+            {form.image_url ? (
+              <div style={{ position:"relative" }}>
+                <img src={form.image_url} alt="" style={{ width:64, height:64, borderRadius:8, objectFit:"cover", border:"1.5px solid #e0e7ff" }}/>
+                <button onClick={()=>setForm(f=>({...f,image_url:""}))} title="Retirer l'image"
+                  style={{ position:"absolute", top:-6, right:-6, width:20, height:20, borderRadius:"50%", border:"none", background:"#dc2626", color:"#fff", fontSize:11, cursor:"pointer", lineHeight:"20px" }}>✕</button>
+              </div>
+            ) : (
+              <label style={{ display:"flex", alignItems:"center", justifyContent:"center", width:64, height:64, borderRadius:8, border:"1.5px dashed #c7d2fe", cursor:uploadingImg?"wait":"pointer", fontSize:20, color:"#94a3b8", background:"#fff" }}>
+                {uploadingImg ? "…" : "🖼️"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display:"none" }} disabled={uploadingImg}
+                  onChange={e=>{ const f=e.target.files?.[0]; if(f) handleImageUpload(f); e.target.value=""; }}/>
+              </label>
+            )}
+            <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.5 }}>Image optionnelle affichée en fond de la story<br/>(JPG, PNG ou WebP — 15 Mo max)</div>
+          </div>
+          {imgError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:10 }}>⚠️ {imgError}</div>}
+
           {/* Badge + couleur + date fin */}
           <div style={{ display:"flex", gap:8, marginBottom:14 }}>
             <input value={form.badge} onChange={e=>setForm(f=>({...f,badge:e.target.value}))}
@@ -153,7 +199,12 @@ function OffresSection({ pharmacie }) {
           {/* Preview story */}
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
-            <div style={{ width:120, height:200, borderRadius:16, background:`linear-gradient(160deg,${form.couleur},${form.couleur}99)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
+            <div style={{ width:120, height:200, borderRadius:16,
+              background: form.image_url
+                ? `linear-gradient(160deg,${form.couleur}cc,${form.couleur}cc), url(${form.image_url}) center/cover`
+                : `linear-gradient(160deg,${form.couleur},${form.couleur}99)`,
+              backgroundBlendMode: form.image_url ? "multiply" : "normal",
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
               {form.badge && <div style={{ background:"rgba(255,255,255,0.25)", borderRadius:20, padding:"2px 8px", fontSize:11, fontWeight:900, color:"#fff", marginBottom:6 }}>{form.badge}</div>}
               <div style={{ fontSize:28, marginBottom:6 }}>{form.emoji||"🎁"}</div>
               <div style={{ fontSize:11, fontWeight:800, color:"#fff", lineHeight:1.3 }}>{form.titre||"Titre"}</div>
@@ -186,7 +237,12 @@ function OffresSection({ pharmacie }) {
         const stats = aggregateOffre(events, offre.id);
         return (
         <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
-          <div style={{ width:44, height:44, borderRadius:10, background:`linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
+          <div style={{ width:44, height:44, borderRadius:10,
+            background: offre.image_url
+              ? `linear-gradient(135deg,${offre.couleur||"#1a3a6e"}cc,${offre.couleur||"#1a3a6e"}cc), url(${offre.image_url}) center/cover`
+              : `linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`,
+            backgroundBlendMode: offre.image_url ? "multiply" : "normal",
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
             {offre.emoji||"🎁"}
           </div>
           <div style={{ flex:1, minWidth:0 }}>

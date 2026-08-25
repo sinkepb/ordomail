@@ -32,11 +32,39 @@ function StoriesContentAdmin({ adminToken } = {}) {
   const [editing, setEditing]   = useState(null);
   const [form, setForm]         = useState({
     type: "info", titre: "", contenu: "", emoji: "💡",
-    question: "", reponses: "", explication: "", actif: true,
+    question: "", reponses: "", explication: "", actif: true, image_url: "",
   });
   const [saving, setSaving]     = useState(false);
   const [search, setSearch]     = useState("");
   const [error, setError]       = useState("");
+  const [uploadingImg, setUploadingImg] = useState(false);
+
+  // Encode un File en base64 pur (sans préfixe data:...;base64,) — par blocs pour
+  // éviter une pile d'appel trop profonde sur les gros fichiers (voir même helper
+  // dans src/lib/supabase/ordonnances.js:fileToBase64, dupliqué ici pour rester
+  // un composant autonome comme le reste de ce fichier).
+  async function fileToBase64(file) {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const CHUNK = 0x8000;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    return btoa(binary);
+  }
+
+  async function handleImageUpload(file) {
+    if (!file) return;
+    setUploadingImg(true);
+    setError("");
+    try {
+      const fileBase64 = await fileToBase64(file);
+      const { url } = await callSecureData("admin_stories_upload_image", { fileName: file.name, fileType: file.type, fileBase64 }, adminToken);
+      setForm(f => ({ ...f, image_url: url }));
+    } catch (e) {
+      setError("Échec de l'envoi de l'image : " + e.message);
+    }
+    setUploadingImg(false);
+  }
 
   const TYPES = [
     { id:"info",    label:"Information",  emoji:"💡", color:"#1a3a6e" },
@@ -60,7 +88,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
 
   function openNew() {
     setEditing(null);
-    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true });
+    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true, image_url:"" });
     setShowForm(true);
   }
 
@@ -70,7 +98,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
       type: item.type, titre: item.titre, contenu: item.contenu || "",
       emoji: item.emoji || "💡", question: item.question || "",
       reponses: item.reponses || "", explication: item.explication || "",
-      actif: item.actif,
+      actif: item.actif, image_url: item.image_url || "",
     });
     setShowForm(true);
   }
@@ -83,6 +111,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
       type: form.type, titre: form.titre, contenu: form.contenu,
       emoji: form.emoji, question: form.question,
       reponses: form.reponses, explication: form.explication, actif: form.actif,
+      image_url: form.image_url || null,
     };
     try {
       if (editing) {
@@ -175,6 +204,24 @@ function StoriesContentAdmin({ adminToken } = {}) {
               placeholder="Titre" style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:14, fontFamily:"inherit" }}/>
           </div>
 
+          {/* Image (optionnelle) */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            {form.image_url ? (
+              <div style={{ position:"relative" }}>
+                <img src={form.image_url} alt="" style={{ width:64, height:64, borderRadius:8, objectFit:"cover", border:"1.5px solid #e0e7ff" }}/>
+                <button onClick={()=>setForm(f=>({...f,image_url:""}))} title="Retirer l'image"
+                  style={{ position:"absolute", top:-6, right:-6, width:20, height:20, borderRadius:"50%", border:"none", background:"#dc2626", color:"#fff", fontSize:11, cursor:"pointer", lineHeight:"20px" }}>✕</button>
+              </div>
+            ) : (
+              <label style={{ display:"flex", alignItems:"center", justifyContent:"center", width:64, height:64, borderRadius:8, border:"1.5px dashed #c7d2fe", cursor:uploadingImg?"wait":"pointer", fontSize:20, color:"#94a3b8", background:"#fff" }}>
+                {uploadingImg ? "…" : "🖼️"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display:"none" }} disabled={uploadingImg}
+                  onChange={e=>{ const f=e.target.files?.[0]; if(f) handleImageUpload(f); e.target.value=""; }}/>
+              </label>
+            )}
+            <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.5 }}>Image optionnelle affichée en fond de la story<br/>(JPG, PNG ou WebP — 15 Mo max)</div>
+          </div>
+
           {/* Contenu texte (info + conseil) */}
           {form.type !== "quiz" && (
             <textarea value={form.contenu} onChange={e=>setForm(f=>({...f,contenu:e.target.value}))}
@@ -248,9 +295,13 @@ function StoriesContentAdmin({ adminToken } = {}) {
           <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"14px 16px",
             border:`1.5px solid ${item.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8,
             background:item.actif?"#fff":"#f8f9fa", opacity:item.actif?1:0.6 }}>
-            <div style={{ width:42, height:42, borderRadius:10, background:typeInfo.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
-              {item.emoji||typeInfo.emoji}
-            </div>
+            {item.image_url ? (
+              <img src={item.image_url} alt="" style={{ width:42, height:42, borderRadius:10, objectFit:"cover", flexShrink:0 }}/>
+            ) : (
+              <div style={{ width:42, height:42, borderRadius:10, background:typeInfo.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
+                {item.emoji||typeInfo.emoji}
+              </div>
+            )}
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
                 <span style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>{item.titre}</span>
