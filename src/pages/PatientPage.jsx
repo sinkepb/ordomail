@@ -526,6 +526,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     setProgress(0);
     setQuizAnswer(null);
     if (isQuiz) return; // Pause sur le quiz
+    if (!isProPlan) return; // Starter/Standard : page de confirmation statique, pas d'avance auto
 
     const start = Date.now();
     // Bloquer le timer sur la story email-instructions
@@ -601,8 +602,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
   return (
     <div
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isProPlan ? handleTouchStart : undefined}
+      onTouchEnd={isProPlan ? handleTouchEnd : undefined}
       style={{
         minHeight: "100vh", width: "100%",
         background: `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
@@ -643,19 +644,22 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         @keyframes slideDown { from{transform:translateY(-100%);opacity:0} to{transform:translateY(0);opacity:1} }
       `}</style>
 
-      {/* Barres de progression */}
-      <div style={{ display: "flex", gap: 4, padding: "14px 16px 8px", position: "relative", zIndex: 10 }}>
-        {allStories.map((s, i) => (
-          <div key={s.id} style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)", overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 2,
-              background: "#fff",
-              width: i < current ? "100%" : i === current ? (isQuiz && quizAnswer !== null ? "100%" : `${progress}%`) : "0%",
-              transition: i === current && !isQuiz ? "none" : "width 0.3s",
-            }}/>
-          </div>
-        ))}
-      </div>
+      {/* Barres de progression — masquées sur Starter/Standard : une seule
+          page (la confirmation), rien vers quoi progresser. */}
+      {isProPlan && (
+        <div style={{ display: "flex", gap: 4, padding: "14px 16px 8px", position: "relative", zIndex: 10 }}>
+          {allStories.map((s, i) => (
+            <div key={s.id} style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 2,
+                background: "#fff",
+                width: i < current ? "100%" : i === current ? (isQuiz && quizAnswer !== null ? "100%" : `${progress}%`) : "0%",
+                transition: i === current && !isQuiz ? "none" : "width 0.3s",
+              }}/>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ padding: "6px 16px 0", display: "flex", alignItems: "center", gap: 10, zIndex: 10 }}>
@@ -797,8 +801,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         )}
       </div>
 
-      {/* Indicateur swipe */}
-      {quizAnswer === null && !isQuiz && (
+      {/* Indicateur swipe — masqué sur Starter/Standard, rien vers quoi swiper */}
+      {isProPlan && quizAnswer === null && !isQuiz && (
         <div style={{ padding: "0 0 24px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 12, zIndex: 10 }}>
           ← Swipez →
         </div>
@@ -1005,7 +1009,9 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         </div>
       )}
 
-      {current === allStories.length - 1 && progress > 80 && (
+      {/* Starter/Standard : pas de minuteur (progress reste à 0), le bouton
+          doit donc apparaître directement plutôt qu'attendre progress>80. */}
+      {current === allStories.length - 1 && (progress > 80 || !isProPlan) && (
         <div style={{ padding: "0 24px 32px", zIndex: 10 }}>
           <button onClick={onRestart}
             style={{ width: "100%", padding: "14px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
