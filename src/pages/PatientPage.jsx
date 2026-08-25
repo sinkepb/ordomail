@@ -1230,9 +1230,6 @@ function PatientPage({ pharmacie, onBack }) {
 
       <div style={{ padding:"20px 20px 32px", maxWidth:480, width:"100%", margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
-        {/* Nom */}
-        <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
-
         <div style={{ fontSize:12, fontWeight:700, color:"#888", textAlign:"center", textTransform:"uppercase", letterSpacing:0.6 }}>
           Choisissez comment l&apos;envoyer
         </div>
@@ -1278,6 +1275,11 @@ function PatientPage({ pharmacie, onBack }) {
               <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>JPEG, PNG ou PDF</div>
               <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display:"none" }}
                 onChange={e => handleFiles(e.target.files)} />
+            </div>
+
+            {/* Nom — sous "Ajouter votre ordonnance", juste avant l'envoi qui en a besoin */}
+            <div style={{ marginTop:10 }}>
+              <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
             </div>
 
             {/* Bouton envoyer — à l'intérieur du cadre, comme le bouton copier du bloc e-mail :
