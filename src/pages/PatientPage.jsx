@@ -1233,6 +1233,10 @@ function PatientPage({ pharmacie, onBack }) {
         {/* Nom */}
         <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
 
+        <div style={{ fontSize:12, fontWeight:700, color:"#888", textAlign:"center", textTransform:"uppercase", letterSpacing:0.6 }}>
+          Choisissez comment l&apos;envoyer
+        </div>
+
         {/* ── Bloc 1 : Ajouter ordonnances ── */}
         <div style={{ background:"#fff", borderRadius:14, overflow:"hidden", border:`1.5px solid ${files.length>0 ? couleur : "#e0e7ff"}`, boxShadow:files.length>0 ? `0 4px 16px ${couleur}18` : "0 1px 4px rgba(0,0,0,0.06)", transition:"border 0.2s" }}>
           {/* En-tête */}
@@ -1275,14 +1279,22 @@ function PatientPage({ pharmacie, onBack }) {
               <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display:"none" }}
                 onChange={e => handleFiles(e.target.files)} />
             </div>
+
+            {/* Bouton envoyer — à l'intérieur du cadre, comme le bouton copier du bloc e-mail :
+                les deux options doivent se lire comme deux cartes autonomes et symétriques. */}
+            <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending}
+              style={{ width:"100%", padding:"15px", border:"none", borderRadius:10, background:!nom.trim()||files.length===0?`${couleur}55`:couleur, color:"#fff", fontWeight:800, fontSize:16, cursor:!nom.trim()||files.length===0?"not-allowed":"pointer", fontFamily:"inherit", boxShadow:nom.trim()&&files.length>0?`0 4px 16px ${couleur}44`:"none", marginTop:4 }}>
+              {sending ? "Envoi en cours…" : files.length > 1 ? `Envoyer ${files.length} ordonnances →` : "Envoyer l'ordonnance →"}
+            </button>
           </div>
         </div>
 
-        {/* Bouton envoyer */}
-        <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending}
-          style={{ width:"100%", padding:"15px", border:"none", borderRadius:12, background:!nom.trim()||files.length===0?`${couleur}55`:couleur, color:"#fff", fontWeight:800, fontSize:16, cursor:!nom.trim()||files.length===0?"not-allowed":"pointer", fontFamily:"inherit", boxShadow:nom.trim()&&files.length>0?`0 4px 16px ${couleur}44`:"none" }}>
-          {sending ? "Envoi en cours…" : files.length > 1 ? `Envoyer ${files.length} ordonnances →` : "Envoyer l'ordonnance →"}
-        </button>
+        {/* Séparateur — renforce la perception "deux options" au premier coup d'œil */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, color:"#bbb", fontSize:11, fontWeight:800, letterSpacing:0.6 }}>
+          <div style={{ flex:1, height:1, background:"#e5e9f5" }} />
+          OU
+          <div style={{ flex:1, height:1, background:"#e5e9f5" }} />
+        </div>
 
         {/* ── Bloc 2 : E-mail ── */}
         <div style={{ background:"#fff", borderRadius:14, overflow:"hidden", border:`1.5px solid ${copied?"#16a34a":"#e0eeff"}`, boxShadow:copied?"0 4px 16px #16a34a18":"0 1px 4px rgba(0,0,0,0.06)", transition:"border 0.3s" }}>
