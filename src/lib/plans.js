@@ -7,8 +7,8 @@
 // (montant exact facturé une fois par an = price × 11 ; voir
 // create-checkout-session/_shared/checkout.ts buildLookupKey).
 export const PLAN_LIMITS = {
-  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19,  priceAnnual:17, icon:"🌱", color:"#0369a1", offresStories: true },
-  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39,  priceAnnual:36, icon:"⭐", color:"#1a3a6e", offresStories: true },
+  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19,  priceAnnual:17, icon:"🌱", color:"#0369a1", offresStories: false },
+  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39,  priceAnnual:36, icon:"⭐", color:"#1a3a6e", offresStories: false },
   pro:      { id:"pro",      maxPostes: 15,  maxOrdos: 99999, label:"Pro",       price:79,  priceAnnual:72, icon:"🏥", color:"#4c1d95", offresStories: true },
 };
 

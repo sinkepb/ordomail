@@ -83,7 +83,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],["offres","🎯","Offres"],["stories","📊","Stories"],["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],
+    ...(planInfo.offresStories ? [["offres","🎯","Offres"],["stories","📊","Stories"]] : []),
+    ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column"}}>
@@ -259,12 +261,12 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
           </ErrorBoundary>
         )}
 
-        {section==="offres"&&(
+        {section==="offres"&&planInfo.offresStories&&(
           <ErrorBoundary compact label="Offres">
           <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
           </ErrorBoundary>
         )}
-        {section==="stories"&&(
+        {section==="stories"&&planInfo.offresStories&&(
           <ErrorBoundary compact label="Stories">
           <StoriesSection pharmacie={pharmacie}/>
           </ErrorBoundary>
