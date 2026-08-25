@@ -5,7 +5,7 @@
 // StoriesContentAdmin.jsx (callSecureData local, styles inline, palette
 // sombre #0f172a/#1e293b/#334155).
 import { useState, useEffect, useRef } from "react";
-import { openQrSheetPDF, generatePosterHTML, openPosterPDF } from "../lib/print.jsx";
+import { openQrSheetPDF, generatePosterHTML, openPosterPDFFromHTML } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 
 const STICKER_TOP_TEXT = "GAGNEZ DU TEMPS";
@@ -42,7 +42,6 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [posterHtml, setPosterHtml] = useState(null);
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
-  const [posterBusy, setPosterBusy] = useState(false);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -162,18 +161,15 @@ function QrCodesAdmin({ adminToken } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewingQr, viewTab]);
 
-  async function handleDownloadPoster() {
-    if (!viewingQr) return;
-    setPosterBusy(true); setPosterErr("");
-    try {
-      await openPosterPDF({
-        url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
-        pharmacieName: viewingQr.pharmacies?.nom,
-      });
-    } catch (e) {
-      setPosterErr("Échec de l'export : " + e.message);
-    }
-    setPosterBusy(false);
+  function handleDownloadPoster() {
+    // Pas de await avant window.open() (voir openPosterPDFFromHTML) : posterHtml
+    // est déjà prêt (généré par l'effet ci-dessus pour l'aperçu), donc on l'ouvre
+    // tel quel, dans le même tick que le clic, pour ne pas perdre l'activation
+    // utilisateur et se faire bloquer silencieusement comme popup.
+    if (!viewingQr || !posterHtml) return;
+    setPosterErr("");
+    const win = openPosterPDFFromHTML(posterHtml);
+    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
   }
 
   const filteredPharmacies = pharmaSearch
@@ -389,9 +385,9 @@ function QrCodesAdmin({ adminToken } = {}) {
                         style={{ width: 793, height: 1123, border: "none", transform: "scale(0.28)", transformOrigin: "top left" }} />
                     )}
                   </div>
-                  <button onClick={handleDownloadPoster} disabled={posterBusy}
-                    style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: posterBusy ? "default" : "pointer", fontFamily: "inherit", opacity: posterBusy ? 0.6 : 1 }}>
-                    {posterBusy ? "Ouverture…" : "🖨️ Imprimer / Enregistrer en PDF (A4)"}
+                  <button onClick={handleDownloadPoster} disabled={!posterHtml}
+                    style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !posterHtml ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtml ? 0.6 : 1 }}>
+                    {posterLoading ? "Préparation…" : "🖨️ Imprimer / Enregistrer en PDF (A4)"}
                   </button>
                   {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
                 </>
