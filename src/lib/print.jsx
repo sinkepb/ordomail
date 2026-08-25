@@ -387,12 +387,12 @@ async function generatePosterHTML({ url, pharmacieName }) {
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" stroke="#16C079" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="margin-top:8px;"><path d="M12 3v19"></path><path d="M4 16l8 9 8-9"></path></svg>
   </div>
 
-  <div style="position:relative;width:360px;height:360px;background:#ffffff;border-radius:26px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:8px">
-    <div style="position:absolute;top:12px;left:12px;width:26px;height:26px;border-top:4px solid #16C079;border-left:4px solid #16C079;border-top-left-radius:10px;"></div>
-    <div style="position:absolute;top:12px;right:12px;width:26px;height:26px;border-top:4px solid #16C079;border-right:4px solid #16C079;border-top-right-radius:10px;"></div>
-    <div style="position:absolute;bottom:12px;left:12px;width:26px;height:26px;border-bottom:4px solid #16C079;border-left:4px solid #16C079;border-bottom-left-radius:10px;"></div>
-    <div style="position:absolute;bottom:12px;right:12px;width:26px;height:26px;border-bottom:4px solid #16C079;border-right:4px solid #16C079;border-bottom-right-radius:10px;"></div>
-    <div style="width:310px;height:310px;">${qrSvg}</div>
+  <div style="position:relative;width:540px;height:540px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:8px">
+    <div style="position:absolute;top:18px;left:18px;width:39px;height:39px;border-top:6px solid #16C079;border-left:6px solid #16C079;border-top-left-radius:14px;"></div>
+    <div style="position:absolute;top:18px;right:18px;width:39px;height:39px;border-top:6px solid #16C079;border-right:6px solid #16C079;border-top-right-radius:14px;"></div>
+    <div style="position:absolute;bottom:18px;left:18px;width:39px;height:39px;border-bottom:6px solid #16C079;border-left:6px solid #16C079;border-bottom-left-radius:14px;"></div>
+    <div style="position:absolute;bottom:18px;right:18px;width:39px;height:39px;border-bottom:6px solid #16C079;border-right:6px solid #16C079;border-bottom-right-radius:14px;"></div>
+    <div style="width:465px;height:465px;">${qrSvg}</div>
   </div>
 
   <div style="position:relative;display:flex;flex-direction:column;gap:10px;margin-top:14px;width:100%;padding:0 36px;">
