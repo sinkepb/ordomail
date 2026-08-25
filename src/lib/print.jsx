@@ -371,10 +371,10 @@ async function generatePosterHTML({ url, pharmacieName }) {
     <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
   </div>
 
-  <div style="position:relative;text-align:center;margin-top:18px;display:flex;flex-direction:column;align-items:center;">
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:88px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:88px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:120px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+  <div style="position:relative;text-align:center;margin-top:22px;display:flex;align-items:baseline;justify-content:center;gap:12px;white-space:nowrap;">
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:98px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
   </div>
 
   <p style="position:relative;text-align:center;margin:12px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-0.01em;color:#2E4B3F;white-space:nowrap;">ENVOYEZ VOTRE ORDONNANCE</p>
