@@ -1,6 +1,7 @@
 // @version 17/07/2026 13:36 — audit-logs
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { PLAN_LIMITS } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
@@ -1174,7 +1175,21 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
 
-      <div id="ordomail-print-area" style={{display:"none"}}/>
+      {/* Portail direct vers document.body (25/08/2026) — le CSS d'impression ci-dessous
+          masque body>* (les enfants DIRECTS de <body>) puis force l'affichage de
+          #ordomail-print-area. Tant que ce div restait un simple enfant JSX de
+          PharmacieDashboard, il était niché plusieurs niveaux sous #root (le vrai
+          enfant direct de body) — masquer #root masque tout son sous-arbre, et
+          `display:block!important` sur un descendant ne peut pas ressusciter un
+          arbre dont un ancêtre est display:none. Résultat : page blanche à
+          l'impression d'une image (le cas PDF passait par une fenêtre séparée,
+          jamais touché par ce bug — d'où un signalement spécifique aux images).
+          Le portail rend ce div réellement enfant direct de body, comme le CSS
+          l'attend. */}
+      {typeof document !== "undefined" && createPortal(
+        <div id="ordomail-print-area" style={{display:"none"}}/>,
+        document.body
+      )}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes popIn{0%{opacity:0;transform:scale(0.92)}100%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}@media print{body>*{display:none!important}#ordomail-print-area{display:block!important;position:fixed;top:0;left:0;width:100%;background:#fff}}@media(max-width:640px){.hide-mobile{display:none!important}.desktop-nav{display:none!important}.bottom-nav{display:flex!important}}@media(min-width:641px){.desktop-nav{display:flex!important}.bottom-nav{display:none!important}.mobile-padded{padding-bottom:0!important}}`}</style>
     </div>
   );
