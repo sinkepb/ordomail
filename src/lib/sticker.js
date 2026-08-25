@@ -166,21 +166,28 @@ async function loadQrImage(url, sizePx) {
 }
 
 // Dessine le sticker complet dans un canvas déjà dimensionné (canvas.width =
-// canvas.height = un carré contenant le disque + son fond perdu). `discRatio`
-// est la part du côté du canvas occupée par le disque (le reste = fond perdu
-// visible sur les bords, vert pâle).
-async function paintSticker(canvas, { url, topText, bottomText, discRatio = 0.968 }) {
+// canvas.height = un carré transparent contenant le disque + son fond perdu).
+// `bleedPx` est l'épaisseur du fond perdu (anneau vert pâle) au-delà du
+// disque — par défaut une fine bande proportionnelle (comme le fichier
+// source : anneau de 155mm autour d'un disque de 150mm). Le fond perdu est
+// lui-même un CERCLE (pas un carré plein) : au-delà de cet anneau, le canvas
+// reste transparent — jamais de coins carrés vert pâle autour du sticker.
+async function paintSticker(canvas, { url, topText, bottomText, bleedPx }) {
   await ensureStickerFonts();
   const size = canvas.width;
   const cx = size / 2;
   const cy = size / 2;
-  const R = (size / 2) * discRatio;
+  const Router = size / 2;
+  const ring = bleedPx != null ? bleedPx : Router * 0.0323;
+  const R = Router - ring;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, size, size);
 
-  // Fond perdu (anneau visible au-delà du trait de coupe)
+  // Fond perdu (anneau vert pâle, cerclé — pas un carré)
+  ctx.beginPath();
+  ctx.arc(cx, cy, Router, 0, Math.PI * 2);
   ctx.fillStyle = PALE_GREEN;
-  ctx.fillRect(0, 0, size, size);
+  ctx.fill();
 
   // Disque principal
   ctx.beginPath();
@@ -246,13 +253,13 @@ async function downloadStickerImage({ url, code, topText, bottomText, diameterMm
   const bleedMm = 10;
   const pxPerMm = dpi / 25.4;
   const discPx = diameterMm * pxPerMm;
-  const canvasSize = Math.round(discPx + 2 * bleedMm * pxPerMm);
-  const discRatio = discPx / canvasSize;
+  const bleedPx = bleedMm * pxPerMm;
+  const canvasSize = Math.round(discPx + 2 * bleedPx);
 
   const canvas = document.createElement("canvas");
   canvas.width = canvasSize;
   canvas.height = canvasSize;
-  await paintSticker(canvas, { url, topText, bottomText, discRatio });
+  await paintSticker(canvas, { url, topText, bottomText, bleedPx });
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   const dlUrl = URL.createObjectURL(blob);
