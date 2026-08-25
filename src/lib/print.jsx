@@ -309,6 +309,121 @@ async function openQrSheetPDF(qrCodes, batchLabel) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// ─── Affiche A4 imprimable (QR codes pré-imprimés, 25/08/2026) ────────────────
+// Identité visuelle distincte du sticker de sol (src/lib/sticker.js) — reprise
+// du projet Claude Design "Pharmacie Argenteuil OrdoMail" (Affiche A4
+// PharmScan.dc.html) : vert clair/blanc, Bricolage Grotesque + Manrope,
+// pensée pour un affichage mural au format A4 avec les 3 étapes du dépôt.
+// Toutes les dimensions en px reprennent celles du fichier source (conçu
+// pour tenir sur une page A4 de 793×1123px à 96dpi) — ne pas les modifier
+// sans revérifier que le contenu tient toujours sur une seule page.
+async function generatePosterHTML({ url, pharmacieName }) {
+  const mod = await import("qrcode");
+  const QR = mod.default || mod;
+  const qrSvg = await QR.toString(url, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 0,
+    color: { dark: "#0B1F16", light: "#ffffff" },
+  });
+  const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Affiche A4 — Scannez pour envoyer votre ordonnance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  @page { size: A4; margin: 0; }
+  @media print { .no-print { display: none !important; } }
+  body { background: #ccc; font-family: 'Manrope', sans-serif; }
+  .sheet {
+    position: relative;
+    width: 793px; height: 1123px;
+    margin: 0 auto;
+    background: #F5F8F5;
+    color: #12241C;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 42px 46px 38px;
+  }
+  .print-btn { position: fixed; top: 20px; right: 20px; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
+</style>
+</head>
+<body>
+
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+
+<div class="sheet">
+  <div style="position:absolute;inset:0;background:radial-gradient(120% 34% at 50% -6%, rgba(22,192,121,0.16), transparent 62%), radial-gradient(110% 26% at 50% 106%, rgba(11,122,84,0.12), transparent 62%);pointer-events:none;"></div>
+  <div style="position:absolute;inset:20px;border:2px solid rgba(11,122,84,0.16);border-radius:22px;pointer-events:none;"></div>
+
+  <div style="position:relative;display:flex;align-items:center;gap:10px;">
+    <div style="position:relative;width:22px;height:22px;flex:none;">
+      <div style="position:absolute;left:7px;top:0;width:7px;height:22px;background:#16C079;border-radius:2px;"></div>
+      <div style="position:absolute;top:7px;left:0;width:22px;height:7px;background:#16C079;border-radius:2px;"></div>
+    </div>
+    <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
+  </div>
+
+  <div style="position:relative;text-align:center;margin-top:22px;display:flex;align-items:baseline;justify-content:center;gap:14px;white-space:nowrap;">
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:44px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:44px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:60px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+  </div>
+
+  <p style="position:relative;text-align:center;margin:18px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:25px;line-height:1.3;color:#2E4B3F;max-width:400px;text-wrap:balance;">ENVOYEZ VOTRE ORDONNANCE</p>
+
+  <div style="position:relative;display:flex;flex-direction:column;align-items:center;margin-top:16px;">
+    <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:8px 18px 8px 12px;box-shadow:0 8px 22px rgba(11,122,84,0.12);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
+      <span style="font-family:'Manrope';font-weight:700;font-size:15px;color:#12241C;">Ouvrez l'appareil photo et scannez</span>
+    </div>
+    <svg width="24" height="30" viewBox="0 0 24 30" fill="none" stroke="#16C079" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="margin-top:8px;"><path d="M12 3v19"></path><path d="M4 16l8 9 8-9"></path></svg>
+  </div>
+
+  <div style="position:relative;width:560px;height:560px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:10px">
+    <div style="position:absolute;top:18px;left:18px;width:40px;height:40px;border-top:5px solid #16C079;border-left:5px solid #16C079;border-top-left-radius:14px;"></div>
+    <div style="position:absolute;top:18px;right:18px;width:40px;height:40px;border-top:5px solid #16C079;border-right:5px solid #16C079;border-top-right-radius:14px;"></div>
+    <div style="position:absolute;bottom:18px;left:18px;width:40px;height:40px;border-bottom:5px solid #16C079;border-left:5px solid #16C079;border-bottom-left-radius:14px;"></div>
+    <div style="position:absolute;bottom:18px;right:18px;width:40px;height:40px;border-bottom:5px solid #16C079;border-right:5px solid #16C079;border-bottom-right-radius:14px;"></div>
+    <div style="width:484px;height:484px;">${qrSvg}</div>
+  </div>
+
+  <div style="position:relative;display:flex;flex-direction:column;gap:12px;margin-top:22px;width:100%;padding:0 36px;">
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="width:42px;height:42px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;">1</div>
+      <div style="font-family:'Manrope';font-weight:700;font-size:19px;line-height:1.2;color:#12241C;">Scannez le QR Code</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="width:42px;height:42px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;">2</div>
+      <div style="font-family:'Manrope';font-weight:700;font-size:19px;line-height:1.2;color:#12241C;">Déposez votre ordonnance</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="width:42px;height:42px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;">3</div>
+      <div style="font-family:'Manrope';font-weight:700;font-size:19px;line-height:1.2;color:#12241C;">Attendez votre tour</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>`;
+}
+
+async function openPosterPDF({ url, pharmacieName }) {
+  const html = await generatePosterHTML({ url, pharmacieName });
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const dlUrl = URL.createObjectURL(blob);
+  const win = window.open(dlUrl, "_blank", "noopener,noreferrer");
+  if (win) win.focus();
+  setTimeout(() => URL.revokeObjectURL(dlUrl), 60000);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, openPosterPDF };

@@ -5,7 +5,7 @@
 // StoriesContentAdmin.jsx (callSecureData local, styles inline, palette
 // sombre #0f172a/#1e293b/#334155).
 import { useState, useEffect, useRef } from "react";
-import { openQrSheetPDF } from "../lib/print.jsx";
+import { openQrSheetPDF, generatePosterHTML, openPosterPDF } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 
 const STICKER_TOP_TEXT = "GAGNEZ DU TEMPS";
@@ -38,6 +38,11 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [stickerBusy, setStickerBusy] = useState(false);
   const [stickerErr, setStickerErr] = useState("");
   const stickerCanvasRef = useRef(null);
+  const [viewTab, setViewTab] = useState("sticker");
+  const [posterHtml, setPosterHtml] = useState(null);
+  const [posterLoading, setPosterLoading] = useState(false);
+  const [posterErr, setPosterErr] = useState("");
+  const [posterBusy, setPosterBusy] = useState(false);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -146,6 +151,31 @@ function QrCodesAdmin({ adminToken } = {}) {
     }
     setStickerBusy(false);
   }
+
+  useEffect(() => {
+    if (!viewingQr || viewTab !== "affiche") return;
+    setPosterLoading(true); setPosterErr(""); setPosterHtml(null);
+    generatePosterHTML({
+      url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
+      pharmacieName: viewingQr.pharmacies?.nom,
+    }).then(setPosterHtml).catch((e) => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingQr, viewTab]);
+
+  async function handleDownloadPoster() {
+    if (!viewingQr) return;
+    setPosterBusy(true); setPosterErr("");
+    try {
+      await openPosterPDF({
+        url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
+        pharmacieName: viewingQr.pharmacies?.nom,
+      });
+    } catch (e) {
+      setPosterErr("Échec de l'export : " + e.message);
+    }
+    setPosterBusy(false);
+  }
+
   const filteredPharmacies = pharmaSearch
     ? pharmacies.filter(p =>
         p.nom?.toLowerCase().includes(pharmaSearch.toLowerCase()) ||
@@ -272,7 +302,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{r.batch_label || "—"}</td>
                     <td style={{ padding: "8px 10px", color: "#64748b" }}>{new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
                     <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button onClick={() => { setLinkCopied(false); setViewingQr(r); }} title="Voir le QR"
+                      <button onClick={() => { setLinkCopied(false); setViewTab("sticker"); setViewingQr(r); }} title="Voir le QR"
                         style={{ background: "none", border: "1px solid #334155", borderRadius: 6, padding: "4px 8px", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginRight: 6 }}>
                         👁️
                       </button>
@@ -294,10 +324,7 @@ function QrCodesAdmin({ adminToken } = {}) {
         <div onClick={() => setViewingQr(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 28, textAlign: "center", maxWidth: 360 }}>
-            <div style={{ borderRadius: 10, overflow: "hidden", display: "inline-block", marginBottom: 16, lineHeight: 0 }}>
-              <canvas ref={stickerCanvasRef} style={{ width: 220, height: 220, display: "block" }} />
-            </div>
+            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 28, textAlign: "center", maxWidth: 380 }}>
             <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{viewingQr.code}</div>
             <div
               onClick={async () => {
@@ -319,22 +346,56 @@ function QrCodesAdmin({ adminToken } = {}) {
             {viewingQr.batch_label && <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>{viewingQr.batch_label}</div>}
 
             <div style={{ borderTop: "1px solid #334155", marginTop: 4, paddingTop: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-                🖨️ Sticker de sol — fichier imprimeur
-              </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 12 }}>
-                {[300, 350, 400].map(d => (
-                  <button key={d} onClick={() => setStickerDiameter(d)}
-                    style={{ padding: "6px 12px", border: `1px solid ${stickerDiameter === d ? "#22c55e" : "#334155"}`, borderRadius: 8, background: stickerDiameter === d ? "#14532d" : "transparent", color: stickerDiameter === d ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Ø {d} mm
+              <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 16 }}>
+                {[["sticker", "🟢 Sticker"], ["affiche", "📄 Affiche"]].map(([k, l]) => (
+                  <button key={k} onClick={() => setViewTab(k)}
+                    style={{ padding: "7px 16px", border: `1px solid ${viewTab === k ? "#22c55e" : "#334155"}`, borderRadius: 8, background: viewTab === k ? "#14532d" : "transparent", color: viewTab === k ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    {l}
                   </button>
                 ))}
               </div>
-              <button onClick={handleDownloadSticker} disabled={stickerBusy}
-                style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: stickerBusy ? "default" : "pointer", fontFamily: "inherit", opacity: stickerBusy ? 0.6 : 1 }}>
-                {stickerBusy ? "Génération…" : "⬇️ Télécharger l'image (PNG, 300 dpi)"}
-              </button>
-              {stickerErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{stickerErr}</div>}
+
+              {viewTab === "sticker" ? (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                    Sticker de sol Ø 300–400 mm — fichier imprimeur
+                  </div>
+                  <div style={{ borderRadius: 10, overflow: "hidden", display: "inline-block", marginBottom: 14, lineHeight: 0 }}>
+                    <canvas ref={stickerCanvasRef} style={{ width: 220, height: 220, display: "block" }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 12 }}>
+                    {[300, 350, 400].map(d => (
+                      <button key={d} onClick={() => setStickerDiameter(d)}
+                        style={{ padding: "6px 12px", border: `1px solid ${stickerDiameter === d ? "#22c55e" : "#334155"}`, borderRadius: 8, background: stickerDiameter === d ? "#14532d" : "transparent", color: stickerDiameter === d ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        Ø {d} mm
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={handleDownloadSticker} disabled={stickerBusy}
+                    style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: stickerBusy ? "default" : "pointer", fontFamily: "inherit", opacity: stickerBusy ? 0.6 : 1 }}>
+                    {stickerBusy ? "Génération…" : "⬇️ Télécharger l'image (PNG, 300 dpi)"}
+                  </button>
+                  {stickerErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{stickerErr}</div>}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                    Affiche A4 — à imprimer ou enregistrer en PDF
+                  </div>
+                  <div style={{ width: 222, height: 314, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
+                    {!posterLoading && posterHtml && (
+                      <iframe title="Aperçu affiche A4" srcDoc={posterHtml}
+                        style={{ width: 793, height: 1123, border: "none", transform: "scale(0.28)", transformOrigin: "top left" }} />
+                    )}
+                  </div>
+                  <button onClick={handleDownloadPoster} disabled={posterBusy}
+                    style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: posterBusy ? "default" : "pointer", fontFamily: "inherit", opacity: posterBusy ? 0.6 : 1 }}>
+                    {posterBusy ? "Ouverture…" : "🖨️ Imprimer / Enregistrer en PDF (A4)"}
+                  </button>
+                  {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
+                </>
+              )}
             </div>
 
             <button onClick={() => setViewingQr(null)}
