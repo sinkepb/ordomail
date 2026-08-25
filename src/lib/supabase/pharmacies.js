@@ -38,12 +38,12 @@ export async function fetchPharmaciePublic(pharmacieId) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
     if (!ph) return null;
-    return { id: ph.id, nom: ph.nom, couleur: ph.couleur, emailReception: ph.emailReception, sonnette_active: ph.sonnette_active };
+    return { id: ph.id, nom: ph.nom, couleur: ph.couleur, emailReception: ph.emailReception, sonnette_active: ph.sonnette_active, plan: ph.plan };
   }
   const sb = getSupabase();
   const { data, error } = await sb
     .from('pharmacies')
-    .select('id, nom, couleur, email_reception, sonnette_active')
+    .select('id, nom, couleur, email_reception, sonnette_active, plan')
     .eq('id', pharmacieId)
     .maybeSingle();
   if (error || !data) return null;

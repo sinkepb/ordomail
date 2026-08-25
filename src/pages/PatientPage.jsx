@@ -359,7 +359,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   const baseStories = emailMode
     ? HEALTH_STORIES.filter(s => s.id !== 1)  // supprimer "Ordonnance reçue" en mode email
     : HEALTH_STORIES;
-  const [allStories, setAllStories] = useState([...emailStory, ...baseStories]);
+  // Stories (contenu santé, offres, quiz) réservées au plan Pro (voir
+  // pricing sur la landing page : "Offres & promotions patient — Plan Pro").
+  // Starter/Standard ne voient que la toute première page (confirmation de
+  // dépôt ou instructions email) — jamais le reste du diaporama.
+  const isProPlan = pharmacie?.plan === "pro";
+  const [allStories, setAllStories] = useState(
+    isProPlan ? [...emailStory, ...baseStories] : [...emailStory, ...baseStories].slice(0, 1)
+  );
   const [interets, setInterets]     = useState({});
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
 
@@ -373,6 +380,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
     const capturedPharmaId = pharmacie?.id; // Capturer AVANT l'async
     async function loadDynamic() {
+      // Starter/Standard : uniquement la première page (confirmation ou
+      // instructions email) — pas la peine d'aller chercher contenu santé,
+      // offres ou quiz, réservés au plan Pro.
+      if (!isProPlan) {
+        setAllStories([...emailStory, ...baseStoriesForLoad].slice(0, 1));
+        return;
+      }
       // Mode démo : utiliser des offres fictives pour tester
       if (isDemoMode) {
         const demoOffres = [
@@ -501,7 +515,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     }
 
     loadDynamic();
-  }, [pharmacie?.id, isDemoMode]);
+  }, [pharmacie?.id, pharmacie?.plan, isDemoMode]);
 
   const story = allStories[current];
   const isQuiz = story?.type === "quiz";
