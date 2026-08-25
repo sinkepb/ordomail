@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import {
   fetchPharmaciePublic,
   isDemoMode, registerDB, getSupabaseClient,
@@ -6,11 +6,15 @@ import {
   getPendingCheckout, clearPendingCheckout,
 } from "./supabase.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { lazyWithReload as lazy } from "./lib/lazyWithReload.js";
 // Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
 // ne doit pas télécharger le dashboard vendeur, le backoffice admin et Stripe
 // Checkout rien que pour déposer une ordonnance. Chaque route devient son
 // propre chunk ; <Suspense> plus bas affiche le même spinner que le chargement
 // de session pendant le téléchargement (quasi instantané une fois en cache).
+// lazyWithReload (pas React.lazy direct, 25/08/2026) : recharge automatiquement
+// la page si le chunk d'une route pas encore visitée a disparu du serveur après
+// un déploiement — voir lib/lazyWithReload.js pour le détail du problème.
 const LandingPage      = lazy(() => import("./pages/LandingPage.jsx").then(m => ({ default: m.LandingPage })));
 const AppLogin         = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.AppLogin })));
 const ResetPasswordPage = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.ResetPasswordPage })));

@@ -10,6 +10,13 @@
 import React from "react";
 import { reportError } from "../lib/monitoring.js";
 
+// lazyWithReload.js recharge déjà automatiquement la page au premier échec de
+// chunk périmé après déploiement — ce cas ne devrait donc plus jamais arriver
+// ici. Filet de sécurité pour les cas résiduels (sessionStorage bloqué, second
+// échec dans le même onglet) : un message compréhensible plutôt que la stack
+// trace brute, qui n'a aucun sens pour un utilisateur final.
+const CHUNK_ERROR_RE = /dynamically imported module|Importing a module script failed|error loading dynamically imported module/i;
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -25,6 +32,34 @@ class ErrorBoundary extends React.Component {
   }
   render() {
     if (this.state.hasError) {
+      const isChunkError = CHUNK_ERROR_RE.test(String(this.state.error?.message || ""));
+      if (isChunkError && !this.props.compact) {
+        return (
+          <div style={{
+            minHeight: "100vh", background: "#0f172a",
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            padding: 32, fontFamily: "'Inter',system-ui,sans-serif", textAlign: "center"
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🔄</div>
+            <div style={{ color: "#fff", fontWeight: 900, fontSize: 20, marginBottom: 10 }}>
+              Nouvelle version disponible
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 24, maxWidth: 420 }}>
+              OrdoMail a été mis à jour depuis l'ouverture de cette page. Rechargez pour continuer.
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                background: "#3b82f6", color: "#fff", border: "none",
+                borderRadius: 8, padding: "10px 24px", fontSize: 14,
+                fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
+              }}>
+              🔄 Recharger
+            </button>
+          </div>
+        );
+      }
       if (this.props.compact) {
         return (
           <div style={{
