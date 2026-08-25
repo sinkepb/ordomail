@@ -10,6 +10,7 @@ import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
+import { ClientsMap } from "../components/ClientsMap.jsx";
 
 // ─── Persistance de la session admin (18/08/2026) ─────────────────────────────
 // adminToken était un simple useState, jamais persisté : tout rechargement de
@@ -306,7 +307,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -381,6 +382,8 @@ function AdminDashboardLive({ adminToken } = {}) {
               </div>
             </div>
           )
+        ) : tab === "carte" ? (
+          <ClientsMap clients={clients}/>
         ) : tab === "stories" ? (
           <StoriesContentAdmin adminToken={adminToken}/>
         ) : tab === "tarifs" ? (

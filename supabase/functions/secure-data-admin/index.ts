@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
       // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
       const { data: pharmacies, error: phErr } = await sb
         .from("pharmacies")
-        .select("id, nom, email, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash)")
+        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash)")
         .order("created_at", { ascending: false });
       if (phErr) throw new Error(phErr.message);
 
