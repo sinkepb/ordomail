@@ -11,7 +11,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
-    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json",
   });
