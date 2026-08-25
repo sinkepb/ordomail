@@ -19,7 +19,10 @@ export default [
       ecmaVersion: 2022,
       sourceType: "module",
       parserOptions: { ecmaFeatures: { jsx: true } },
-      globals: { ...globals.browser, ...globals.es2021 },
+      // __BUILD_TIME__ : injecté par esbuild/Vite au build (voir vite.config.js
+      // `define`), jamais déclaré dans le code source — no-undef le signalerait
+      // sinon comme un identifiant oublié.
+      globals: { ...globals.browser, ...globals.es2021, __BUILD_TIME__: "readonly" },
     },
     plugins: { react, "react-hooks": reactHooks },
     rules: {

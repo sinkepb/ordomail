@@ -3,6 +3,14 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // Horodatage réel de build (25/08/2026) — remplace les dates de déploiement
+  // codées en dur dans le code (APP_VERSION), maintenues à la main et donc
+  // systématiquement désynchronisées du vrai déploiement. Capturé au moment de
+  // `npm run build`, qui correspond au déploiement Vercel (le build tourne
+  // juste avant la mise en ligne).
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   build: {
     outDir: 'dist',
     // Désactivées en production : les sourcemaps exposaient le code source lisible

@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from "react";
 
 import { C, useFadeIn, PLANS } from "../lib/utils.js";
 
-const APP_VERSION = "v6.0 · 13/07/2026 11:32";
-
 console.log("✅ MODULE CHARGÉ: pages/LandingPage.jsx");
 
 const DEMO_ORDOS = [
@@ -366,7 +364,6 @@ function Footer({ onNav }) {
         </div>
         <div style={{ borderTop:"1px solid #1e293b", paddingTop:20, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
           <span style={{ fontSize:12, color:"#334155" }}>© 2025 OrdoMail — Tous droits réservés</span>
-          <span style={{fontSize:10,color:"#94a3b8",fontFamily:"monospace"}}>{APP_VERSION}</span>
           <button onClick={() => onNav("backoffice")} style={{
             background:"none", border:"1px solid #1e293b", borderRadius:6,
             color:"#334155", fontSize:11, fontWeight:600, cursor:"pointer",

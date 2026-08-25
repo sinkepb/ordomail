@@ -278,7 +278,15 @@ function AdminDashboardLive({ adminToken } = {}) {
             <div style={{fontSize:11,color:"#64748b"}}>Tableau de bord opérateur</div>
           </div>
         </div>
-        <div style={{fontSize:11,color:"#64748b"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:11,color:"#64748b"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</div>
+          {/* __BUILD_TIME__ : horodatage réel injecté au build (voir vite.config.js), pas une
+              date maintenue à la main — déplacé ici depuis le pied de la landing page (25/08/2026),
+              utile côté opérateur, pas côté visiteur public. */}
+          <div style={{fontSize:10,color:"#475569",fontFamily:"monospace",marginTop:2}}>
+            v6.0 · déployé le {new Date(__BUILD_TIME__).toLocaleDateString("fr-FR")} à {new Date(__BUILD_TIME__).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}
+          </div>
+        </div>
       </div>
 
       <div style={{padding:24}}>
