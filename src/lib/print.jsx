@@ -371,15 +371,15 @@ async function generatePosterHTML({ url, pharmacieName }) {
     <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
   </div>
 
-  <div style="position:relative;text-align:center;margin-top:22px;display:flex;align-items:baseline;justify-content:center;gap:14px;white-space:nowrap;">
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:44px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:44px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:60px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+  <div style="position:relative;text-align:center;margin-top:18px;display:flex;flex-direction:column;align-items:center;">
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:88px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:88px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:120px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
   </div>
 
-  <p style="position:relative;text-align:center;margin:18px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:25px;line-height:1.3;color:#2E4B3F;max-width:400px;text-wrap:balance;">ENVOYEZ VOTRE ORDONNANCE</p>
+  <p style="position:relative;text-align:center;margin:12px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-0.01em;color:#2E4B3F;white-space:nowrap;">ENVOYEZ VOTRE ORDONNANCE</p>
 
-  <div style="position:relative;display:flex;flex-direction:column;align-items:center;margin-top:16px;">
+  <div style="position:relative;display:flex;flex-direction:column;align-items:center;margin-top:14px;">
     <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:8px 18px 8px 12px;box-shadow:0 8px 22px rgba(11,122,84,0.12);">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
       <span style="font-family:'Manrope';font-weight:700;font-size:15px;color:#12241C;">Ouvrez l'appareil photo et scannez</span>
@@ -387,15 +387,15 @@ async function generatePosterHTML({ url, pharmacieName }) {
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" stroke="#16C079" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="margin-top:8px;"><path d="M12 3v19"></path><path d="M4 16l8 9 8-9"></path></svg>
   </div>
 
-  <div style="position:relative;width:560px;height:560px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:10px">
-    <div style="position:absolute;top:18px;left:18px;width:40px;height:40px;border-top:5px solid #16C079;border-left:5px solid #16C079;border-top-left-radius:14px;"></div>
-    <div style="position:absolute;top:18px;right:18px;width:40px;height:40px;border-top:5px solid #16C079;border-right:5px solid #16C079;border-top-right-radius:14px;"></div>
-    <div style="position:absolute;bottom:18px;left:18px;width:40px;height:40px;border-bottom:5px solid #16C079;border-left:5px solid #16C079;border-bottom-left-radius:14px;"></div>
-    <div style="position:absolute;bottom:18px;right:18px;width:40px;height:40px;border-bottom:5px solid #16C079;border-right:5px solid #16C079;border-bottom-right-radius:14px;"></div>
-    <div style="width:484px;height:484px;">${qrSvg}</div>
+  <div style="position:relative;width:360px;height:360px;background:#ffffff;border-radius:26px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:8px">
+    <div style="position:absolute;top:12px;left:12px;width:26px;height:26px;border-top:4px solid #16C079;border-left:4px solid #16C079;border-top-left-radius:10px;"></div>
+    <div style="position:absolute;top:12px;right:12px;width:26px;height:26px;border-top:4px solid #16C079;border-right:4px solid #16C079;border-top-right-radius:10px;"></div>
+    <div style="position:absolute;bottom:12px;left:12px;width:26px;height:26px;border-bottom:4px solid #16C079;border-left:4px solid #16C079;border-bottom-left-radius:10px;"></div>
+    <div style="position:absolute;bottom:12px;right:12px;width:26px;height:26px;border-bottom:4px solid #16C079;border-right:4px solid #16C079;border-bottom-right-radius:10px;"></div>
+    <div style="width:310px;height:310px;">${qrSvg}</div>
   </div>
 
-  <div style="position:relative;display:flex;flex-direction:column;gap:12px;margin-top:22px;width:100%;padding:0 36px;">
+  <div style="position:relative;display:flex;flex-direction:column;gap:10px;margin-top:14px;width:100%;padding:0 36px;">
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="width:42px;height:42px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;">1</div>
       <div style="font-family:'Manrope';font-weight:700;font-size:19px;line-height:1.2;color:#12241C;">Scannez le QR Code</div>
