@@ -4,9 +4,12 @@
 // le contexte complet. Conventions identiques à PricingEditor.jsx/
 // StoriesContentAdmin.jsx (callSecureData local, styles inline, palette
 // sombre #0f172a/#1e293b/#334155).
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { openQrSheetPDF } from "../lib/print.jsx";
-import { QRCode } from "./QRCode.jsx";
+import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
+
+const STICKER_TOP_TEXT = "GAGNER DU TEMPS";
+const STICKER_BOTTOM_TEXT = "ENVOYEZ VOTRE ORDONNANCE";
 
 function QrCodesAdmin({ adminToken } = {}) {
   const [count, setCount] = useState(100);
@@ -31,6 +34,10 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [viewingQr, setViewingQr] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [stickerDiameter, setStickerDiameter] = useState(350);
+  const [stickerBusy, setStickerBusy] = useState(false);
+  const [stickerErr, setStickerErr] = useState("");
+  const stickerCanvasRef = useRef(null);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -111,6 +118,34 @@ function QrCodesAdmin({ adminToken } = {}) {
   }
 
   const qrBaseUrl = typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr";
+
+  useEffect(() => {
+    if (!viewingQr || !stickerCanvasRef.current) return;
+    setStickerErr("");
+    renderStickerPreview(stickerCanvasRef.current, {
+      url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
+      topText: STICKER_TOP_TEXT,
+      bottomText: STICKER_BOTTOM_TEXT,
+    }).catch((e) => setStickerErr("Aperçu indisponible : " + e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingQr]);
+
+  async function handleDownloadSticker() {
+    if (!viewingQr) return;
+    setStickerBusy(true); setStickerErr("");
+    try {
+      await downloadStickerImage({
+        url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
+        code: viewingQr.code,
+        topText: STICKER_TOP_TEXT,
+        bottomText: STICKER_BOTTOM_TEXT,
+        diameterMm: stickerDiameter,
+      });
+    } catch (e) {
+      setStickerErr("Échec de l'export : " + e.message);
+    }
+    setStickerBusy(false);
+  }
   const filteredPharmacies = pharmaSearch
     ? pharmacies.filter(p =>
         p.nom?.toLowerCase().includes(pharmaSearch.toLowerCase()) ||
@@ -259,9 +294,9 @@ function QrCodesAdmin({ adminToken } = {}) {
         <div onClick={() => setViewingQr(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 28, textAlign: "center", maxWidth: 320 }}>
-            <div style={{ background: "#fff", borderRadius: 10, padding: 16, display: "inline-block", marginBottom: 16 }}>
-              <QRCode url={`${qrBaseUrl}/?qr=${viewingQr.token}`} size={200} />
+            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 28, textAlign: "center", maxWidth: 360 }}>
+            <div style={{ borderRadius: 10, overflow: "hidden", display: "inline-block", marginBottom: 16, lineHeight: 0 }}>
+              <canvas ref={stickerCanvasRef} style={{ width: 220, height: 220, display: "block" }} />
             </div>
             <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{viewingQr.code}</div>
             <div
@@ -281,9 +316,29 @@ function QrCodesAdmin({ adminToken } = {}) {
                 ? `Attribué à ${viewingQr.pharmacies?.nom || "—"}`
                 : "En stock, pas encore attribué"}
             </div>
-            {viewingQr.batch_label && <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>{viewingQr.batch_label}</div>}
+            {viewingQr.batch_label && <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>{viewingQr.batch_label}</div>}
+
+            <div style={{ borderTop: "1px solid #334155", marginTop: 4, paddingTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                🖨️ Sticker de sol — fichier imprimeur
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 12 }}>
+                {[300, 350, 400].map(d => (
+                  <button key={d} onClick={() => setStickerDiameter(d)}
+                    style={{ padding: "6px 12px", border: `1px solid ${stickerDiameter === d ? "#22c55e" : "#334155"}`, borderRadius: 8, background: stickerDiameter === d ? "#14532d" : "transparent", color: stickerDiameter === d ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Ø {d} mm
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleDownloadSticker} disabled={stickerBusy}
+                style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: stickerBusy ? "default" : "pointer", fontFamily: "inherit", opacity: stickerBusy ? 0.6 : 1 }}>
+                {stickerBusy ? "Génération…" : "⬇️ Télécharger l'image (PNG, 300 dpi)"}
+              </button>
+              {stickerErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{stickerErr}</div>}
+            </div>
+
             <button onClick={() => setViewingQr(null)}
-              style={{ marginTop: 8, padding: "8px 20px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              style={{ marginTop: 16, padding: "8px 20px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
               Fermer
             </button>
           </div>

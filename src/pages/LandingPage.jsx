@@ -115,7 +115,6 @@ function FeaturesSection() {
   const ref = useRef(); const visible = useFadeIn(ref);
   const features = [
     { icon: "🔍", title: "Identification en 2 secondes", desc: "Le patient dit son nom au comptoir. Le vendeur le repère instantanément dans la grille. Fini de fouiller dans Gmail.", accent: C.navy },
-    { icon: "🤖", title: "Extraction IA des données", desc: "Nom patient, numéro de Sécurité Sociale et médicaments extraits automatiquement de chaque ordonnance. OCR souverain hébergé en France.", accent: C.green },
     { icon: "📱", title: "QR Code + Badge NFC", desc: "Le patient scanne ou approche son téléphone. Sa photo d'ordonnance arrive directement dans votre tableau de bord en moins de 5 secondes.", accent: "#7c3aed" },
     { icon: "✉️", title: "Transfert email simplifié", desc: "Si le médecin envoie l'ordonnance par email, le patient transfère d'un clic à l'adresse dédiée de la pharmacie. Zéro ressaisie.", accent: "#0369a1" },
     { icon: "🖨️", title: "Impression avec confirmation", desc: "Un clic → boîte d'impression → confirmation que le papier est sorti. L'ordonnance est marquée traitée uniquement après validation.", accent: C.amber },
