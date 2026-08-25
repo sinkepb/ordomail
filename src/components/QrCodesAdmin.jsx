@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { openQrSheetPDF } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 
-const STICKER_TOP_TEXT = "GAGNER DU TEMPS";
+const STICKER_TOP_TEXT = "GAGNEZ DU TEMPS";
 const STICKER_BOTTOM_TEXT = "ENVOYEZ VOTRE ORDONNANCE";
 
 function QrCodesAdmin({ adminToken } = {}) {

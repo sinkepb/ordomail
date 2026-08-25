@@ -77,11 +77,22 @@ function fillLetterSpacedText(ctx, text, centerX, y, spacing) {
 }
 
 // Trace `text` le long d'un arc de cercle de rayon `radius`, centré en
-// (cx, cy). top=true : arc au-dessus du disque, capitales vers l'extérieur
-// (comme une inscription en haut d'un badge). top=false : arc en dessous,
-// capitales vers l'intérieur — le texte reste lisible à l'endroit (pas
-// inversé), d'où l'ordre des caractères inversé + rotation de 180° par
-// caractère.
+// (cx, cy), lu de gauche à droite dans les deux cas.
+//
+// Géométrie (dérivée de la convention réelle de rotate()+translate() du
+// Canvas 2D, pas recopiée d'un exemple générique — la première version de
+// cette fonction utilisait un angle de départ et une inversion de caractères
+// faux, ce qui chevauchait les lettres au lieu de les répartir sur l'arc) :
+// avec x local = 0 et y local = ±radius, un point local (0,-radius) tourné
+// de θ retombe en (radius·sinθ, -radius·cosθ) dans le repère du disque — à
+// θ=0 c'est le sommet du cercle. Donc pour le texte du HAUT, translater vers
+// (0,-radius) et balayer θ de -angle/2 à +angle/2 centre le texte en haut,
+// lu normalement, capitales vers l'extérieur (comme un badge). Pour le texte
+// du BAS, translater vers (0,+radius) avec le MÊME balayage (aucune
+// inversion de lettres ni rotation supplémentaire) centre le texte en bas ;
+// comme "haut de lettre" y pointe alors vers le centre du disque, le texte
+// reste lisible à l'endroit — exactement la convention du fichier source
+// ("bas : capitales vers l'intérieur").
 //
 // La taille de police n'est pas fixe : un texte plus long que prévu (nom de
 // pharmacie, libellé personnalisé) doit rétrécir plutôt que déborder au-delà
@@ -109,20 +120,27 @@ function drawArcText(ctx, text, cx, cy, radius, { top, fontMaxPx, maxAngleDeg, l
 
   const widths = chars.map((ch) => ctx.measureText(ch).width + letterSpacingPx);
   const totalAngle = widths.reduce((a, b) => a + b, 0) / radius;
+  const localY = top ? -radius : radius;
 
-  ctx.translate(cx, cy);
-  const dir = top ? 1 : -1;
-  ctx.rotate(top ? -Math.PI / 2 - totalAngle / 2 : Math.PI / 2 + totalAngle / 2);
-
+  // Le point local (0,-radius) [haut] et (0,+radius) [bas] ne se projettent
+  // pas dans le même sens quand θ augmente — le repère du bas est le miroir
+  // horizontal de celui du haut (vérifié à l'écran : sans cette inversion,
+  // "ENVOYEZ VOTRE ORDONNANCE" ressortait "ECNANNODRO ERTOV ZEYOVNE", lettres
+  // individuellement correctes mais séquence entière inversée). Parcourir les
+  // caractères en ordre inverse pour le bas compense ce miroir et restitue un
+  // texte lisible de gauche à droite, sans toucher à l'orientation de chaque
+  // lettre (déjà correcte, capitales vers l'intérieur comme prévu).
   const seq = top ? chars : chars.slice().reverse();
   const seqWidths = top ? widths : widths.slice().reverse();
 
+  ctx.translate(cx, cy);
+  ctx.rotate(-totalAngle / 2);
+
   for (let i = 0; i < seq.length; i++) {
-    const charAngle = (seqWidths[i] / radius) * dir;
+    const charAngle = seqWidths[i] / radius;
     ctx.rotate(charAngle / 2);
     ctx.save();
-    ctx.translate(0, -dir * radius);
-    if (!top) ctx.rotate(Math.PI);
+    ctx.translate(0, localY);
     ctx.fillText(seq[i], 0, 0);
     ctx.restore();
     ctx.rotate(charAngle / 2);
@@ -170,11 +188,13 @@ async function paintSticker(canvas, { url, topText, bottomText, discRatio = 0.96
   ctx.fillStyle = GREEN;
   ctx.fill();
 
-  // Trait de coupe (pointillés)
+  // Trait de coupe (pointillés) — vert du disque à 60% d'opacité sur le fond
+  // perdu clair, comme le fichier source (jamais crème, qui se fondrait dans
+  // le disque au lieu de marquer la limite de coupe).
   ctx.save();
   ctx.setLineDash([R * 0.012, R * 0.01]);
   ctx.lineWidth = Math.max(1, R * 0.004);
-  ctx.strokeStyle = "rgba(238,228,201,0.55)";
+  ctx.strokeStyle = "rgba(28,71,51,0.6)";
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.stroke();
