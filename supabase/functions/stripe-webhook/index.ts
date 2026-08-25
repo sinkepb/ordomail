@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
 import { resolvePlan } from "../_shared/webhook-plan.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { trimExcessPostes } from "../_shared/trimPostes.ts";
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion:"2023-10-16" });
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 serve(async (req) => {
@@ -63,6 +64,10 @@ serve(async (req) => {
         // en base pour lui, ce correctif couvre tous les abonnements à venir.
         await supabase.from("pharmacies").update({ plan, plan_status:sub.status, stripe_subscription_id:sub.id }).eq("id",ph.id);
         await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        // Un downgrade peut arriver ici sans jamais passer par UpgradeModal.jsx
+        // (portail client Stripe, rétrogradage après échec de paiement…) : sans
+        // ce trim, les postes excédentaires restaient actifs indéfiniment.
+        await trimExcessPostes(supabase, ph.id, plan);
       }
     }
     if (event.type === "invoice.payment_succeeded") {

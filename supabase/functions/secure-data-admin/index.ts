@@ -19,6 +19,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
+import { trimExcessPostes } from "../_shared/trimPostes.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -207,6 +208,7 @@ Deno.serve(async (req) => {
       }
       const { error } = await sb.from("pharmacies").update({ plan }).eq("id", targetPharmacieId);
       if (error) throw new Error(error.message);
+      await trimExcessPostes(sb, targetPharmacieId, plan);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 

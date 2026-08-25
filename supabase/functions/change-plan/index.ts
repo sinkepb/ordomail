@@ -8,6 +8,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { trimExcessPostes } from "../_shared/trimPostes.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -60,6 +61,7 @@ serve(async (req) => {
       proration_behavior: "create_prorations",
     });
     await supabase.from("pharmacies").update({ plan: newPlan }).eq("id", pharmacieId);
+    await trimExcessPostes(supabase, pharmacieId, newPlan);
 
     return new Response(JSON.stringify({ success: true, newPlan }), { headers: CORS });
 
