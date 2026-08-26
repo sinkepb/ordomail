@@ -48,7 +48,7 @@ function MentionsContent() {
         <p>Numéro de TVA intracommunautaire : FR54103510848</p>
       </Section>
       <Section title="Directeur de la publication">
-        <p><Placeholder>[Nom du directeur de la publication]</Placeholder></p>
+        <p>Benjamin SINKEP</p>
       </Section>
       <Section title="Hébergement">
         <p>
