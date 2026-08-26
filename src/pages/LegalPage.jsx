@@ -42,7 +42,7 @@ function MentionsContent() {
         <p>
           Le site et l'application OrdoMail sont édités par SISEO,
           {" "}SASU au capital de 500 €,
-          immatriculée au RCS de <Placeholder>[ville]</Placeholder> sous le numéro 103 510 848 00015,
+          immatriculée au RCS de Pontoise sous le numéro 103 510 848 00015,
           dont le siège social est situé 24 Rue des Glaises, 95370 Montigny-lès-Cormeilles.
         </p>
         <p>Numéro de TVA intracommunautaire : FR54103510848</p>
@@ -52,8 +52,10 @@ function MentionsContent() {
       </Section>
       <Section title="Hébergement">
         <p>
-          L'application est hébergée par Supabase (infrastructure cloud). Coordonnées complètes
-          de l'hébergeur : <Placeholder>[raison sociale, adresse]</Placeholder>.
+          L'application est hébergée par Supabase, Inc. (infrastructure cloud), dont le siège
+          social est situé 970 Toa Payoh North #07-04, Singapore 318992, avec un bureau à
+          850 Montgomery St, Suite 140, San Francisco, CA 94133, USA — site web :
+          {" "}<a href="https://supabase.com" target="_blank" rel="noopener noreferrer">supabase.com</a>.
         </p>
         <p>
           ⚠️ À la date de rédaction de ce document, cet hébergement n'est <strong>pas</strong> certifié
@@ -70,7 +72,7 @@ function MentionsContent() {
         </p>
       </Section>
       <Section title="Contact">
-        <p>Pour toute question : <Placeholder>[email de contact]</Placeholder></p>
+        <p>Pour toute question : contact@ordomail.fr</p>
       </Section>
     </>
   );
@@ -198,8 +200,7 @@ function CguContent() {
       <Section title="12. Droit applicable">
         <p>
           Les présentes CGU/CGV sont soumises au droit français. Tout litige relève de la
-          compétence des tribunaux de <Placeholder>[ville]</Placeholder>, sauf disposition
-          légale impérative contraire.
+          compétence des tribunaux de Pontoise, sauf disposition légale impérative contraire.
         </p>
       </Section>
     </>
