@@ -20,6 +20,18 @@ import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
+import { runPurge } from "../_shared/purgeLogic.ts";
+
+// Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
+// que d'accepter une expression cron arbitraire depuis le frontend.
+const PURGE_SCHEDULES: Record<string, string> = {
+  hourly:   "0 * * * *",
+  every6h:  "0 */6 * * *",
+  every12h: "0 */12 * * *",
+  daily:    "0 3 * * *",
+  weekly:   "0 3 * * 0",
+};
+const PURGE_JOB_NAME = "purge-ordonnances-nightly";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -254,6 +266,36 @@ Deno.serve(async (req) => {
         .eq("id", 1);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // ── Purge des ordonnances : onglet dédié du backoffice (25/08/2026) ────────
+    // Fréquence paramétrable (whitelist PURGE_SCHEDULES ci-dessus), déclenchement
+    // manuel avec confirmation côté UI, historique lu depuis `alerts` (déjà
+    // alimentée par purgeLogic.ts — admin_alerts existant, filtré côté client
+    // sur source="purge-ordonnances", pas besoin d'une ressource dédiée).
+    if (resource === "admin_purge_schedule_get") {
+      const { data, error } = await sb.rpc("get_purge_schedule", { p_job_name: PURGE_JOB_NAME });
+      if (error) throw new Error(error.message);
+      const row = Array.isArray(data) ? data[0] : data;
+      const presetKey = Object.entries(PURGE_SCHEDULES).find(([, expr]) => expr === row?.schedule)?.[0] || null;
+      return new Response(JSON.stringify({ data: { schedule: row?.schedule || null, active: row?.active ?? null, presetKey } }), { headers: CORS });
+    }
+
+    if (resource === "admin_purge_schedule_set") {
+      const { presetKey } = params || {};
+      const expr = PURGE_SCHEDULES[presetKey as string];
+      if (!expr) {
+        return new Response(JSON.stringify({ error: `Fréquence inconnue — valeurs autorisées : ${Object.keys(PURGE_SCHEDULES).join(", ")}` }),
+          { status: 400, headers: CORS });
+      }
+      const { error } = await sb.rpc("alter_purge_schedule", { p_job_name: PURGE_JOB_NAME, p_schedule: expr });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true, schedule: expr }), { headers: CORS });
+    }
+
+    if (resource === "admin_purge_run") {
+      const result = await runPurge(sb, "backoffice-manuel");
+      return new Response(JSON.stringify({ data: result }), { headers: CORS });
     }
 
     // Recherche RGPD (droits patient — art. 12-22) : localiser les ordonnances

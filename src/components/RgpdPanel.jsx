@@ -1,21 +1,21 @@
 // Panneau RGPD — backoffice OrdoMail Business (09/08/2026).
-// Deux outils de conformité RGPD sur les ordonnances (données de santé) :
-//   1. Rétention : durée de conservation configurable, purgée chaque nuit par
-//      l'edge function purge-ordonnances (désactivée tant qu'aucune durée
-//      n'est définie — voir migration 20260809_retention_purge.sql).
-//   2. Recherche RGPD : localise les ordonnances d'un patient par son nom,
-//      dans la fenêtre de rétention active (au-delà des 7 jours du dashboard
-//      vendeur, mais bornée par la purge automatique — voir ci-dessus), pour
-//      répondre à une demande de droit d'accès/effacement (art. 12-22).
-//      ⚠️ Ne vérifie PAS l'identité du demandeur — c'est un outil de
-//      localisation, pas d'authentification. Voir l'avertissement affiché.
+// Recherche RGPD : localise les ordonnances d'un patient par son nom, dans la
+// fenêtre de rétention active (au-delà des 7 jours du dashboard vendeur, mais
+// bornée par la purge automatique — voir l'onglet Purge, PurgeAdmin.jsx), pour
+// répondre à une demande de droit d'accès/effacement (art. 12-22).
+// ⚠️ Ne vérifie PAS l'identité du demandeur — c'est un outil de localisation,
+// pas d'authentification. Voir l'avertissement affiché.
 //
 // @conformite 25/08/2026 — la recherche est désormais bornée à la fenêtre de
 // rétention (au lieu de porter sur tout l'historique sans limite) : un outil
 // conçu pour chercher indéfiniment dans le passé contredit l'argument "courte
 // période" (art. R.1111-8-8-I al.4 CSP) sur lequel repose l'exemption
 // d'hébergeur de données de santé — voir DEPLOIEMENT_CHECKLIST.md.
-import { useState, useEffect } from "react";
+//
+// 25/08/2026 — la section Rétention (durée + fréquence + déclenchement manuel
+// + historique) a été sortie dans son propre onglet backoffice (PurgeAdmin.jsx)
+// à la demande de l'utilisateur.
+import { useState } from "react";
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -32,77 +32,6 @@ async function callSecureData(resource, params, adminToken) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
   return body;
-}
-
-function RetentionSection({ adminToken }) {
-  const [days, setDays]         = useState("");
-  const [current, setCurrent]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [msg, setMsg]           = useState(null);
-
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const { data } = await callSecureData("admin_retention_get", {}, adminToken);
-      setCurrent(data);
-      setDays(data?.ordonnances_retention_days ? String(data.ordonnances_retention_days) : "");
-    } catch(e) {
-      setMsg({ ok: false, text: e.message });
-    }
-    setLoading(false);
-  }
-
-  async function save() {
-    setSaving(true); setMsg(null);
-    try {
-      const value = days.trim() === "" ? null : Number(days);
-      if (value !== null && (!Number.isInteger(value) || value <= 0)) {
-        setMsg({ ok: false, text: "Entrez un nombre entier de jours positif, ou laissez vide pour désactiver la purge." });
-        setSaving(false);
-        return;
-      }
-      await callSecureData("admin_retention_set", { days: value, updatedBy: "backoffice" }, adminToken);
-      setMsg({ ok: true, text: value ? `Rétention fixée à ${value} jours — la purge nocturne s'appliquera dès ce soir.` : "Purge automatique désactivée." });
-      await load();
-    } catch(e) {
-      setMsg({ ok: false, text: e.message });
-    }
-    setSaving(false);
-  }
-
-  return (
-    <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:20, marginBottom:20 }}>
-      <div style={{ fontWeight:800, fontSize:15, color:"#fff", marginBottom:6 }}>🗑️ Rétention des ordonnances</div>
-      <div style={{ fontSize:12, color:"#64748b", marginBottom:16, lineHeight:1.6 }}>
-        Durée après laquelle une ordonnance (fichier + métadonnées) est supprimée automatiquement chaque nuit. Laissez vide pour désactiver la purge — c'est le réglage par défaut, aucune suppression n'a lieu tant qu'une durée n'est pas définie ici.
-      </div>
-      {loading ? (
-        <div style={{ color:"#64748b", fontSize:13 }}>Chargement…</div>
-      ) : (
-        <>
-          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:10 }}>
-            <input type="number" min="1" value={days} onChange={e=>setDays(e.target.value)}
-              placeholder="ex. 1095 (3 ans)"
-              style={{ width:180, padding:"9px 12px", background:"#0f172a", border:"1px solid #334155", borderRadius:8, color:"#fff", fontSize:14, outline:"none", fontFamily:"inherit" }}/>
-            <span style={{ fontSize:12, color:"#64748b" }}>jours</span>
-            <button onClick={save} disabled={saving}
-              style={{ marginLeft:"auto", padding:"9px 18px", border:"none", borderRadius:8, background:saving?"#1e3a5f":"#3b82f6", color:"#fff", fontWeight:700, fontSize:13, cursor:saving?"wait":"pointer", fontFamily:"inherit" }}>
-              {saving ? "…" : "Enregistrer"}
-            </button>
-          </div>
-          <div style={{ fontSize:11, color:"#475569" }}>
-            {current?.ordonnances_retention_days
-              ? `Actuellement : ${current.ordonnances_retention_days} jours (dernière modification ${current.updated_at ? new Date(current.updated_at).toLocaleString("fr-FR") : "—"})`
-              : "Actuellement : purge désactivée"}
-          </div>
-        </>
-      )}
-      {msg && <div style={{ marginTop:10, fontSize:12, fontWeight:600, padding:"8px 12px", borderRadius:8, background:msg.ok?"rgba(34,197,94,0.15)":"rgba(220,38,38,0.15)", color:msg.ok?"#4ade80":"#f87171" }}>{msg.text}</div>}
-    </div>
-  );
 }
 
 function SearchSection({ adminToken }) {
@@ -187,7 +116,6 @@ function SearchSection({ adminToken }) {
 function RgpdPanel({ adminToken } = {}) {
   return (
     <div>
-      <RetentionSection adminToken={adminToken} />
       <SearchSection adminToken={adminToken} />
     </div>
   );

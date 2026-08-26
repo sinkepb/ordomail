@@ -9,6 +9,7 @@ import { PricingEditor } from "../components/PricingEditor.jsx";
 import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
+import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 
@@ -315,7 +316,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -402,6 +403,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           <MonitoringPanel adminToken={adminToken}/>
         ) : tab === "rgpd" ? (
           <RgpdPanel adminToken={adminToken}/>
+        ) : tab === "purge" ? (
+          <PurgeAdmin adminToken={adminToken}/>
         ) : (
           selected ? (
             <ContratEditor
