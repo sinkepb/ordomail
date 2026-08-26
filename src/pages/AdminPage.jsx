@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS } from "../lib/plans.js";
+import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
 import { generateInvoiceHTML } from "../lib/print.jsx";
 import { StoriesContentAdmin } from "../components/StoriesContentAdmin.jsx";
 import { ClientDetail } from "../components/ClientDetail.jsx";
@@ -189,11 +189,15 @@ function AdminDashboardLive({ adminToken } = {}) {
   const [msg,      setMsg]      = useState("");
   const [metrics,  setMetrics]  = useState(null); // métriques globales
 
-  const PLANS = {
-    starter:  { label:"Starter",  prix:19,  maxPostes:2,   color:"#0369a1" },
-    standard: { label:"Standard", prix:39,  maxPostes:5,   color:"#1a3a6e" },
-    pro:      { label:"Pro",      prix:79,  maxPostes:15,  color:"#4c1d95" },
-  };
+  // @conformite-tarifs 25/08/2026 — dérivé de PLAN_LIMITS (synchronisé au
+  // démarrage depuis pricing_plans, voir lib/plans.js:loadPlanLimits) au lieu
+  // d'être codé en dur ici : ce tableau alimente le MRR/ARR affichés plus bas
+  // et ClientDetail.jsx — un prix modifié dans l'éditeur de tarifs doit aussi
+  // se refléter dans ces calculs, pas seulement sur la landing page.
+  const PLANS = Object.fromEntries(PLAN_ORDER.map(id => {
+    const p = PLAN_LIMITS[id];
+    return [id, { label: p.label, prix: p.price, maxPostes: p.maxPostes, color: p.color }];
+  }));
 
   useEffect(() => { loadClients(); }, []);
 

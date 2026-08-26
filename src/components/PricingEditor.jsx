@@ -53,9 +53,12 @@ function PricingEditor({ adminToken } = {}) {
     setSaving(true); setErr("");
     try {
       await callSecureData("admin_update_pricing", { plans });
-      // Répercuter immédiatement dans PLAN_LIMITS pour le reste de l'app dans cette session
-      // (dashboard pharmacie, page tarifs) — sans attendre un rechargement.
-      plans.forEach(p=>{ PLAN_LIMITS[p.id]={...p}; });
+      // Répercuter immédiatement dans PLAN_LIMITS pour cette session (fusionne,
+      // ne remplace pas : préserve les champs propres au frontend et absents de
+      // `pricing_plans`, ex. offresStories — voir loadPlanLimits()). Les autres
+      // onglets/visiteurs déjà chargés ne verront le changement qu'au prochain
+      // chargement de page (main.jsx appelle loadPlanLimits() au démarrage).
+      plans.forEach(p=>{ PLAN_LIMITS[p.id]={...PLAN_LIMITS[p.id], ...p}; });
       setSaved(true); setTimeout(()=>setSaved(false),3000);
     } catch(e) {
       setErr("Échec de la sauvegarde : " + e.message);

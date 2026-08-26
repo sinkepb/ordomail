@@ -1,4 +1,5 @@
 // ─── Définition des plans et logique d'upgrade ───────────────────────────────
+import { PLANS } from "./utils.js";
 
 // priceAnnual = équivalent mensuel affiché quand l'annuel est sélectionné —
 // 19/08/2026 : passage de -20% (chiffre arbitraire, sans tarif Stripe réel
@@ -15,6 +16,51 @@ export const PLAN_LIMITS = {
 // Palier Premium retiré (19/08/2026) — aucun tarif Stripe n'a jamais existé
 // pour lui (price_premium_monthly/annual absents), aucun client dessus.
 export const PLAN_ORDER = ["starter","standard","pro"];
+
+// @conformite-tarifs 25/08/2026 — les valeurs ci-dessus sont le repli par
+// défaut (démo, ou si le chargement échoue). L'admin édite les tarifs réels
+// dans `pricing_plans` (backoffice, onglet Tarifs) ; jusqu'ici rien d'autre
+// dans l'app ne relisait cette table — la sauvegarde persistait bien en
+// base, mais landing page/checkout/dashboard continuaient d'afficher ces
+// valeurs codées en dur jusqu'au prochain déploiement. loadPlanLimits()
+// mute PLAN_LIMITS en place (import { PLAN_LIMITS } from ce module reste
+// valide partout) avec ce que le backoffice a réellement enregistré ;
+// fusionne (ne remplace pas) pour ne jamais perdre un champ absent de la
+// table (ex. offresStories, propre au frontend, pas stocké côté DB).
+//
+// Deuxième source à resynchroniser : lib/utils.js:PLANS, consommé UNIQUEMENT
+// par la section tarifs de LandingPage.jsx — un tableau distinct, avec ses
+// propres price/icon/color codés en dur, jamais relié ni à PLAN_LIMITS ni à
+// pricing_plans. C'est celui que voit un visiteur non connecté ; l'oublier
+// aurait laissé le prix affiché sur la page d'accueil désynchronisé de tout
+// le reste après une modification dans l'éditeur de tarifs.
+export async function loadPlanLimits() {
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return; // mode démo — pas de backend à interroger
+    const res = await fetch(`${supabaseUrl}/functions/v1/get-pricing`, { method: "POST" });
+    const { data } = await res.json();
+    if (!Array.isArray(data)) return;
+    data.forEach(p => {
+      PLAN_LIMITS[p.id] = {
+        ...PLAN_LIMITS[p.id],
+        id: p.id, label: p.label, icon: p.icon, color: p.color,
+        price: p.price, priceAnnual: p.price_annual,
+        maxPostes: p.max_postes, maxOrdos: p.max_ordos,
+      };
+      const landing = PLANS.find(l => l.id === p.id);
+      if (landing) {
+        landing.name = p.label;
+        landing.icon = p.icon;
+        landing.color = p.color;
+        landing.price = p.price;
+      }
+    });
+  } catch {
+    // Réseau indisponible / fonction pas encore déployée : on garde les
+    // valeurs par défaut ci-dessus plutôt que de bloquer le démarrage.
+  }
+}
 
 export function getNextPlan(currentPlan) {
   const idx = PLAN_ORDER.indexOf(currentPlan);
