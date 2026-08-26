@@ -3,11 +3,18 @@
 //   1. Rétention : durée de conservation configurable, purgée chaque nuit par
 //      l'edge function purge-ordonnances (désactivée tant qu'aucune durée
 //      n'est définie — voir migration 20260809_retention_purge.sql).
-//   2. Recherche RGPD : localise l'historique complet d'un patient par son
-//      nom (au-delà de la fenêtre de 7 jours du dashboard vendeur), pour
+//   2. Recherche RGPD : localise les ordonnances d'un patient par son nom,
+//      dans la fenêtre de rétention active (au-delà des 7 jours du dashboard
+//      vendeur, mais bornée par la purge automatique — voir ci-dessus), pour
 //      répondre à une demande de droit d'accès/effacement (art. 12-22).
 //      ⚠️ Ne vérifie PAS l'identité du demandeur — c'est un outil de
 //      localisation, pas d'authentification. Voir l'avertissement affiché.
+//
+// @conformite 25/08/2026 — la recherche est désormais bornée à la fenêtre de
+// rétention (au lieu de porter sur tout l'historique sans limite) : un outil
+// conçu pour chercher indéfiniment dans le passé contredit l'argument "courte
+// période" (art. R.1111-8-8-I al.4 CSP) sur lequel repose l'exemption
+// d'hébergeur de données de santé — voir DEPLOIEMENT_CHECKLIST.md.
 import { useState, useEffect } from "react";
 
 async function callSecureData(resource, params, adminToken) {
@@ -104,13 +111,15 @@ function SearchSection({ adminToken }) {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [retentionDays, setRetentionDays] = useState(null);
 
   async function search() {
     if (nom.trim().length < 2) { setError("Entrez au moins 2 caractères."); return; }
     setLoading(true); setError(""); setResults(null);
     try {
-      const { data } = await callSecureData("admin_search_ordonnances", { nom: nom.trim() }, adminToken);
+      const { data, retentionDays: rd } = await callSecureData("admin_search_ordonnances", { nom: nom.trim() }, adminToken);
       setResults(data || []);
+      setRetentionDays(rd ?? null);
     } catch(e) {
       setError(e.message);
     }
@@ -134,6 +143,11 @@ function SearchSection({ adminToken }) {
       <div style={{ fontWeight:800, fontSize:15, color:"#fff", marginBottom:6 }}>🔍 Recherche RGPD (droits patient)</div>
       <div style={{ background:"rgba(230,168,23,0.12)", border:"1px solid rgba(230,168,23,0.35)", borderRadius:8, padding:"10px 14px", fontSize:12, color:"#fcd34d", lineHeight:1.6, marginBottom:16 }}>
         ⚠️ Cette recherche localise des dossiers par nom — elle ne vérifie <strong>pas</strong> l'identité du demandeur. Vérifiez toujours l'identité par un autre moyen (téléphone, email confirmé) avant toute suppression.
+      </div>
+      <div style={{ fontSize:11, color:"#64748b", marginBottom:14 }}>
+        {retentionDays
+          ? `Recherche limitée aux ${retentionDays} derniers jours (fenêtre de rétention active) — toute ordonnance plus ancienne a déjà été purgée automatiquement.`
+          : "La rétention n'est pas configurée ci-dessus : la recherche ne sera pas bornée dans le temps."}
       </div>
       <div style={{ display:"flex", gap:10, marginBottom:14 }}>
         <input value={nom} onChange={e=>setNom(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()}

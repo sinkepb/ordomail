@@ -256,24 +256,34 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
-    // Recherche RGPD (droits patient — art. 12-22) : localiser TOUT l'historique
-    // des ordonnances d'un patient par son nom, au-delà de la fenêtre de 7 jours
-    // normalement chargée par le dashboard vendeur. Ne vérifie PAS l'identité du
+    // Recherche RGPD (droits patient — art. 12-22) : localiser les ordonnances
+    // d'un patient par son nom, dans la fenêtre de rétention active (purge
+    // automatique — voir purge-ordonnances). Ne vérifie PAS l'identité du
     // demandeur — l'UI backoffice doit rappeler explicitement de la vérifier par
     // un autre moyen (téléphone/email) avant toute suppression.
+    //
+    // @conformite 25/08/2026 — bornée à retention_settings.ordonnances_retention_days
+    // au lieu de chercher sans limite de date : un outil de recherche sur "tout
+    // l'historique" présuppose une conservation longue, ce qui contredit
+    // l'argument "courte période" (art. R.1111-8-8-I al.4 CSP) sur lequel repose
+    // l'exemption d'hébergeur de données de santé — voir DEPLOIEMENT_CHECKLIST.md.
     if (resource === "admin_search_ordonnances") {
       const nom = (params?.nom || "").trim();
       if (nom.length < 2) {
         return new Response(JSON.stringify({ error: "Nom trop court (2 caractères minimum)" }),
           { status: 400, headers: CORS });
       }
-      const { data, error } = await sb.from("ordonnances")
+      const { data: settings } = await sb.from("retention_settings")
+        .select("ordonnances_retention_days").eq("id", 1).maybeSingle();
+      const days = settings?.ordonnances_retention_days;
+
+      let query = sb.from("ordonnances")
         .select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, pharmacies(nom)")
-        .or(`patient_nom.ilike.%${nom}%,from_name.ilike.%${nom}%`)
-        .order("received_at", { ascending: false })
-        .limit(100);
+        .or(`patient_nom.ilike.%${nom}%,from_name.ilike.%${nom}%`);
+      if (days) query = query.gte("received_at", new Date(Date.now() - days * 86400000).toISOString());
+      const { data, error } = await query.order("received_at", { ascending: false }).limit(100);
       if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
+      return new Response(JSON.stringify({ data, retentionDays: days ?? null }), { headers: CORS });
     }
 
     if (resource === "admin_delete_ordonnance") {
