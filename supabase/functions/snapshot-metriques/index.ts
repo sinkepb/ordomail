@@ -50,10 +50,10 @@ Deno.serve(async (req: Request) => {
 
   try {
     const today = new Date().toISOString().split("T")[0];
-    const now30 = new Date(Date.now() - 30 * 86400000).toISOString();
-    const now7  = new Date(Date.now() - 7  * 86400000).toISOString();
     const now24 = new Date(Date.now() - 1  * 86400000).toISOString();
     const today_start = today + "T00:00:00.000Z";
+    const date30ago = new Date(Date.now() - 29 * 86400000).toISOString().split("T")[0]; // fenêtre incluant aujourd'hui = 30 jours
+    const date7ago  = new Date(Date.now() - 6  * 86400000).toISOString().split("T")[0]; // fenêtre incluant aujourd'hui = 7 jours
 
     console.log(`[snapshot] Démarrage — date: ${today}`);
 
@@ -72,85 +72,90 @@ Deno.serve(async (req: Request) => {
 
     for (const ph of pharmacies) {
       try {
-        // 2. Compter les ordonnances par période
-        const [total, mois, semaine, jour, attente] = await Promise.all([
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&head=true`,
-            { method: "HEAD", headers: { ...headers, "Prefer": "count=exact" } }),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}&head=true`,
-            { method: "HEAD", headers: { ...headers, "Prefer": "count=exact" } }),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now7}&head=true`,
-            { method: "HEAD", headers: { ...headers, "Prefer": "count=exact" } }),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${today_start}&head=true`,
-            { method: "HEAD", headers: { ...headers, "Prefer": "count=exact" } }),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&status=eq.nouveau&received_at=lte.${now24}&head=true`,
-            { method: "HEAD", headers: { ...headers, "Prefer": "count=exact" } }),
-        ]);
-
-        // Extraire les counts depuis le header Content-Range
-        function extractCount(res: { ok: boolean; status: number; data: unknown }): number {
-          return 0; // HEAD ne retourne pas de body — on utilise une autre approche
-        }
-
-        // Approche alternative : SELECT avec count
+        // 2. Données du jour même uniquement — toujours dans la fenêtre de
+        // rétention, quelle que soit la durée de purge configurée (voir
+        // migration 20260827_metriques_purge_safe.sql : les agrégats
+        // 7j/30j/total ne recomptent plus la table `ordonnances` au-delà
+        // d'aujourd'hui, ils cumulent les snapshots quotidiens déjà stockés
+        // ci-dessous, jamais purgés).
         const [
-          { data: d_total },
-          { data: d_mois },
-          { data: d_semaine },
           { data: d_jour },
           { data: d_attente },
-          { data: d_canaux },
-          { data: d_traitees },
+          { data: d_prevRows },
         ] = await Promise.all([
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}`),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${now7}`),
-          query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&received_at=gte.${today_start}`),
+          query(`ordonnances?select=id,source,received_at,printed_at&pharmacie_id=eq.${ph.id}&received_at=gte.${today_start}`),
           query(`ordonnances?select=id&pharmacie_id=eq.${ph.id}&status=eq.nouveau&received_at=lte.${now24}`),
-          query(`ordonnances?select=source&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}`),
-          // Délai de traitement (envoi → impression) — ordonnances imprimées des 30 derniers jours
-          query(`ordonnances?select=received_at,printed_at&pharmacie_id=eq.${ph.id}&received_at=gte.${now30}&printed_at=not.is.null`),
+          // Snapshots déjà persistés — remplacent les requêtes directes sur
+          // `ordonnances` pour tout ce qui dépasse la fenêtre de purge.
+          query(`metriques_journalieres?select=date,ordos_jour,ordos_total,qr_jour,email_jour,delai_moyen_jour,delai_count_jour&pharmacie_id=eq.${ph.id}&date=gte.${date30ago}&date=lt.${today}&order=date.desc`),
         ]);
 
-        const c_total   = Array.isArray(d_total)   ? d_total.length   : 0;
-        const c_mois    = Array.isArray(d_mois)    ? d_mois.length    : 0;
-        const c_semaine = Array.isArray(d_semaine) ? d_semaine.length : 0;
-        const c_jour    = Array.isArray(d_jour)    ? d_jour.length    : 0;
+        const jourRows = Array.isArray(d_jour) ? d_jour : [];
+        const c_jour    = jourRows.length;
         const c_attente = Array.isArray(d_attente) ? d_attente.length : 0;
 
-        // Calcul canaux
-        const canaux = Array.isArray(d_canaux) ? d_canaux : [];
-        const qr_count    = canaux.filter((o: { source: string }) => o.source === "qrcode").length;
-        const email_count = canaux.filter((o: { source: string }) => o.source === "email").length;
-        const canal_qr_pct    = canaux.length ? Math.round(qr_count    / canaux.length * 100) : 0;
-        const canal_email_pct = canaux.length ? Math.round(email_count / canaux.length * 100) : 0;
+        const qr_jour    = jourRows.filter((o: { source: string }) => o.source === "qrcode").length;
+        const email_jour = jourRows.filter((o: { source: string }) => o.source === "email").length;
 
-        // Score activité 0-100
-        const score = Math.min(100, Math.round(
-          c_mois * 0.4 + c_semaine * 2 + canal_qr_pct * 0.2
-        ));
-
-        // Taux de traitement
-        const taux = c_total ? Math.round(((c_total - c_attente) / c_total) * 100) : 0;
-
-        // Temps de traitement moyen (minutes, envoi → impression)
-        const traitees = Array.isArray(d_traitees) ? d_traitees : [];
-        const delais = traitees
+        const delaisJour = jourRows
+          .filter((o: { printed_at: string | null }) => o.printed_at)
           .map((o: { received_at: string; printed_at: string }) =>
             (new Date(o.printed_at).getTime() - new Date(o.received_at).getTime()) / 60000)
           .filter((m: number) => Number.isFinite(m) && m >= 0);
-        const delaiMoyen = delais.length
-          ? Math.round(delais.reduce((a: number, b: number) => a + b, 0) / delais.length)
+        const delai_count_jour = delaisJour.length;
+        const delai_moyen_jour = delai_count_jour
+          ? Math.round(delaisJour.reduce((a: number, b: number) => a + b, 0) / delai_count_jour)
           : 0;
 
-        // 3. UPSERT du snapshot
+        // 3. Cumuls à partir des snapshots précédents (aucune donnée patient
+        // dedans — juste des compteurs — donc jamais affectés par la purge).
+        const prevRows: Array<{ date: string; ordos_jour: number; ordos_total: number;
+          qr_jour: number; email_jour: number; delai_moyen_jour: number; delai_count_jour: number }> =
+          Array.isArray(d_prevRows) ? d_prevRows : [];
+
+        const prevTotal = prevRows[0]?.ordos_total || 0; // ligne la plus récente avant aujourd'hui
+        const ordos_total = prevTotal + c_jour;
+
+        const rows7  = prevRows.filter(r => r.date >= date7ago);
+        const ordos_semaine = c_jour + rows7.reduce((s, r) => s + (r.ordos_jour || 0), 0);
+        const ordos_mois    = c_jour + prevRows.reduce((s, r) => s + (r.ordos_jour || 0), 0);
+
+        const qrTotal30    = qr_jour    + prevRows.reduce((s, r) => s + (r.qr_jour || 0), 0);
+        const emailTotal30 = email_jour + prevRows.reduce((s, r) => s + (r.email_jour || 0), 0);
+        const canaux30 = qrTotal30 + emailTotal30;
+        const canal_qr_pct    = canaux30 ? Math.round(qrTotal30    / canaux30 * 100) : 0;
+        const canal_email_pct = canaux30 ? Math.round(emailTotal30 / canaux30 * 100) : 0;
+
+        // Moyenne pondérée par le nombre d'ordonnances de chaque jour (pas
+        // une simple moyenne de moyennes, qui sous-pondérerait les jours à
+        // fort volume).
+        const delaiWeightedSum = delai_moyen_jour * delai_count_jour
+          + prevRows.reduce((s, r) => s + (r.delai_moyen_jour || 0) * (r.delai_count_jour || 0), 0);
+        const delaiWeightCount = delai_count_jour
+          + prevRows.reduce((s, r) => s + (r.delai_count_jour || 0), 0);
+        const delaiMoyen = delaiWeightCount ? Math.round(delaiWeightedSum / delaiWeightCount) : 0;
+
+        // Score activité 0-100
+        const score = Math.min(100, Math.round(
+          ordos_mois * 0.4 + ordos_semaine * 2 + canal_qr_pct * 0.2
+        ));
+
+        // Taux de traitement (sur le cumul depuis toujours)
+        const taux = ordos_total ? Math.round(((ordos_total - c_attente) / ordos_total) * 100) : 0;
+
+        // 4. UPSERT du snapshot
         const payload = {
           pharmacie_id:    ph.id,
           date:            today,
           ordos_jour:      c_jour,
-          ordos_semaine:   c_semaine,
-          ordos_mois:      c_mois,
-          ordos_total:     c_total,
+          ordos_semaine,
+          ordos_mois,
+          ordos_total,
           ordos_attente:   c_attente,
+          qr_jour,
+          email_jour,
+          delai_moyen_jour,
+          delai_count_jour,
           canal_qr_pct,
           canal_email_pct,
           taux_traitement: taux,
@@ -158,8 +163,13 @@ Deno.serve(async (req: Request) => {
           delai_moyen_min: delaiMoyen,
         };
 
-        const { ok: upsertOk, status: upsertStatus } = await query(
-          "metriques_journalieres",
+        // @fix 27/08/2026 — sans on_conflict explicite, PostgREST cible la
+        // clé primaire (id, toujours nouvelle ici) pour la résolution de
+        // merge-duplicates, pas la contrainte unique réelle (pharmacie_id,
+        // date) : un deuxième passage le même jour (relance manuelle, debug)
+        // échouait en 409 au lieu de mettre à jour la ligne existante.
+        const { ok: upsertOk, status: upsertStatus, data: upsertData } = await query(
+          "metriques_journalieres?on_conflict=pharmacie_id,date",
           {
             method: "POST",
             body: JSON.stringify(payload),
@@ -175,7 +185,7 @@ Deno.serve(async (req: Request) => {
           console.log(`[snapshot] ✅ ${ph.nom} — ${c_jour} ordos aujourd'hui, score ${score}`);
         } else {
           results.error++;
-          results.details.push(`${ph.nom}: upsert status ${upsertStatus}`);
+          results.details.push(`${ph.nom}: upsert status ${upsertStatus} — ${JSON.stringify(upsertData)}`);
         }
 
       } catch (e) {
