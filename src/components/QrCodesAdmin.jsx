@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from "react";
 import { openQrSheetPDF, generatePosterHTML, openPosterPDFFromHTML } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
+import { NfcWriter } from "./NfcWriter.jsx";
 
 const STICKER_TOP_TEXT = "GAGNEZ DU TEMPS";
 const STICKER_BOTTOM_TEXT = "ENVOYEZ VOTRE ORDONNANCE";
@@ -343,7 +344,7 @@ function QrCodesAdmin({ adminToken } = {}) {
 
             <div style={{ borderTop: "1px solid #334155", marginTop: 4, paddingTop: 16 }}>
               <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 16 }}>
-                {[["sticker", "🟢 Sticker"], ["affiche", "📄 Affiche"]].map(([k, l]) => (
+                {[["sticker", "🟢 Sticker"], ["affiche", "📄 Affiche"], ["nfc", "🏷️ Badge NFC"]].map(([k, l]) => (
                   <button key={k} onClick={() => setViewTab(k)}
                     style={{ padding: "7px 16px", border: `1px solid ${viewTab === k ? "#22c55e" : "#334155"}`, borderRadius: 8, background: viewTab === k ? "#14532d" : "transparent", color: viewTab === k ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                     {l}
@@ -373,7 +374,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                   </button>
                   {stickerErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{stickerErr}</div>}
                 </>
-              ) : (
+              ) : viewTab === "affiche" ? (
                 <>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
                     Affiche A4 — à imprimer ou enregistrer en PDF
@@ -391,6 +392,8 @@ function QrCodesAdmin({ adminToken } = {}) {
                   </button>
                   {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
                 </>
+              ) : (
+                <NfcWriter url={`${qrBaseUrl}/?qr=${viewingQr.token}`} color="#3b82f6"/>
               )}
             </div>
 

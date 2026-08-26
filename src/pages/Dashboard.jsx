@@ -13,7 +13,6 @@ import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
 import { Btn, Input } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
-import { QRCode } from "../components/QRCode.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
 import {
   fetchPharmacie,
@@ -33,7 +32,7 @@ import {
   appellerPatient,
 } from "../supabase.js";
 
-function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage, pharmacieId, onOpenOrdo }) {
+function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOrdo }) {
   const [section, setSection] = useState("pharmacie");
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
@@ -83,7 +82,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],["qrcode","📱","QR Code"],
+  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],
     ...(planInfo.offresStories ? [["offres","🎯","Offres"],["stories","📊","Stories"]] : []),
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
@@ -255,12 +254,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
           </ErrorBoundary>
         )}
 
-        {section==="qrcode"&&(
-          <ErrorBoundary compact label="QR Code">
-          <QRNFCTab pharmacie={pharmacie} couleur={couleur} qrUrl={qrUrl} onPatientPage={onPatientPage}/>
-          </ErrorBoundary>
-        )}
-
         {section==="offres"&&planInfo.offresStories&&(
           <ErrorBoundary compact label="Offres">
           <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
@@ -310,278 +303,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, qrUrl, onPatientPage,
             }
           }}
           onClose={()=>setShowUpgrade(null)}/>
-      )}
-    </div>
-  );
-}
-
-function QRNFCTab({ pharmacie, couleur, qrUrl, onPatientPage }) {
-  const [nfcStatus, setNfcStatus] = useState("idle");
-  const [activeSection, setActiveSection] = useState("qr");
-  const isLocal = typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-  async function handleNFCWrite() {
-    if (!("NDEFReader" in window)) { setNfcStatus("unsupported"); return; }
-    try {
-      setNfcStatus("writing");
-      const ndef = new window.NDEFReader();
-      await ndef.write({ records: [{ recordType: "url", data: qrUrl }] });
-      setNfcStatus("success");
-    } catch { setNfcStatus("error"); }
-  }
-
-  async function handlePrint() {
-    // Récupérer le QR code déjà généré
-    const qrImg = document.querySelector("#qr-print-img");
-    let qrSrc = qrImg?.src || "";
-
-    // Générer si pas encore chargé
-    if (!qrSrc || !qrSrc.startsWith("data:")) {
-      try {
-        const mod = await import("qrcode");
-        const QR = mod.default || mod;
-        qrSrc = await QR.toDataURL(qrUrl, {
-          errorCorrectionLevel: "H",
-          margin: 1,
-          width: 600,
-          color: { dark: "#000000", light: "#ffffff" },
-        });
-      } catch { qrSrc = ""; }
-    }
-
-    const nom = pharmacie?.nom?.toUpperCase() || "VOTRE PHARMACIE";
-    const bg  = "#d6e8e0"; // vert menthe clair comme sur le design
-
-    const html = `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8">
-<title>OrdoMail — ${nom}</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&display=swap');
-@page { size: A4 portrait; margin: 0; }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: 'Inter', Arial, sans-serif;
-  background: ${bg};
-  width: 210mm; height: 297mm;
-  display: flex; flex-direction: column;
-  align-items: center;
-  padding: 8mm 12mm 5mm;
-  overflow: hidden;
-  print-color-adjust: exact;
-  -webkit-print-color-adjust: exact;
-}
-.logo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4mm; }
-.logo-pill { width: 26px; height: 26px; background: linear-gradient(135deg, #1a6e3a, #2d9d5e); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-.logo-text { font-size: 20px; font-weight: 900; color: #1a1a1a; }
-.logo-text span { color: #1a6e3a; }
-.title-band { background: #1a4a35; width: 100%; border-radius: 10px 10px 0 0; padding: 7px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-.cross { font-size: 18px; color: rgba(255,255,255,0.4); }
-.title-text { font-size: 21px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
-.pharma-band { background: #c8ddd5; width: 100%; padding: 6px 16px; text-align: center; margin-bottom: 3mm; border-radius: 0 0 6px 6px; }
-.pharma-name { font-size: 17px; font-weight: 900; color: #1a3a2a; letter-spacing: 1.5px; text-transform: uppercase; }
-
-/* QR — flex:1 pour prendre tout l'espace disponible */
-.qr-card { background: #e8f2ee; border-radius: 14px; width: 100%; padding: 3mm 4mm; display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5mm; flex: 0; }
-.method-badge { background: #1a4a35; border-radius: 8px; padding: 6px 20px; font-size: 22px; font-weight: 900; color: #fff; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3mm; width: 100%; text-align: center; }
-.qr-wrap { background: #fff; border-radius: 12px; padding: 4mm; display: inline-block; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-.qr-wrap img { width: 122mm; height: 122mm; display: block; }
-
-/* NFC card */
-.nfc-card { background: linear-gradient(135deg, #1a4a35 0%, #2d6e50 100%); border-radius: 14px; width: 100%; overflow: hidden; flex-shrink: 0; }
-.nfc-top { padding: 4mm 7mm; display: flex; align-items: center; gap: 5mm; }
-
-/* Logo NFC officiel : cercle blanc avec ondes + texte NFC */
-.nfc-logo-wrap {
-  width: 62px; height: 62px; flex-shrink: 0;
-  background: #fff;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-}
-
-.nfc-method-text { flex: 1; }
-
-/* Titre sur UNE seule ligne */
-.nfc-method-title { font-size: 22px; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
-
-.nfc-bottom { background: #c8ddd5; padding: 4mm 7mm; text-align: center; }
-.nfc-instruction { font-size: 21px; font-weight: 800; color: #1a3a2a; line-height: 1.45; }
-
-@media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .no-print { display: none !important; } }
-</style></head>
-<body>
-
-<div class="logo-row">
-  <div class="logo-pill">&#128138;</div>
-  <div class="logo-text">Ordo<span>Mail</span></div>
-</div>
-
-<div class="title-band">
-  <span class="cross">&#10010;</span>
-  <span class="title-text">Envoyez votre ordonnance</span>
-  <span class="cross">&#10010;</span>
-</div>
-
-<div class="pharma-band">
-  <div class="pharma-name">${nom}</div>
-</div>
-
-<div class="qr-card">
-  <div class="method-badge">M&#233;thode 1 : Scannez le code QR</div>
-  <div class="qr-wrap">
-    ${qrSrc ? `<img src="${qrSrc}" alt="QR"/>` : `<div style="width:122mm;height:122mm;display:flex;align-items:center;justify-content:center;color:#aaa">QR non disponible</div>`}
-  </div>
-</div>
-
-<div class="nfc-card">
-  <div class="nfc-top">
-
-    <!-- Logo NFC officiel : cercle blanc + ondes wifi + NFC -->
-    <div class="nfc-logo-wrap">
-      <svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <!-- Cercle extérieur -->
-        <circle cx="23" cy="23" r="21" stroke="#111" stroke-width="2.5" fill="white"/>
-        <!-- Arc externe (grand) -->
-        <path d="M10.5 20 C10.5 13.1 16.2 7.5 23 7.5 C29.8 7.5 35.5 13.1 35.5 20" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
-        <!-- Arc moyen -->
-        <path d="M14 21.5 C14 16.8 18.1 13 23 13 C27.9 13 32 16.8 32 21.5" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
-        <!-- Arc interne (petit) -->
-        <path d="M17.5 23 C17.5 20.5 20 18.5 23 18.5 C26 18.5 28.5 20.5 28.5 23" stroke="#111" stroke-width="2.8" stroke-linecap="round" fill="none"/>
-        <!-- Point central -->
-        <circle cx="23" cy="25.5" r="2.2" fill="#111"/>
-        <!-- Texte NFC -->
-        <text x="23" y="38.5" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="8.5" fill="#111" letter-spacing="1.5">NFC</text>
-      </svg>
-    </div>
-
-    <div class="nfc-method-text">
-      <div class="nfc-method-title">M&#233;thode 2 : Ouverture automatique</div>
-    </div>
-  </div>
-  <div class="nfc-bottom">
-    <div class="nfc-instruction">Approchez votre t&#233;l&#233;phone du badge<br>pour ouvrir la page d'envoi automatiquement</div>
-  </div>
-</div>
-
-</body>
-<button class="no-print" onclick="window.print()" style="position:fixed;bottom:16px;right:16px;background:#1a4a35;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">
-  &#128438; Imprimer / PDF
-</button>
-</html>`;
-
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const blobUrl = URL.createObjectURL(blob);
-    const win = window.open(blobUrl, "_blank");
-    if (win) { win.focus(); setTimeout(() => URL.revokeObjectURL(blobUrl), 30000); }
-  }
-
-  return (
-    <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
-      {/* Toggle QR / NFC */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        {[["qr", "📱 QR Code"], ["nfc", "🏷️ Badge NFC"]].map(([k, l]) => (
-          <button key={k} onClick={() => setActiveSection(k)} style={{
-            padding: "8px 18px", border: `1.5px solid ${activeSection === k ? couleur : "#e0e0e0"}`,
-            borderRadius: 20, background: activeSection === k ? couleur : "#fff",
-            color: activeSection === k ? "#fff" : "#555", fontWeight: 700, fontSize: 13,
-            cursor: "pointer", fontFamily: "inherit",
-          }}>{l}</button>
-        ))}
-      </div>
-
-      {/* ── Section QR ── */}
-      {activeSection === "qr" && (
-        <div style={{ maxWidth: 420, margin: "0 auto" }}>
-          {/* Badge environnement */}
-          <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 12px", borderRadius:20, fontSize:11, fontWeight:700, marginBottom:12,
-            background: isLocal ? "#fef9c3" : "#dcfce7",
-            color: isLocal ? "#92400e" : "#166534" }}>
-            {isLocal ? "🧪 Mode test local — localhost:5173" : "🌐 Production"}
-          </div>
-
-          {/* QR Code */}
-          <div style={{ textAlign: "center", marginBottom: 16 }}>
-            <div id="qr-container" style={{ display: "inline-block", background: "#fff", padding: 16, borderRadius: 14, boxShadow: `0 4px 20px ${couleur}22`, border: `2px solid ${couleur}18` }}>
-              <QRCode url={qrUrl} size={220} color={couleur} printId="qr-print-img" />
-            </div>
-          </div>
-
-          {/* Nom pharmacie */}
-          <div style={{ textAlign: "center", fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{pharmacie?.nom}</div>
-
-
-
-          {/* Avertissement local */}
-          {isLocal && (
-            <div style={{ marginBottom: 14, fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", lineHeight: 1.7 }}>
-              <div style={{ fontWeight: 800, marginBottom: 5 }}>🧪 Mode test local</div>
-              <div style={{ marginBottom: 4 }}>Le QR code encode <code style={{background:"#fff",padding:"1px 5px",borderRadius:3}}>localhost</code> — illisible depuis un téléphone.</div>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>Pour tester sur téléphone :</div>
-              <div>1. Repérer l'adresse <strong>Network</strong> dans le terminal après <code style={{background:"#fff",padding:"1px 4px",borderRadius:3}}>npm run dev</code></div>
-              <div>2. Elle ressemble à : <code style={{background:"#fff",padding:"2px 5px",borderRadius:3}}>http://192.168.1.X:5173</code></div>
-              <div>3. Scanner le QR code depuis votre téléphone sur le même réseau Wi-Fi</div>
-            </div>
-          )}
-
-          {/* Mode d'emploi */}
-          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#555", marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6, color: couleur }}>📷 Mode d'emploi</div>
-            <div style={{ lineHeight: 1.9 }}>
-              <div>1. Imprimez et affichez ce QR code à l'accueil</div>
-              <div>2. Le patient scanne avec l'appareil photo de son téléphone</div>
-              <div>3. La page s'ouvre directement — sans application</div>
-              <div>4. Il prend une photo et envoie son ordonnance</div>
-            </div>
-          </div>
-
-          {/* Boutons */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <button onClick={() => onPatientPage(pharmacie)} style={{
-              padding: "13px", border: "none", borderRadius: 10, background: couleur,
-              color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}>📱 Tester la page</button>
-            <button onClick={handlePrint} style={{
-              padding: "13px", border: `1.5px solid ${couleur}`, borderRadius: 10,
-              background: "#fff", color: couleur, fontWeight: 700, fontSize: 14,
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}>🖨️ Imprimer</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Section NFC ── */}
-      {activeSection === "nfc" && (
-        <div style={{ maxWidth: 420, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", padding: "24px 0" }}>
-            <div style={{ fontSize: 52, marginBottom: 16 }}>🏷️</div>
-            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>Badge NFC</div>
-            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 24, lineHeight: 1.7 }}>
-              Programmez un badge NTAG213 (~0,50€). Le patient approche son téléphone — la page s'ouvre instantanément.
-            </div>
-            {nfcStatus === "idle" && (
-              <button onClick={handleNFCWrite} style={{ padding: "13px 28px", border: "none", borderRadius: 12, background: couleur, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-                📡 Programmer un badge NFC
-              </button>
-            )}
-            {nfcStatus === "writing" && <div style={{ color: couleur, fontWeight: 700 }}>📡 Approchez le badge…</div>}
-            {nfcStatus === "success" && <div style={{ color: "#15803d", fontWeight: 800, fontSize: 16 }}>✅ Badge programmé !</div>}
-            {nfcStatus === "error"   && <div style={{ color: "#dc2626", fontWeight: 700 }}>⚠️ Erreur — Réessayez</div>}
-            {nfcStatus === "unsupported" && (
-              <div style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#92400e", textAlign: "left" }}>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>NFC non disponible dans ce navigateur</div>
-                <div>Utilisez Chrome sur Android. Sur iPhone, la programmation NFC n'est pas prise en charge (lecture seule).</div>
-              </div>
-            )}
-          </div>
-          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#64748b", lineHeight: 1.8 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Compatibilité</div>
-            <div>📱 Programmation : Chrome Android uniquement</div>
-            <div>✅ Lecture : iPhone 7+ et Android avec NFC</div>
-            <div>🛒 Badge NTAG213 : ~0,50€ sur Amazon</div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -775,13 +496,6 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
 
   const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
   const couleur = pharmacie?.couleur || "#1a3a6e";
-  // URL QR code : utilise VITE_APP_URL si défini, sinon l'origine courante
-  // → En prod : VITE_APP_URL = https://ordomail.fr
-  // → En test : VITE_APP_URL = https://ordomail-git-develop-xxx.vercel.app
-  const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ordomail.fr");
-  // qr_token (phase 1 sécurité) : jeton public par pharmacie exigé par submit-ordonnance
-  // pour éviter qu'un pharmacie_id deviné/énuméré permette de spammer la file d'une pharmacie.
-  const qrUrl = `${baseUrl}/?patient=${pharmacie?.id}${pharmacie?.qr_token ? `&t=${pharmacie.qr_token}` : ""}`;
   // Calendrier : jours avec ordonnances (recomputed)
   const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
 
@@ -1155,7 +869,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
       {tab==="parametres"&&canAdmin&&(
         <ErrorBoundary compact label="Paramètres">
         <ParametresTab pharmacie={pharmacie} onSave={handleSaveParams} onPlanChanged={refreshPharmacie}
-          qrUrl={qrUrl} onPatientPage={onPatientPage} pharmacieId={pharmacieId}
+          pharmacieId={pharmacieId}
           onOpenOrdo={(ordoId) => {
             setTab("ordonnances");
             setFilterStatus("all");
@@ -1197,5 +911,5 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   );
 }
 
-export { QRNFCTab, BottomNav, PharmacieDashboard, OffresSection, CompteSection, ParametresTab };
+export { BottomNav, PharmacieDashboard, OffresSection, CompteSection, ParametresTab };
 export default PharmacieDashboard;
