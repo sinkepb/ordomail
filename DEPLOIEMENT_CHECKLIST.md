@@ -10,7 +10,7 @@ historique.
 
 | | Local (poste dev) | Preview (branche `develop`) | Production (branche `main`) |
 |---|---|---|---|
-| Frontend | `npm run dev` (localhost:5173) | Netlify — déploiement branche `develop` | Netlify — déploiement branche `main`, ordomail.fr |
+| Frontend | `npm run dev` (localhost:5173) | Vercel — déploiement branche `develop` | Vercel — déploiement branche `main`, ordomail.fr |
 | Supabase | Projet **ordomail-preview** (`uygaqxruuxpfhvzjuksy`) | Projet **ordomail-preview** (`uygaqxruuxpfhvzjuksy`) | Projet **ordomail** (`hdgpkgaznsaocczxvaix`) |
 | Données | Test, réinitialisables | Test, partagées, à nettoyer périodiquement | Réelles — **données de santé, jamais de données de test** |
 | Déploiement | Manuel | Automatique à chaque push sur `develop` | Automatique à chaque merge sur `main` |
@@ -24,10 +24,15 @@ de vrais patients. Le projet `ordomail-preview` a été créé ce jour-là (mêm
 production**, qui sont des données de santé au sens RGPD art. 9 et n'ont rien à faire sur
 un environnement moins surveillé). `.env.local` pointe désormais vers `ordomail-preview`.
 
-Reste à faire (voir § 1) : configurer sur Netlify une valeur de `VITE_SUPABASE_URL` /
+Reste à faire (voir § 1) : configurer sur Vercel une valeur de `VITE_SUPABASE_URL` /
 `VITE_SUPABASE_ANON_KEY` spécifique à la branche `develop`, distincte de celle de
-`main` — jusqu'ici Netlify n'avait qu'un seul jeu de variables partagé par toutes les
+`main` — jusqu'ici Vercel n'avait qu'un seul jeu de variables partagé par toutes les
 branches.
+
+**25/08/2026** — correction de ce document : le frontend est en réalité hébergé sur
+**Vercel**, pas Netlify (confirmé via l'API GitHub, contexte de statut de commit
+"Vercel"). `netlify.toml` existe toujours dans le dépôt mais est une config legacy
+inutilisée — ne pas s'y fier.
 
 Pour recréer `ordomail-preview` à l'identique (disaster recovery) ou en créer un nouveau
 du même genre :
@@ -76,7 +81,7 @@ une lecture anon large sur la table pour fonctionner.
 
 ---
 
-## 1. Frontend (Netlify)
+## 1. Frontend (Vercel)
 
 - [ ] `npm run build` passe sans erreur
 - [ ] `npm test` passe (44 tests Vitest — JWT, validation upload, checkout, plan webhook, masquage logs, XSS, dates)
@@ -86,16 +91,16 @@ une lecture anon large sur la table pour fonctionner.
       sans ces secrets, ne bloque pas un contributeur standard.
 - [ ] `npm run test:e2e` passe (Playwright, mode démo uniquement — voir `e2e/README.md`
       pour ce qui est couvert et pourquoi le paiement Stripe réel ne l'est pas)
-- [ ] Variables d'environnement configurées **par contexte** (Netlify → Site configuration
-      → Environment variables → bouton "Options" sur chaque variable → "Different value for
-      different deploy contexts"). Deux jeux de valeurs distincts, jamais partagés :
+- [ ] Variables d'environnement configurées **par contexte** (Vercel → Project Settings
+      → Environment Variables → sélectionner les environnements "Production" / "Preview"
+      séparément pour chaque variable). Deux jeux de valeurs distincts, jamais partagés :
 
   | Variable | Contexte "Production" (branche `main`) | Contexte "Branch deploys" / branche `develop` |
   |---|---|---|
   | `VITE_DEMO_MODE` | `false` | `false` |
   | `VITE_SUPABASE_URL` | URL du projet `ordomail` (prod) | URL du projet `ordomail-preview` |
   | `VITE_SUPABASE_ANON_KEY` | Clé anon `ordomail` (prod) | Clé anon `ordomail-preview` |
-  | `VITE_APP_URL` | `https://ordomail.fr` | URL de preview Netlify de la branche |
+  | `VITE_APP_URL` | `https://ordomail.fr` | URL de preview Vercel de la branche |
   | `VITE_SENTRY_DSN` | DSN Sentry (optionnel) | laisser vide (pas de bruit prod dans Sentry) |
 
   ⚠️ `VITE_DEMO_MODE=false` refuse de démarrer sans config Supabase valide — comportement
