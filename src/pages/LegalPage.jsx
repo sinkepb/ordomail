@@ -40,7 +40,7 @@ function MentionsContent() {
     <>
       <Section title="Éditeur du site">
         <p>
-          Le site et l'application OrdoMail sont édités par <Placeholder>[Raison sociale]</Placeholder>,
+          Le site et l'application OrdoMail sont édités par SISEO,
           {" "}<Placeholder>[forme juridique — ex. SAS]</Placeholder> au capital de <Placeholder>[montant]</Placeholder> €,
           immatriculée au RCS de <Placeholder>[ville]</Placeholder> sous le numéro <Placeholder>[SIREN/SIRET]</Placeholder>,
           dont le siège social est situé <Placeholder>[adresse complète]</Placeholder>.
@@ -211,8 +211,8 @@ function ConfidentialiteContent() {
     <>
       <Section title="Responsable de traitement">
         <p>
-          <Placeholder>[Raison sociale]</Placeholder>, éditrice d'OrdoMail (voir Mentions
-          légales), est responsable du traitement des données décrites ci-dessous.
+          SISEO, éditrice d'OrdoMail (voir Mentions légales), est responsable du traitement des
+          données décrites ci-dessous.
         </p>
       </Section>
       <Section title="Données collectées">
@@ -247,7 +247,7 @@ function ConfidentialiteContent() {
           Les ordonnances (fichier et métadonnées) sont conservées 3 jours après leur dépôt, puis
           supprimées automatiquement chaque nuit — délai retenu pour rester dans le cadre d'une
           prestation de courte durée (voir DEPLOIEMENT_CHECKLIST.md). Les autres données
-          (compte pharmacie, facturation) sont conservées <Placeholder>[durée à définir]</Placeholder>.
+          (compte pharmacie, facturation) sont conservées jusqu'à la suppression du compte.
         </p>
       </Section>
       <Section title="Sécurité">
@@ -263,7 +263,7 @@ function ConfidentialiteContent() {
           Conformément au RGPD, vous disposez d'un droit d'accès, de rectification,
           d'effacement, d'opposition et de portabilité de vos données, ainsi que du droit
           d'introduire une réclamation auprès de la CNIL. Pour exercer ces droits :
-          {" "}<Placeholder>[email de contact DPO]</Placeholder>.
+          {" "}dpo@ordomail.fr.
         </p>
       </Section>
     </>
