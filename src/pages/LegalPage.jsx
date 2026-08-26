@@ -41,11 +41,11 @@ function MentionsContent() {
       <Section title="Éditeur du site">
         <p>
           Le site et l'application OrdoMail sont édités par SISEO,
-          {" "}<Placeholder>[forme juridique — ex. SAS]</Placeholder> au capital de <Placeholder>[montant]</Placeholder> €,
-          immatriculée au RCS de <Placeholder>[ville]</Placeholder> sous le numéro <Placeholder>[SIREN/SIRET]</Placeholder>,
-          dont le siège social est situé <Placeholder>[adresse complète]</Placeholder>.
+          {" "}SASU au capital de 500 €,
+          immatriculée au RCS de <Placeholder>[ville]</Placeholder> sous le numéro 103 510 848 00015,
+          dont le siège social est situé 24 Rue des Glaises, 95370 Montigny-lès-Cormeilles.
         </p>
-        <p>Numéro de TVA intracommunautaire : <Placeholder>[FR...]</Placeholder></p>
+        <p>Numéro de TVA intracommunautaire : FR54103510848</p>
       </Section>
       <Section title="Directeur de la publication">
         <p><Placeholder>[Nom du directeur de la publication]</Placeholder></p>
