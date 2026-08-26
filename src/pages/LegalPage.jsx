@@ -142,13 +142,60 @@ function CguContent() {
           confidentialité</Placeholder>, qui fait partie intégrante des présentes.
         </p>
       </Section>
-      <Section title="10. Modification des CGU/CGV">
+      <Section title="10. Sous-traitance des données personnelles (art. 28 RGPD)">
+        <p>
+          Pour les données de santé des patients de la pharmacie, OrdoMail agit en qualité de{" "}
+          <strong>sous-traitant</strong> au sens de l'article 28 du RGPD, la pharmacie demeurant
+          responsable de traitement vis-à-vis de ses patients. Pour les données du compte
+          pharmacie lui-même (identifiants titulaire, PIN vendeurs, facturation), OrdoMail agit
+          en qualité de responsable de traitement — voir la Politique de confidentialité.
+        </p>
+        <p>
+          <strong>Instructions documentées.</strong> OrdoMail ne traite les données patient que
+          sur instruction documentée de la pharmacie (le paramétrage et l'usage normal du
+          service constituent cette instruction), sauf obligation légale contraire.
+        </p>
+        <p>
+          <strong>Sous-traitants ultérieurs.</strong> OrdoMail a recours aux sous-traitants
+          suivants pour l'exécution du service : Supabase (hébergement base de données et
+          stockage de fichiers), Stripe (paiement), Postmark (envoi et réception des e-mails).
+          Le Client est informé de tout ajout ou remplacement d'un sous-traitant ultérieur et
+          dispose d'un délai de <Placeholder>[30 jours — à confirmer]</Placeholder> pour
+          s'opposer au changement pour un motif légitime.
+        </p>
+        <p>
+          <strong>Sécurité.</strong> OrdoMail met en œuvre les mesures de sécurité décrites dans
+          la Politique de confidentialité et s'engage à notifier le Client dans les meilleurs
+          délais de toute violation de données concernant ses patients, en lui fournissant les
+          informations nécessaires à sa propre notification auprès de la CNIL et des personnes
+          concernées si la violation présente un risque pour leurs droits et libertés.
+        </p>
+        <p>
+          <strong>Assistance.</strong> OrdoMail assiste le Client, dans la mesure du possible,
+          pour répondre aux demandes d'exercice des droits de ses patients (accès, rectification,
+          effacement, opposition) et pour la réalisation, le cas échéant, d'une analyse d'impact
+          relative à la protection des données.
+        </p>
+        <p>
+          <strong>Sort des données en fin de contrat.</strong> À la résiliation de l'abonnement,
+          les données patient de la pharmacie sont supprimées selon la politique de rétention en
+          vigueur (voir Politique de confidentialité), sauf demande d'export préalable formulée
+          par le Client dans un délai de <Placeholder>[à définir]</Placeholder> suivant la
+          résiliation.
+        </p>
+        <p>
+          <strong>Audit.</strong> Le Client peut demander à OrdoMail les informations nécessaires
+          pour démontrer le respect des obligations du présent article, selon des modalités à
+          convenir entre les parties.
+        </p>
+      </Section>
+      <Section title="11. Modification des CGU/CGV">
         <p>
           OrdoMail peut modifier les présentes CGU/CGV ; le Client en sera informé et la
           poursuite de l'utilisation du service après notification vaudra acceptation.
         </p>
       </Section>
-      <Section title="11. Droit applicable">
+      <Section title="12. Droit applicable">
         <p>
           Les présentes CGU/CGV sont soumises au droit français. Tout litige relève de la
           compétence des tribunaux de <Placeholder>[ville]</Placeholder>, sauf disposition
@@ -191,16 +238,16 @@ function ConfidentialiteContent() {
       <Section title="Destinataires et sous-traitants">
         <p>
           Les données sont hébergées et traitées par nos sous-traitants techniques : Supabase
-          (base de données et stockage), Stripe (paiement), et le prestataire d'envoi
-          d'e-mails <Placeholder>[nom du prestataire]</Placeholder>. Aucune donnée n'est vendue
-          à des tiers.
+          (base de données et stockage), Stripe (paiement), et Postmark (envoi et réception des
+          e-mails). Aucune donnée n'est vendue à des tiers.
         </p>
       </Section>
       <Section title="Durée de conservation">
         <p>
-          <Placeholder>[Durée à définir]</Placeholder> — une politique de rétention et de purge
-          automatique des ordonnances traitées est en cours de définition. Voir
-          DEPLOIEMENT_CHECKLIST.md pour l'état d'avancement.
+          Les ordonnances (fichier et métadonnées) sont conservées 3 jours après leur dépôt, puis
+          supprimées automatiquement chaque nuit — délai retenu pour rester dans le cadre d'une
+          prestation de courte durée (voir DEPLOIEMENT_CHECKLIST.md). Les autres données
+          (compte pharmacie, facturation) sont conservées <Placeholder>[durée à définir]</Placeholder>.
         </p>
       </Section>
       <Section title="Sécurité">
