@@ -55,6 +55,20 @@ export function isSameDay(a, b) {
   return da.toDateString() === db.toDateString();
 }
 
+// ─── Encodage fichier ──────────────────────────────────────────────────────
+// Utilisé par tout upload passant en base64 par une Edge Function (stories,
+// offres, ordonnances) — String.fromCharCode(...bytes) seul dépasse la
+// limite d'arguments d'un appel de fonction sur les gros fichiers, d'où le
+// découpage par blocs.
+export async function fileToBase64(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(binary);
+}
+
 export function toDateKey(date) {
   const d = date instanceof Date ? date : new Date(date);
   // ⚠️ Ne pas utiliser toISOString() ici : elle convertit en UTC avant de

@@ -2,7 +2,7 @@
 // Extrait de src/supabase.js (27/07/2026) — voir src/supabase.js.
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 import { _listeners } from './realtime.js';
-import { maskId } from '../utils.js';
+import { maskId, fileToBase64 } from '../utils.js';
 
 export async function fetchOrdonnances(pharmacieId, days = 7) {
   if (IS_DEMO) {
@@ -80,20 +80,6 @@ export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
     ordoId, fileName: file.name, fileType: file.type, fileBase64,
   });
   return { dataUrl: signedUrl, path };
-}
-
-// Encode un File en base64 pur (sans préfixe data:...;base64,) — par blocs
-// pour éviter une pile d'appel trop profonde sur les gros fichiers
-// (String.fromCharCode.apply sur un tableau de plusieurs Mo).
-async function fileToBase64(file) {
-  const buf = await file.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  const CHUNK = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
 }
 
 // ─── Normaliser une ordonnance DB Supabase → format UI ───────────────────────

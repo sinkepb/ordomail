@@ -2,17 +2,7 @@
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
 import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData } from "../supabase.js";
-
-// Encode un File en base64 pur (sans préfixe data:...;base64,) — même helper que
-// src/lib/supabase/ordonnances.js:fileToBase64, dupliqué pour un composant autonome.
-async function fileToBase64(file) {
-  const buf = await file.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  return btoa(binary);
-}
+import { fileToBase64 } from "../lib/utils.js";
 
 function formatDuree(ms) {
   if (!ms) return "—";

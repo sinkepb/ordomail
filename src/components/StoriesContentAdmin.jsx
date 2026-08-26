@@ -7,6 +7,7 @@
 // un admin authentifié d'un visiteur anonyme muni de la clé anon publique.
 // Routé via secure-data (jeton admin) comme le reste du backoffice.
 import { useState, useEffect } from "react";
+import { fileToBase64 } from "../lib/utils.js";
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -38,19 +39,6 @@ function StoriesContentAdmin({ adminToken } = {}) {
   const [search, setSearch]     = useState("");
   const [error, setError]       = useState("");
   const [uploadingImg, setUploadingImg] = useState(false);
-
-  // Encode un File en base64 pur (sans préfixe data:...;base64,) — par blocs pour
-  // éviter une pile d'appel trop profonde sur les gros fichiers (voir même helper
-  // dans src/lib/supabase/ordonnances.js:fileToBase64, dupliqué ici pour rester
-  // un composant autonome comme le reste de ce fichier).
-  async function fileToBase64(file) {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    const CHUNK = 0x8000;
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    return btoa(binary);
-  }
 
   async function handleImageUpload(file) {
     if (!file) return;
