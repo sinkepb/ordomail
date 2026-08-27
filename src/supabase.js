@@ -44,6 +44,7 @@ export {
   fetchPharmaciePublic,
   savePharmacie,
   savePostes,
+  updateTitulaire,
 } from './lib/supabase/pharmacies.js';
 
 export {

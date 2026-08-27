@@ -11,13 +11,14 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
-import { Btn, Input } from "../components/ui.jsx";
+import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
   savePostes,
+  updateTitulaire,
   fetchOrdonnances,
   updateOrdoStatus,
   updateOrdoExtracted,
@@ -33,11 +34,12 @@ import {
 } from "../supabase.js";
 
 function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOrdo }) {
-  const [section, setSection] = useState("pharmacie");
+  const [section, setSection] = useState("postes");
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
   const [adresse, setAdresse] = useState(pharmacie.adresse||"");
   const [couleur, setCouleur] = useState(pharmacie.couleur||"#1a3a6e");
+  const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
@@ -75,14 +77,18 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
     // Collecter les PINs modifiés (pour les hasher via Edge Function en prod)
     const pinChanges = {};
     postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
-    await Promise.all([
+    const tasks = [
       onSave({nom,adresse,couleur}),
       savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
-    ]);
+    ];
+    if (titulaireNom.trim() && titulaireNom.trim() !== (pharmacie.titulaireNom||"")) {
+      tasks.push(updateTitulaire(titulaireNom.trim()));
+    }
+    await Promise.all(tasks);
     setSaved(true); setTimeout(()=>setSaved(false),2500);
   }
 
-  const tabs = [["pharmacie","🏥","Pharmacie"],["postes","🖥️","Postes"],
+  const tabs = [["postes","🖥️","Postes"],
     ...(planInfo.offresStories ? [["offres","🎯","Offres"],["stories","📊","Stories"]] : []),
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
@@ -101,30 +107,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
         </Btn>
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
-
-        {section==="pharmacie"&&(
-          <ErrorBoundary compact label="Pharmacie">
-          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
-            <Input label="Nom de la pharmacie" value={nom} onChange={setNom} placeholder="Pharmacie..." icon="🏥"/>
-            <Input label="Adresse" value={adresse} onChange={setAdresse} placeholder="12 rue..." icon="📍"/>
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Couleur de la pharmacie</label>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <input type="color" value={couleur} onChange={e=>setCouleur(e.target.value)} style={{width:40,height:40,border:"none",cursor:"pointer",borderRadius:8}}/>
-                <span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:couleur}}>{couleur}</span>
-                <div style={{width:32,height:32,borderRadius:8,background:couleur}}/>
-              </div>
-            </div>
-            <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",border:"1px solid #dbeafe",fontSize:13}}>
-              <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
-              {pharmacie.emailReception
-                ? <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception}</code>
-                : <span style={{fontSize:12,color:"#b45309",fontWeight:600}}>⚠️ Adresse non configurée — contactez le support OrdoMail</span>}
-              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
-            </div>
-          </div>
-          </ErrorBoundary>
-        )}
 
         {section==="postes"&&(
           <ErrorBoundary compact label="Postes">
@@ -266,7 +248,11 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
         )}
         {section==="compte"&&(
           <ErrorBoundary compact label="Compte">
-          <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo} onUpgrade={async (newPlan)=>{
+          <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo}
+            nom={nom} onNomChange={setNom} adresse={adresse} onAdresseChange={setAdresse}
+            couleur={couleur} onCouleurChange={setCouleur}
+            titulaireNom={titulaireNom} onTitulaireNomChange={setTitulaireNom}
+            onUpgrade={async (newPlan)=>{
             // Ne PAS avaler l'erreur ici : PlanSwitcher (UpgradeModal.jsx) attend que
             // cette promesse rejette pour afficher son écran "Échec du changement de
             // plan" — avant ce correctif, l'erreur était juste loggée en console et

@@ -15,7 +15,7 @@ export async function fetchPharmacie(pharmacieId) {
     return data ? { ...data, emailReception: data.email_reception, postes: [] } : null;
   }
   const sb = getSupabase();
-  const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*)').eq('id', pharmacieId).single();
+  const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*), pharmacie_users(nom, role)').eq('id', pharmacieId).single();
   if (error) throw error;
   // Normaliser pharmacie_postes → postes pour compatibilité dashboard
   if (data && data.pharmacie_postes) {
@@ -25,6 +25,9 @@ export async function fetchPharmacie(pharmacieId) {
   // ParametresTab) : sans ce mapping l'écran "Configuration email" retombe sur l'UUID
   // brut de la pharmacie au lieu de l'adresse lisible générée par register-pharmacie.
   if (data) data.emailReception = data.email_reception;
+  // Nom du titulaire (recueilli à l'inscription, voir register-pharmacie) — RLS ne
+  // renvoie de toute façon que la ligne pharmacie_users du titulaire connecté lui-même.
+  if (data) data.titulaireNom = data.pharmacie_users?.find(u => u.role === 'admin')?.nom || '';
   return data;
 }
 
@@ -95,4 +98,16 @@ export async function savePostes(pharmacieId, postes, pinChanges = {}) {
     }
   }
   return data;
+}
+
+// Nom du titulaire — distinct de pharmacies.nom (nom de l'officine), stocké sur
+// pharmacie_users.nom (recueilli à l'inscription, voir register-pharmacie). Passe
+// par une Edge Function (comme update-pin) : le titulaire n'a que le droit de
+// lire sa propre ligne pharmacie_users via RLS, pas de l'écrire directement.
+export async function updateTitulaire(nom) {
+  if (IS_DEMO) return { nom };
+  const sb = getSupabase();
+  const { error } = await sb.functions.invoke('update-titulaire', { body: { nom } });
+  if (error) throw error;
+  return { nom };
 }

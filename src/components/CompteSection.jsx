@@ -7,7 +7,9 @@ import { Btn, Input } from "./ui.jsx";
 import { PlanSwitcherModal } from "./UpgradeModal.jsx";
 import { isDemoMode, getSupabaseClient, fetchFactures } from "../supabase.js";
 
-function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
+function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
+  nom, onNomChange, adresse, onAdresseChange, couleur, onCouleurChange,
+  titulaireNom, onTitulaireNomChange }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
   const [pwdLoading,setPwdLoading]=useState(false);
   const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
@@ -134,12 +136,34 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade }) {
       <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
         <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>👤 Informations du compte</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-          {[["Email",pharmacie.email],["Pharmacie",pharmacie.nom],["Membre depuis",new Date(pharmacie.created_at||pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
+          {[["Email",pharmacie.email],["Membre depuis",new Date(pharmacie.created_at||pharmacie.createdAt).toLocaleDateString("fr-FR")],["Ordonnances traitées",ordosTraitees],["Postes configurés",`${postesActifs} actifs / ${(postes||[]).length} total`]].map(([l,v])=>(
             <div key={l} style={{background:"#f8f9ff",borderRadius:10,padding:"10px 13px"}}>
               <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{l}</div>
               <div style={{fontSize:13,fontWeight:600,color:"#1a1a1a"}}>{v}</div>
             </div>
           ))}
+        </div>
+        {/* Pharmacie (fusionné depuis l'ancien onglet "Pharmacie" — 27/08/2026) */}
+        <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14,marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>🏥 Pharmacie</div>
+          <Input label="Nom du titulaire" value={titulaireNom} onChange={onTitulaireNomChange} placeholder="Dr MARTIN Pierre" icon="👤"/>
+          <Input label="Nom de la pharmacie" value={nom} onChange={onNomChange} placeholder="Pharmacie..." icon="🏥"/>
+          <Input label="Adresse" value={adresse} onChange={onAdresseChange} placeholder="12 rue..." icon="📍"/>
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Couleur de la pharmacie</label>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <input type="color" value={couleur} onChange={e=>onCouleurChange(e.target.value)} style={{width:40,height:40,border:"none",cursor:"pointer",borderRadius:8}}/>
+              <span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:couleur}}>{couleur}</span>
+              <div style={{width:32,height:32,borderRadius:8,background:couleur}}/>
+            </div>
+          </div>
+          <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",border:"1px solid #dbeafe",fontSize:13}}>
+            <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:4}}>Adresse de réception ordonnances</div>
+            {pharmacie.emailReception
+              ? <code style={{fontSize:13,color:"#0369a1"}}>{pharmacie.emailReception}</code>
+              : <span style={{fontSize:12,color:"#b45309",fontWeight:600}}>⚠️ Adresse non configurée — contactez le support OrdoMail</span>}
+            <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Les patients envoient leurs ordonnances à cette adresse. Elle est automatiquement traitée par OrdoMail.</div>
+          </div>
         </div>
         <div style={{borderTop:"1px solid #f0f4ff",paddingTop:14}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:10}}>🔑 Mot de passe</div>
