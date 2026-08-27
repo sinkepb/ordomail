@@ -77,8 +77,15 @@ export async function savePostes(pharmacieId, postes, pinChanges = {}) {
     return ph?.postes || postes;
   }
   const sb = getSupabase();
-  // Upsert postes
-  const rows = postes.map(p => ({ ...p, pharmacie_id: pharmacieId }));
+  // Upsert postes — pin_hash exclu explicitement (comme pin) : ce champ ne
+  // doit JAMAIS être écrit par ce chemin. `postes` vient du state React,
+  // lui-même initialisé depuis fetchPharmacie() (select('*, pharmacie_postes(*)'))
+  // donc chaque objet porte le pin_hash tel qu'il était AU CHARGEMENT de la
+  // page. Sans cette exclusion, tout "Enregistrer" (même pour renommer un
+  // poste, sans toucher au PIN) réécrivait ce pin_hash figé — annulant
+  // silencieusement un changement de PIN fait entre-temps via la sauvegarde
+  // au blur/bouton dédié (update-pin, seule source légitime de ce champ).
+  const rows = postes.map(({ pin_hash: _pin_hash, pin: _pin, ...p }) => ({ ...p, pharmacie_id: pharmacieId }));
   const { data, error } = await sb.from('pharmacie_postes').upsert(rows).select();
   if (error) throw error;
   // Mettre à jour les PINs via Edge Function (bcrypt)
