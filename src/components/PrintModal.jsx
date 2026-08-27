@@ -162,14 +162,12 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
       // about:blank via document.write) par une navigation directe vers l'URL
       // du fichier, comme le Cas 3 juste en dessous (qui n'a jamais eu ce
       // problème) — le navigateur ouvre alors son propre lecteur PDF natif.
-      printArea.innerHTML = banner + `<div style="font-family:Arial;padding:20px;text-align:center;color:#555;font-size:14px">
-        <div style="font-size:32px;margin-bottom:10px">📄</div>
-        <div style="font-weight:700;margin-bottom:6px">${escapeHtml(att.name)}</div>
-        <div>Le PDF s'ouvre dans un nouvel onglet pour l'impression.</div>
-      </div>`;
+      // printArea (portail #ordomail-print-area, voir Dashboard.jsx) n'est
+      // utile que pour ce que window.print() imprime sur CET onglet — inutile
+      // ici puisque le PDF s'imprime depuis son propre onglet séparé.
       const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
       if (pdfWin) { pdfWin.focus(); }
-      setTimeout(() => { printArea.innerHTML = ""; setStep("confirm"); }, 800);
+      setTimeout(() => setStep("confirm"), 800);
 
     } else {
       // ── Cas 3 : pas de fichier — générer PDF via generateOrdoPDF si source email ──
