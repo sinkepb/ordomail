@@ -116,38 +116,15 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
       att.dataUrl = await getSignedUrl(att.path, 300); // 5 minutes
     }
     const hasFile = att?.dataUrl;
-    const receivedDate = new Date(ordo.receivedAt).toLocaleDateString("fr-FR");
-    const receivedTime = new Date(ordo.receivedAt).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
-    const printedDate = new Date().toLocaleDateString("fr-FR");
-    const printedTime = new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
 
-    // Bandeau patient affiché dans tous les cas au-dessus du document
-    // ⚠️ nom/email/medecin/date proviennent du formulaire patient (non authentifié) ou de l'OCR —
-    // toujours échapper avant interpolation dans du HTML brut (anti-XSS).
-    const safeNom     = escapeHtml(nom);
-    const safeEmail   = escapeHtml(email);
+    // ⚠️ medecin/date proviennent du formulaire patient (non authentifié) ou de
+    // l'OCR — toujours échapper avant interpolation dans du HTML brut (anti-XSS).
     const safeMedecin = escapeHtml(medecin);
     const safeDate    = escapeHtml(date);
 
-    const banner = `<div style="font-family:Arial,sans-serif;padding:10px 16px;background:#1a3a6e;color:#fff;display:flex;justify-content:space-between;align-items:center;page-break-after:avoid">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div style="font-size:18px;font-weight:900;letter-spacing:0.5px">OrdoMail</div>
-        <div style="width:1px;height:24px;background:rgba(255,255,255,0.3)"></div>
-        <div>
-          <div style="font-size:16px;font-weight:700">${safeNom || "—"}</div>
-          ${safeEmail ? `<div style="font-size:12px;opacity:0.8">${safeEmail}</div>` : ""}
-        </div>
-      </div>
-      <div style="text-align:right;font-size:11px;opacity:0.75">
-        <div>${safeMedecin} ${safeDate ? "· " + safeDate : ""}</div>
-        <div>Reçue le ${receivedDate} à ${receivedTime}</div>
-        <div>Imprimé le ${printedDate} à ${printedTime}</div>
-      </div>
-    </div>`;
-
     if (hasFile && att.type === "image") {
       // ── Cas 1 : image JPEG/PNG — attendre le chargement avant print ──────────
-      printArea.innerHTML = banner + `<div style="text-align:center;padding:8px">
+      printArea.innerHTML = `<div style="text-align:center;padding:8px">
         <img id="ordo-print-img" src="${att.dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
       </div>`;
       // Attendre que l'image soit chargée avant d'imprimer
@@ -202,7 +179,7 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
       const medsHtml = medicaments.filter(Boolean).map(m =>
         `<li style="font-size:14px;margin-bottom:5px">${escapeHtml(m)}</li>`
       ).join("");
-      printArea.innerHTML = banner + `<div style="font-family:Arial,sans-serif;padding:20px 28px;max-width:620px;margin:0 auto">
+      printArea.innerHTML = `<div style="font-family:Arial,sans-serif;padding:20px 28px;max-width:620px;margin:0 auto">
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#856404">
           ⚠️ Aucun fichier d'ordonnance joint. Impression de la fiche de synthèse.
         </div>
