@@ -170,14 +170,6 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
           {step==="details"&&(
             <>
               <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
-              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"]].map(([k,l,t,ph])=>(
-                <div key={k} style={{marginBottom:14}}>
-                  <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
-                  <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
-                    style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors[k]?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
-                  {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
-                </div>
-              ))}
               <div style={{marginBottom:14,position:"relative"}}>
                 <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Pharmacie *</label>
                 <input type="text" placeholder="Pharmacie de la Paix" value={form.pharmacie}
@@ -204,6 +196,14 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   </div>
                 )}
               </div>
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"]].map(([k,l,t,ph])=>(
+                <div key={k} style={{marginBottom:14}}>
+                  <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
+                  <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
+                    style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors[k]?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
+                </div>
+              ))}
               <div style={{marginBottom:14,position:"relative"}}>
                 <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Adresse *</label>
                 <input type="text" placeholder="12 rue de la Paix, 75001 Paris" value={form.adresse}
@@ -229,6 +229,13 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                     ))}
                   </div>
                 )}
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>SIRET</label>
+                <input type="text" placeholder="Rempli automatiquement via la sélection ci-dessus, ou à saisir" value={form.siret}
+                  onChange={e=>setForm(f=>({...f,siret:e.target.value.replace(/\D/g,"").slice(0,14)}))}
+                  style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Optionnel — 14 chiffres.</div>
               </div>
               <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";if(!isValidAddress(form.adresse))e.adresse="Adresse complète requise (numéro, rue, code postal)";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
                 style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
