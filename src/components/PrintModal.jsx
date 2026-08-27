@@ -156,24 +156,19 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
 
     } else if (hasFile && att.type === "pdf") {
       // ── Cas 2 : PDF — ouvrir dans un nouvel onglet pour impression native ────
-      // Le navigateur imprime le PDF dans son viewer natif
+      // @fix 27/08/2026 — remplace document.write() d'une page wrapper avec
+      // <embed src="..."> (page blanche fréquente sous Chrome : le lecteur PDF
+      // intégré n'accroche pas toujours sur un <embed> inséré dans une popup
+      // about:blank via document.write) par une navigation directe vers l'URL
+      // du fichier, comme le Cas 3 juste en dessous (qui n'a jamais eu ce
+      // problème) — le navigateur ouvre alors son propre lecteur PDF natif.
       printArea.innerHTML = banner + `<div style="font-family:Arial;padding:20px;text-align:center;color:#555;font-size:14px">
         <div style="font-size:32px;margin-bottom:10px">📄</div>
         <div style="font-weight:700;margin-bottom:6px">${escapeHtml(att.name)}</div>
         <div>Le PDF s'ouvre dans un nouvel onglet pour l'impression.</div>
       </div>`;
-      // Ouvrir le PDF dans un nouvel onglet — le navigateur affiche sa boîte d'impression native
-      // rel/features vides + pas de référence conservée : on évite le reverse-tabnabbing (window.opener)
-      const pdfWin = window.open("", "_blank", "noopener,noreferrer");
-      if (pdfWin) {
-        pdfWin.document.write(
-          '<html><head><title>' + escapeHtml(nom || "Ordonnance") + '</title>' +
-          '<style>body{margin:0}embed{width:100vw;height:100vh}</style></head>' +
-          '<body><embed src="' + att.dataUrl + '" type="application/pdf" /></body></html>'
-        );
-        pdfWin.document.close();
-        pdfWin.onload = () => { pdfWin.focus(); pdfWin.print(); };
-      }
+      const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
+      if (pdfWin) { pdfWin.focus(); }
       setTimeout(() => { printArea.innerHTML = ""; setStep("confirm"); }, 800);
 
     } else {
