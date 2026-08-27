@@ -178,9 +178,15 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
                       }
                     }}
                     placeholder="••••"
-                    style={{width:80,border:`1.5px solid ${poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none",transition:"border 0.2s"}}/>
-                  <span style={{fontSize:11,fontWeight:600,color:poste._pinSaved?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#94a3b8"}}>
-                    {poste._pinSaved ? "✅ Enregistré" : poste.pin && poste.pin.length===4 ? "En attente..." : "⚠️ PIN manquant"}
+                    style={{width:80,border:`1.5px solid ${poste._pinSaved||poste.pin_hash?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none",transition:"border 0.2s"}}/>
+                  {/* @fix 27/08/2026 — ce badge ne regardait que l'état éphémère de la session
+                      (poste.pin, jamais rempli depuis la base puisque le PIN en clair n'est
+                      jamais renvoyé ; poste._pinSaved, remis à zéro à chaque rechargement) et
+                      jamais poste.pin_hash, la vraie source de vérité en base : après un simple
+                      rechargement de page, un PIN pourtant bien enregistré (et fonctionnel côté
+                      vendeur) s'affichait comme "manquant". */}
+                  <span style={{fontSize:11,fontWeight:600,color:poste._pinSaved||poste.pin_hash?"#15803d":poste.pin&&poste.pin.length===4?"#f59e0b":"#94a3b8"}}>
+                    {poste._pinSaved ? "✅ Enregistré" : poste.pin && poste.pin.length===4 ? "En attente..." : poste.pin_hash ? "✅ Configuré" : "⚠️ PIN manquant"}
                   </span>
                   {poste.pin && poste.pin.length === 4 && !poste._pinSaved && (
                     <button
@@ -225,7 +231,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
                 </div>
                 {postes.filter(p=>p.actif).map(p=>(
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 10px",background:"#fff",borderRadius:8}}>
-                    <span style={{fontWeight:600,color:"#475569"}}>🖥️ {p.nom} · PIN {p.pin?"•".repeat(p.pin.length):"—"}</span>
+                    <span style={{fontWeight:600,color:"#475569"}}>🖥️ {p.nom} · PIN {p.pin?"•".repeat(p.pin.length):p.pin_hash?"••••":"—"}</span>
                     <span style={{color:"#0369a1",fontWeight:600}}>Ordonnances + Impression</span>
                   </div>
                 ))}
