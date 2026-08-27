@@ -6,6 +6,10 @@ import { Btn, Input } from "../components/ui.jsx";
 
 console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
 
+// Pro Santé Connect masqué le temps que la convention ANS soit finalisée
+// (27/08/2026) — remettre à true pour réafficher le bloc titulaire/PSC.
+const PSC_LOGIN_ENABLED = false;
+
 function BoutonProSanteConnect({ onClick, loading }) {
   return (
     <button onClick={onClick} disabled={loading} style={{
@@ -335,30 +339,34 @@ function LoginTabContent({ onLogin, onNeedsSubscription }) {
 
   return (
     <>
-      {/* Titulaire */}
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Titulaire / Pharmacien responsable</div>
-        {isDemoMode ? (
-          <>
-            <BoutonProSanteConnect onClick={handlePSCLogin} loading={pscLoading}/>
-          </>
-        ) : (
-          <div style={{padding:"12px 16px",borderRadius:12,background:"#f8fafc",border:"1.5px solid #e2e8f0",display:"flex",alignItems:"center",gap:12,opacity:0.7}}>
-            <div style={{width:40,height:40,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏥</div>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:"#475569"}}>Pro Santé Connect</div>
-              <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Convention ANS en cours — prochainement</div>
-            </div>
-            <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"#fef9c3",color:"#92400e",padding:"3px 8px",borderRadius:20,flexShrink:0,whiteSpace:"nowrap"}}>BIENTÔT</span>
+      {PSC_LOGIN_ENABLED && (
+        <>
+          {/* Titulaire */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Titulaire / Pharmacien responsable</div>
+            {isDemoMode ? (
+              <>
+                <BoutonProSanteConnect onClick={handlePSCLogin} loading={pscLoading}/>
+              </>
+            ) : (
+              <div style={{padding:"12px 16px",borderRadius:12,background:"#f8fafc",border:"1.5px solid #e2e8f0",display:"flex",alignItems:"center",gap:12,opacity:0.7}}>
+                <div style={{width:40,height:40,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏥</div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#475569"}}>Pro Santé Connect</div>
+                  <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Convention ANS en cours — prochainement</div>
+                </div>
+                <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"#fef9c3",color:"#92400e",padding:"3px 8px",borderRadius:20,flexShrink:0,whiteSpace:"nowrap"}}>BIENTÔT</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      {/* Séparateur */}
-      <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}>
-        <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
-        <span style={{fontSize:11,color:"#bbb",fontWeight:600}}>OU</span>
-        <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
-      </div>
+          {/* Séparateur */}
+          <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}>
+            <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
+            <span style={{fontSize:11,color:"#bbb",fontWeight:600}}>OU</span>
+            <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
+          </div>
+        </>
+      )}
       {/* Vendeur */}
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Vendeur / Préparateur</div>
