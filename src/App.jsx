@@ -384,6 +384,7 @@ function AppInner() {
           onBack={()=>setRoute("landing")}
           onLogout={()=>setRoute("landing")}
           onGoToPricing={()=>setRoute("pricing")}
+          onNeedsSubscription={(pharmacieId)=>{ setResumeSubscription({pharmacieId}); setRoute("finish-subscription"); }}
           DashboardComponent={PharmacieDashboard}
           PatientComponent={PatientPage}
         />}

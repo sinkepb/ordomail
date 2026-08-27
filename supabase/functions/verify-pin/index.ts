@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     // ── 2. Comparer le PIN aux postes actifs de la pharmacie (hash bcrypt) ──────
     const { data: postes, error: fetchErr } = await sb
       .from("pharmacie_postes")
-      .select("id, nom, pin_hash, actif, pharmacie_id, pharmacies(id,nom,couleur,plan)")
+      .select("id, nom, pin_hash, actif, pharmacie_id, pharmacies(id,nom,couleur,plan,stripe_subscription_id)")
       .eq("pharmacie_id", pharmacieId)
       .eq("actif", true);
 
@@ -89,6 +89,17 @@ Deno.serve(async (req) => {
     }
 
     const pharmacie = matched.pharmacies;
+
+    // Compte confirmé mais jamais passé par un paiement Stripe abouti (checkout
+    // abandonné/expiré) : un vendeur n'a pas la main pour payer (voir le titulaire
+    // via authSignInEmail, redirigé lui vers l'écran de reprise d'abonnement),
+    // donc on bloque simplement la connexion plutôt que de l'exposer à un écran
+    // de facturation qui n'est pas le sien.
+    if (!pharmacie.stripe_subscription_id) {
+      return new Response(JSON.stringify({ error: "Abonnement de la pharmacie non finalisé — contactez le titulaire" }),
+        { status: 403, headers: CORS });
+    }
+
     const token = await signToken(
       { sub: matched.id, pharmacie_id: pharmacieId, poste_nom: matched.nom, role: "vendeur" },
       jwtSecret,

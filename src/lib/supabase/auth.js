@@ -55,7 +55,12 @@ export async function authSignInEmail(email, password) {
     // Créer manuellement la ligne pharmacie_users dans Supabase Dashboard
     return { error: new Error('Compte non configuré — aucune pharmacie liée à cet email. Contactez le support OrdoMail.') };
   }
-  return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id };
+  // needsSubscription : compte confirmé mais jamais passé par un paiement Stripe
+  // abouti (checkout abandonné/expiré). Avant ce champ, seul le refresh de page
+  // (effet de restauration de session, App.jsx) bloquait ces comptes — une
+  // connexion "fraîche" via ce formulaire laissait passer tout droit vers le
+  // dashboard, sans jamais avoir payé.
+  return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id, needsSubscription: !pharmacie.stripe_subscription_id };
 }
 
 export async function authSignInPIN(pin, pharmacieId) {

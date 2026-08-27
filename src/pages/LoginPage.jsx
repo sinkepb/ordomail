@@ -25,7 +25,7 @@ function BoutonProSanteConnect({ onClick, loading }) {
   );
 }
 
-function LoginTabContent({ onLogin }) {
+function LoginTabContent({ onLogin, onNeedsSubscription }) {
   const [pscLoading, setPscLoading] = useState(false);
   const [mode, setMode] = useState("choice"); // choice | email | pin | pin-code
   const [pin, setPin] = useState("");
@@ -61,6 +61,14 @@ function LoginTabContent({ onLogin }) {
     // (voir CompteSection.jsx) — rien à vérifier.
     if (isDemoMode) {
       onLogin({role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:result.userRole||"admin", userId:result.userId});
+      return;
+    }
+    // Compte confirmé mais jamais passé par un paiement Stripe abouti (checkout
+    // abandonné/expiré) : avant ce contrôle, seul un refresh de page (effet de
+    // restauration de session, App.jsx) bloquait ces comptes — une connexion
+    // "fraîche" via ce formulaire laissait passer tout droit vers le dashboard.
+    if (result.needsSubscription) {
+      onNeedsSubscription?.(result.pharmacie.id);
       return;
     }
     const sb = getSupabaseClient();
@@ -141,7 +149,11 @@ function LoginTabContent({ onLogin }) {
       setPinLoading(true);
       const result = await authSignInPIN(newPin, pharmacieInfo?.id);
       if (result.error) {
-        setPinError("PIN incorrect ou poste inactif"); setPin(""); setPinLoading(false);
+        // verify-pin renvoie un message précis (ex. abonnement non finalisé) pour
+        // le cas distinct d'un PIN correct sur une pharmacie non payante — ne pas
+        // l'écraser par le message générique, sous peine de laisser croire à un
+        // mauvais PIN alors qu'il est juste bloqué en amont.
+        setPinError(result.error.message || "PIN incorrect ou poste inactif"); setPin(""); setPinLoading(false);
       } else {
         onLogin({ role:"pharmacie", pharmacieId:result.pharmacie.id, userRole:"vendeur",
           userId:result.userId, posteNom:result.posteNom,
@@ -460,7 +472,7 @@ function LoginTabContent({ onLogin }) {
   );
 }
 
-function LoginPage({ onLogin, onBack, onGoToPricing }) {
+function LoginPage({ onLogin, onBack, onGoToPricing, onNeedsSubscription }) {
   const [tab, setTab] = useState("login"); // login | register
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a3a6e 0%,#15623a 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -479,7 +491,7 @@ function LoginPage({ onLogin, onBack, onGoToPricing }) {
               <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"8px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#fff":"transparent",color:tab===k?"#1a1a1a":"#94a3b8",boxShadow:tab===k?"0 1px 4px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>{l}</button>
             ))}
           </div>
-          {tab==="login" && <LoginTabContent onLogin={onLogin}/>}
+          {tab==="login" && <LoginTabContent onLogin={onLogin} onNeedsSubscription={onNeedsSubscription}/>}
           {tab==="register" && (
             <RegisterRedirect onLogin={onLogin} onGoToPricing={onGoToPricing} />
           )}
@@ -493,7 +505,7 @@ function LoginPage({ onLogin, onBack, onGoToPricing }) {
   );
 }
 
-function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, PatientComponent }) {
+function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, DashboardComponent, PatientComponent }) {
   // Récupérer la session restaurée depuis le refresh
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
@@ -534,7 +546,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing, DashboardComponent, Patient
   return <LoginPage onLogin={s=>{
     addAuditLog({ userId:s.userId, userRole:s.userRole, pharmacieId:s.pharmacieId, action:"login", posteNom:s.posteNom }).catch(()=>{});
     setSession(s);
-  }} onBack={onBack} onGoToPricing={onGoToPricing}/>;
+  }} onBack={onBack} onGoToPricing={onGoToPricing} onNeedsSubscription={onNeedsSubscription}/>;
 }
 
 function ResetPasswordPage({ onDone }) {
