@@ -4,15 +4,22 @@
 // officielle française, publique, gratuite, sans clé — déjà utilisée pour
 // l'autocomplétion d'adresse à l'inscription, voir BillingModule.jsx).
 //
-// Silhouette de la France : tracé simplifié (une trentaine de points, pas un
-// contour côtier précis) — suffisant pour situer visuellement la répartition
-// des clients par région, pas une carte topographique. Projection calibrée
-// sur 4 villes repères (Brest/Strasbourg pour la longitude, Dunkerque/
-// Perpignan pour la latitude) plutôt qu'une vraie projection cartographique —
-// à cette échelle (un pays), l'écart est invisible à l'œil.
+// Silhouette de la France : tracé dérivé de vraies coordonnées (FRANCE_BOUNDARY
+// ci-dessous), pas de points SVG choisis à l'œil comme avant le 27/08/2026 —
+// un tracé "à la main" ne ressemblait à rien de reconnaissable (signalé comme
+// s'affichant mal) et surtout n'avait aucune garantie de cohérence avec la
+// projection utilisée pour placer les marqueurs : un client réel pouvait se
+// retrouver hors silhouette. Ici les deux passent par la même project(), donc
+// un marqueur tombe toujours au bon endroit relatif au contour. Simplifié à
+// une vingtaine de points-repères (villes/frontières), pas un contour
+// côtier précis — suffisant pour situer visuellement la répartition des
+// clients par région, pas une carte topographique. France métropolitaine
+// uniquement (pas la Corse). Projection calibrée sur 4 villes repères
+// (Brest/Strasbourg pour la longitude, Dunkerque/Perpignan pour la
+// latitude) plutôt qu'une vraie projection cartographique — à cette échelle
+// (un pays), l'écart est invisible à l'œil.
 import { useState, useEffect } from "react";
 
-const FRANCE_PATH = "M175,20 L230,15 L300,55 L330,90 L365,115 L345,150 L365,190 L400,240 L430,290 L400,330 L350,345 L300,355 L240,385 L170,410 L100,395 L85,340 L100,280 L95,230 L105,195 L75,185 L30,170 L55,140 L90,120 L75,95 L100,70 L130,90 L155,75 L175,55 Z";
 const VIEW_W = 460, VIEW_H = 430;
 
 function project(lat, lon) {
@@ -21,8 +28,38 @@ function project(lat, lon) {
   return [x, y];
 }
 
-const PLAN_COLORS = { starter: "#0369a1", standard: "#1a3a6e", pro: "#4c1d95" };
-const PLAN_LABELS = { starter: "Starter", standard: "Standard", pro: "Pro" };
+const FRANCE_BOUNDARY = [
+  [51.03, 2.38],    // Dunkerque
+  [49.95, 4.90],    // frontière belge
+  [49.55, 5.80],    // frontière luxembourgeoise
+  [49.10, 7.05],    // Sarreguemines
+  [48.58, 7.75],    // Strasbourg
+  [47.60, 7.60],    // Bâle (frontière suisse)
+  [46.20, 6.15],    // Genève (frontière suisse)
+  [45.90, 6.90],    // Chamonix (frontière italienne, nord)
+  [43.70, 7.40],    // Nice / Menton (frontière italienne, sud)
+  [43.30, 5.40],    // Marseille
+  [43.60, 3.90],    // Montpellier (golfe du Lion)
+  [42.50, 2.90],    // Perpignan (frontière espagnole, Méditerranée)
+  [42.55, 1.50],    // Andorre
+  [43.00, -1.40],   // Pyrénées atlantiques (frontière espagnole)
+  [43.48, -1.56],   // Biarritz
+  [44.66, -1.24],   // bassin d'Arcachon
+  [46.16, -1.20],   // La Rochelle
+  [47.28, -2.20],   // Saint-Nazaire
+  [48.39, -4.49],   // Brest (pointe de la Bretagne)
+  [48.65, -2.00],   // Saint-Malo
+  [49.65, -1.62],   // Cherbourg (pointe du Cotentin)
+  [49.49, 0.10],    // Le Havre
+  [50.95, 1.85],    // Calais
+];
+
+const FRANCE_PATH = FRANCE_BOUNDARY
+  .map(([lat, lon], i) => { const [x, y] = project(lat, lon); return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`; })
+  .join(" ") + " Z";
+
+const PLAN_COLORS = { starter: "#0369a1", standard: "#1a3a6e", pro: "#4c1d95", premium: "#be185d" };
+const PLAN_LABELS = { starter: "Starter", standard: "Standard", pro: "Pro", premium: "Premium" };
 
 function ClientsMap({ clients }) {
   const [coords, setCoords] = useState({}); // id -> {lat, lon} | null (échec de géocodage)
