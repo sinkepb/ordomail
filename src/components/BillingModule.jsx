@@ -24,13 +24,42 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
   const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
   const [checkoutBilling, setCheckoutBilling] = useState(billing||"monthly");
   const [billingTab, setBillingTab] = useState("monthly");
-  const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:""});
+  const [form, setForm] = useState({nom:"",email:"",password:"",pharmacie:"",adresse:"",siret:""});
   const [errors, setErrors] = useState({});
   const [createError, setCreateError] = useState("");
   const [redirecting, setRedirecting] = useState(false);
   const [createdEmail, setCreatedEmail] = useState("");
   const [createdEmailReception, setCreatedEmailReception] = useState("");
   const [createdPlan, setCreatedPlan] = useState("");
+
+  // Autocomplétion "Pharmacie *" (référentiel SIRENE, ~10k pharmacies
+  // françaises actives — voir supabase/functions/search-pharmacies-referentiel)
+  // : un assistant, pas une contrainte — sélectionner une suggestion remplit
+  // nom + adresse + SIRET d'un coup, mais le titulaire garde la main pour
+  // saisir librement si sa pharmacie n'y figure pas.
+  const [pharmaSuggestions, setPharmaSuggestions] = useState([]);
+  const [pharmaFocused, setPharmaFocused] = useState(false);
+  const [pharmaLoading, setPharmaLoading] = useState(false);
+  useEffect(() => {
+    const q = form.pharmacie.trim();
+    if (q.length < 2) { setPharmaSuggestions([]); return; }
+    setPharmaLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const res = await fetch(`${supabaseUrl}/functions/v1/search-pharmacies-referentiel?q=${encodeURIComponent(q)}`, {
+          headers: { apikey: supabaseKey },
+        });
+        const data = await res.json();
+        setPharmaSuggestions(data.data || []);
+      } catch {
+        setPharmaSuggestions([]);
+      }
+      setPharmaLoading(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [form.pharmacie]);
 
   // Autocomplétion d'adresse (API Adresse — data.gouv.fr, base officielle
   // française, publique et gratuite, aucune clé requise) : suggère des
@@ -141,7 +170,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
           {step==="details"&&(
             <>
               <h3 style={{fontWeight:800,fontSize:18,color:"#0f172a",marginBottom:22,marginTop:0}}>Informations</h3>
-              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"],["pharmacie","Pharmacie *","text","Pharmacie de la Paix"]].map(([k,l,t,ph])=>(
+              {[["nom","Votre nom *","text","Dr MARTIN Pierre"],["email","Email *","email","contact@pharmacie.fr"],["password","Mot de passe *","password","8 caractères minimum"]].map(([k,l,t,ph])=>(
                 <div key={k} style={{marginBottom:14}}>
                   <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>{l}</label>
                   <input type={t} placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
@@ -149,6 +178,32 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   {errors[k]&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors[k]}</div>}
                 </div>
               ))}
+              <div style={{marginBottom:14,position:"relative"}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Pharmacie *</label>
+                <input type="text" placeholder="Pharmacie de la Paix" value={form.pharmacie}
+                  onChange={e=>setForm(f=>({...f,pharmacie:e.target.value,siret:""}))}
+                  onFocus={()=>setPharmaFocused(true)}
+                  onBlur={()=>setTimeout(()=>setPharmaFocused(false),150)}
+                  autoComplete="off"
+                  style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors.pharmacie?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                {errors.pharmacie&&<div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors.pharmacie}</div>}
+                {pharmaFocused && (pharmaLoading || pharmaSuggestions.length>0) && (
+                  <div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:2,background:"#fff",border:"1px solid #e2e8f0",borderRadius:9,boxShadow:"0 8px 20px rgba(0,0,0,0.1)",zIndex:20,overflow:"hidden"}}>
+                    {pharmaLoading && pharmaSuggestions.length===0 && (
+                      <div style={{padding:"10px 12px",fontSize:13,color:"#94a3b8"}}>Recherche…</div>
+                    )}
+                    {pharmaSuggestions.map(p=>(
+                      <div key={p.siret}
+                        onMouseDown={()=>{setForm(f=>({...f,pharmacie:p.nom,adresse:p.adresse,siret:p.siret}));setPharmaSuggestions([]);setPharmaFocused(false);}}
+                        style={{padding:"10px 12px",fontSize:13,color:"#1e293b",cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        💊 {p.nom}<br/><span style={{fontSize:11,color:"#94a3b8"}}>{p.commune} ({p.code_postal})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div style={{marginBottom:14,position:"relative"}}>
                 <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Adresse *</label>
                 <input type="text" placeholder="12 rue de la Paix, 75001 Paris" value={form.adresse}
@@ -264,6 +319,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                       nom: form.nom,
                       pharmacie: form.pharmacie,
                       adresse: form.adresse || "",
+                      siret: form.siret || "",
                       email: form.email,
                       plan: checkoutPlan,
                       emailReception,

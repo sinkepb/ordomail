@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { nom, pharmacie: pharmacieNom, adresse, email, userId } = await req.json();
+    const { nom, pharmacie: pharmacieNom, adresse, siret, email, userId } = await req.json();
 
     if (!nom || !email) {
       return new Response(
@@ -64,6 +64,10 @@ Deno.serve(async (req) => {
           // en base pour les comptes déjà créés.
           nom: pharmacieNom || nom,
           adresse: adresse || null,
+          // Renseigné uniquement si choisi via l'autocomplete du référentiel
+          // (BillingModule.jsx) — jamais saisi librement, donc soit un vrai
+          // SIRET à 14 chiffres, soit absent.
+          siret: /^\d{14}$/.test(siret || "") ? siret : null,
           email,
           email_reception: `${emailSlug}@in.ordomail.fr`,
           email_slug:      emailSlug,
