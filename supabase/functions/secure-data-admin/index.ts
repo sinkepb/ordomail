@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
       // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
       const { data: pharmacies, error: phErr } = await sb
         .from("pharmacies")
-        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash)")
+        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
         .order("created_at", { ascending: false });
       if (phErr) throw new Error(phErr.message);
 
@@ -105,9 +105,12 @@ Deno.serve(async (req) => {
         ));
 
         // On ne renvoie jamais pharmacie_postes brut (contient pin_hash) — seulement les agrégats.
-        const { pharmacie_postes, ...phSafe } = ph;
+        // pharmacie_users réduit au nom du titulaire (role admin) — pas le tableau brut.
+        const { pharmacie_postes, pharmacie_users, ...phSafe } = ph;
+        const titulaire = (pharmacie_users || []).find((u: any) => u.role === "admin")?.nom || null;
         return {
           ...phSafe,
+          titulaire,
           postesActifs: postes.filter((p: any) => p.actif).length,
           postesTotal: postes.length,
           ordos_total: total || 0,
@@ -319,9 +322,14 @@ Deno.serve(async (req) => {
         .select("ordonnances_retention_days").eq("id", 1).maybeSingle();
       const days = settings?.ordonnances_retention_days;
 
+      // Échappe les caractères réservés à la syntaxe de filtre PostgREST (`,` `.`
+      // `(` `)`) via son mécanisme de guillemettage documenté — sans ça, un nom
+      // de recherche habilement construit pouvait injecter des clauses de
+      // filtre supplémentaires dans cette requête.
+      const esc = nom.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       let query = sb.from("ordonnances")
         .select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, pharmacies(nom)")
-        .or(`patient_nom.ilike.%${nom}%,from_name.ilike.%${nom}%`);
+        .or(`patient_nom.ilike."%${esc}%",from_name.ilike."%${esc}%"`);
       if (days) query = query.gte("received_at", new Date(Date.now() - days * 86400000).toISOString());
       const { data, error } = await query.order("received_at", { ascending: false }).limit(100);
       if (error) throw new Error(error.message);

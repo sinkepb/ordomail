@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { nom, email, tel, userId } = await req.json();
+    const { nom, pharmacie: pharmacieNom, adresse, email, userId } = await req.json();
 
     if (!nom || !email) {
       return new Response(
@@ -54,7 +54,16 @@ Deno.serve(async (req) => {
       const res = await supabase
         .from("pharmacies")
         .insert({
-          nom,
+          // @conformite 27/08/2026 — `pharmacie` (nom de l'officine, saisi séparément
+          // du nom du titulaire dans BillingModule.jsx) n'était jamais lu ici : cette
+          // colonne recevait silencieusement le nom PERSONNEL du titulaire ("Dr MARTIN
+          // Pierre") au lieu du nom de la pharmacie ("Pharmacie de la Paix"), et
+          // `adresse` n'était jamais enregistrée du tout malgré sa validation
+          // obligatoire côté client — repéré en cherchant à afficher nom du titulaire +
+          // pharmacie + ville dans le backoffice, aucune des deux dernières n'existait
+          // en base pour les comptes déjà créés.
+          nom: pharmacieNom || nom,
+          adresse: adresse || null,
           email,
           email_reception: `${emailSlug}@in.ordomail.fr`,
           email_slug:      emailSlug,
@@ -122,10 +131,14 @@ Deno.serve(async (req) => {
       }
 
       if (verifiedUserId) {
+        // `nom` ici est le nom personnel du titulaire ("Votre nom *" dans
+        // BillingModule.jsx, ex: "Dr MARTIN Pierre") — un seul champ texte côté
+        // formulaire, pas de prénom/nom séparés à découper fiablement.
         await supabase.from("pharmacie_users").insert({
           id:           verifiedUserId,
           pharmacie_id: pharmacie.id,
           role:         "admin",
+          nom,
         });
       }
     }

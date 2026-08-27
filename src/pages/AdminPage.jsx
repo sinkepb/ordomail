@@ -14,6 +14,15 @@ import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
 
+// Extrait la ville d'une adresse au format api-adresse.data.gouv.fr
+// ("12 rue de la Paix, 75001 Paris" → "Paris") — aucune colonne "ville"
+// dédiée, l'adresse complète est le seul champ enregistré à l'inscription.
+function villeFromAdresse(adresse) {
+  if (!adresse) return null;
+  const apres = adresse.split(",").pop()?.trim();
+  return apres ? apres.replace(/^\d{5}\s*/, "") : null;
+}
+
 // ─── Persistance de la session admin (18/08/2026) ─────────────────────────────
 // adminToken était un simple useState, jamais persisté : tout rechargement de
 // page vidait l'état React et repassait par l'écran de connexion — signalé
@@ -253,7 +262,8 @@ function AdminDashboardLive({ adminToken } = {}) {
 
   const filtered = clients.filter(c =>
     c.nom?.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase())
+    c.email?.toLowerCase().includes(search.toLowerCase()) ||
+    c.titulaire?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -355,7 +365,11 @@ function AdminDashboardLive({ adminToken } = {}) {
                             </span>
                           )}
                         </div>
-                        <div style={{fontSize:11,color:"#64748b"}}>{ph.email}</div>
+                        <div style={{fontSize:11,color:"#64748b"}}>
+                          {ph.titulaire && <>👤 {ph.titulaire} · </>}
+                          {ph.email}
+                          {villeFromAdresse(ph.adresse) && <> · 📍 {villeFromAdresse(ph.adresse)}</>}
+                        </div>
                       </div>
                       {/* Métriques rapides */}
                       <div style={{display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
