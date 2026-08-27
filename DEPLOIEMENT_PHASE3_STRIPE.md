@@ -16,15 +16,17 @@ pour retrouver le bon tarif :
 
 | Produit | Tarif | Montant | Récurrence | Lookup key (obligatoire) |
 |---|---|---|---|---|
-| OrdoMail Starter | Mensuel | 19,00 € | / mois | `price_starter_monthly` |
-| OrdoMail Starter | Annuel | 180,00 € | / an | `price_starter_annual` |
-| OrdoMail Standard | Mensuel | 39,00 € | / mois | `price_standard_monthly` |
-| OrdoMail Standard | Annuel | 372,00 € | / an | `price_standard_annual` |
-| OrdoMail Pro | Mensuel | 79,00 € | / mois | `price_pro_monthly` |
-| OrdoMail Pro | Annuel | 756,00 € | / an | `price_pro_annual` |
+| OrdoMail Starter | Mensuel | 29,00 € | / mois | `price_starter_monthly` |
+| OrdoMail Starter | Annuel | 324,00 € | / an | `price_starter_annual` |
+| OrdoMail Standard | Mensuel | 59,00 € | / mois | `price_standard_monthly` |
+| OrdoMail Standard | Annuel | 672,00 € | / an | `price_standard_annual` |
+| OrdoMail Pro | Mensuel | 89,00 € | / mois | `price_pro_monthly` |
+| OrdoMail Pro | Annuel | 984,00 € | / an | `price_pro_annual` |
 
-(Montants annuels = tarif "annuel" affiché dans l'app × 12, déjà réduit de 20 %
-par rapport au mensuel — cohérent avec `src/lib/plans.js`.)
+(Montants annuels = tarif "annuel" affiché dans l'app × 12 — voir la table
+`pricing_plans`, éditable depuis le backoffice (onglet Tarifs). @maj 27/08/2026 :
+ce tableau reflétait des tarifs obsolètes datant de la création initiale de ce
+document — toujours vérifier `pricing_plans` avant de recréer des Price Stripe.)
 
 Si le champ "Clé de référence" n'est pas visible dans l'UI de création rapide,
 utiliser "Ajouter un autre tarif" sur la fiche produit, qui donne accès aux
