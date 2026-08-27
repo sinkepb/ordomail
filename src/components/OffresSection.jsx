@@ -24,7 +24,7 @@ function OffresSection({ pharmacie }) {
   const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"" });
+  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"" });
   const [saving, setSaving]       = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgError, setImgError]   = useState("");
@@ -45,9 +45,10 @@ function OffresSection({ pharmacie }) {
   }
 
   const TYPES = [
-    { id:"promo",    label:"Promotion",   emoji:"🏷️" },
-    { id:"service",  label:"Service",     emoji:"🩺" },
-    { id:"fidelite", label:"Fidélité",    emoji:"🎁" },
+    { id:"promo",       label:"Promotion",   emoji:"🏷️" },
+    { id:"service",     label:"Service",     emoji:"🩺" },
+    { id:"fidelite",    label:"Fidélité",    emoji:"🎁" },
+    { id:"avis_google", label:"Avis Google", emoji:"⭐" },
   ];
 
   // Charger les offres au montage
@@ -70,12 +71,14 @@ function OffresSection({ pharmacie }) {
     setEditingId(offre.id);
     setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
       emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
-      actif:offre.actif, date_fin:offre.date_fin||"", image_url:offre.image_url||"" });
+      actif:offre.actif, date_fin:offre.date_fin||"", image_url:offre.image_url||"",
+      lien_url:offre.lien_url||"" });
     setShowForm(true);
   }
 
   async function saveOffre() {
     if (!form.titre.trim()) return;
+    if (form.type === "avis_google" && !form.lien_url.trim()) return;
     setSaving(true);
     const payload = { ...form, pharmacie_id: pharmacie.id };
     if (editingId) {
@@ -93,7 +96,7 @@ function OffresSection({ pharmacie }) {
         setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
       }
     }
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"" });
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"" });
     setEditingId(null);
     setShowForm(false);
     setSaving(false);
@@ -156,6 +159,18 @@ function OffresSection({ pharmacie }) {
             rows={2}
             style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", resize:"none", marginBottom:10 }}/>
 
+          {/* Lien vers la page d'avis (uniquement pour le type "Avis Google") */}
+          {form.type === "avis_google" && (
+            <div style={{ marginBottom:10 }}>
+              <input value={form.lien_url} onChange={e=>setForm(f=>({...f,lien_url:e.target.value}))}
+                placeholder="Lien vers votre page d'avis Google (ex: https://g.page/r/.../review)"
+                style={{ width:"100%", border:`1.5px solid ${!form.lien_url.trim()?"#fecaca":"#e0e7ff"}`, borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+              <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>
+                Trouvez ce lien via "Demander des avis" dans votre fiche Google Business Profile.
+              </div>
+            </div>
+          )}
+
           {/* Image (optionnelle) */}
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
             {form.image_url ? (
@@ -207,7 +222,7 @@ function OffresSection({ pharmacie }) {
               style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               Annuler
             </button>
-            <button onClick={saveOffre} disabled={!form.titre.trim()||saving}
+            <button onClick={saveOffre} disabled={!form.titre.trim()||saving||(form.type==="avis_google"&&!form.lien_url.trim())}
               style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               {saving ? "Enregistrement…" : editingId ? "✅ Enregistrer" : "✅ Publier l'offre"}
             </button>
@@ -239,8 +254,8 @@ function OffresSection({ pharmacie }) {
             <div style={{ fontWeight:700, fontSize:14, color:offre.actif?"#1a1a1a":"#94a3b8", display:"flex", alignItems:"center", gap:6 }}>
               {offre.titre}
               {offre.badge && <span style={{ fontSize:10, background:"#fef3c7", color:"#92400e", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>{offre.badge}</span>}
-              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
-                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":"Fidélité"}
+              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":offre.type==="avis_google"?"#fef9c3":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":offre.type==="avis_google"?"#92400e":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
+                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":offre.type==="avis_google"?"Avis Google":"Fidélité"}
               </span>
             </div>
             {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
