@@ -6,6 +6,7 @@ import {
   getPendingCheckout, clearPendingCheckout,
 } from "./supabase.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { readStoredAdminToken } from "./lib/adminSession.js";
 import { lazyWithReload as lazy } from "./lib/lazyWithReload.js";
 // Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
 // ne doit pas télécharger le dashboard vendeur, le backoffice admin et Stripe
@@ -169,7 +170,12 @@ function AppInner() {
   const checkoutReturn = urlParams.get("checkout");
   // En mode démo, chercher dans le mock ; en prod, charger depuis Supabase async
   const demoInitialPharmacie = patientParam ? DB.pharmacies.find(p => p.id === patientParam) : null;
-  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : "landing");
+  // @fix 27/08/2026 — un admin qui rafraîchit la page backoffice repartait de
+  // "landing" (aucune restauration de route ici), et pouvait même être
+  // détourné vers "finish-subscription" par l'effet de restauration de
+  // session pharmacie plus bas (qui ne vérifiait pas l'existence d'une
+  // session admin avant de s'exécuter — voir son garde-fou juste en dessous).
+  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : "landing"));
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
@@ -205,7 +211,14 @@ function AppInner() {
     // vers "finish-subscription" si le webhook Stripe (asynchrone) n'avait pas
     // encore eu le temps d'écrire stripe_subscription_id — lui redemandant de
     // payer alors qu'il vient tout juste de le faire.
-    if (isDemoMode || isRecovery || patientParam || qrCodeParam || checkoutReturn) { setSessionLoading(false); return; }
+    //
+    // readStoredAdminToken() exclu (27/08/2026) : l'admin backoffice n'a pas
+    // de session Supabase Auth (jeton JWT séparé, voir lib/adminSession.js) —
+    // mais si le même navigateur a AUSSI une session Supabase Auth active
+    // (ex. un compte pharmacie de test utilisé dans le même onglet), cet
+    // effet s'exécutait quand même et pouvait détourner un admin en train de
+    // rafraîchir le backoffice vers "finish-subscription".
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam || checkoutReturn || readStoredAdminToken()) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {

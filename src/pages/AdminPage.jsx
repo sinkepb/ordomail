@@ -12,6 +12,7 @@ import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
+import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
 
 // ─── Persistance de la session admin (18/08/2026) ─────────────────────────────
 // adminToken était un simple useState, jamais persisté : tout rechargement de
@@ -23,28 +24,11 @@ import { ClientsMap } from "../components/ClientsMap.jsx";
 // son exp ici uniquement pour l'UX (éviter d'afficher des panneaux cassés
 // avec un jeton déjà expiré) ; la vérification qui compte reste côté serveur
 // (resolveCaller/verifyToken dans secure-data-admin).
-const ADMIN_TOKEN_KEY = "ordomail_admin_token";
-
-function base64UrlDecode(str) {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + ((4 - (str.length % 4)) % 4), "=");
-  return atob(padded);
-}
-
-function readStoredAdminToken() {
-  try {
-    const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
-    if (!token) return null;
-    const payload = JSON.parse(base64UrlDecode(token.split(".")[1]));
-    if (payload.exp && Date.now() / 1000 >= payload.exp) {
-      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-      return null;
-    }
-    return token;
-  } catch {
-    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-    return null;
-  }
-}
+//
+// @fix 27/08/2026 — extrait dans lib/adminSession.js (partagé avec App.jsx) :
+// App.jsx n'avait aucun moyen de savoir qu'une session admin était active,
+// donc un refresh de la page backoffice pouvait être détourné vers
+// "finish-subscription" par l'effet de restauration de session pharmacie.
 
 function openInvoicePDF(invoice, pharmacie, plan) {
   const html = generateInvoiceHTML({ invoice, pharmacie, plan });
