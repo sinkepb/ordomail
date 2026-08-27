@@ -9,10 +9,14 @@ function ViewerModal({ att, onClose }) {
   // selon les rendus, en violation des Rules of Hooks (source d'erreurs React "fewer
   // hooks than expected"). Le retour anticipé est déplacé après tous les Hooks.
   const isPdf = att?.type === "pdf";
+  // HEIC (photo iPhone) : aucun navigateur de bureau ne peut le décoder dans
+  // une balise <img> — même traitement que le PDF (nouvel onglet / téléchargement)
+  // plutôt qu'une tentative d'affichage inline qui échoue silencieusement.
+  const isUnpreviewable = isPdf || att?.type === "heic";
 
-  // Pour les PDF : ouvrir dans un nouvel onglet au montage
+  // Pour les PDF/HEIC : ouvrir dans un nouvel onglet au montage
   useEffect(() => {
-    if (!att || !isPdf || !att.dataUrl) return;
+    if (!att || !isUnpreviewable || !att.dataUrl) return;
     const win = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
     // Si le navigateur bloque le popup, on reste dans la modale avec le message
     if (win) { win.focus(); onClose(); }
@@ -21,8 +25,8 @@ function ViewerModal({ att, onClose }) {
 
   if (!att) return null;
 
-  // Pour les images : affichage inline dans la modale
-  if (!isPdf) {
+  // Pour les images (JPEG/PNG) : affichage inline dans la modale
+  if (!isUnpreviewable) {
     return (
       <div
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
@@ -53,7 +57,7 @@ function ViewerModal({ att, onClose }) {
     );
   }
 
-  // PDF — modale avec bouton "Ouvrir" si window.open a été bloqué
+  // PDF / HEIC — modale avec bouton "Ouvrir" si window.open a été bloqué
   return (
     <div
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
@@ -63,10 +67,12 @@ function ViewerModal({ att, onClose }) {
         style={{ background: "#1e293b", borderRadius: 16, padding: 32, maxWidth: 420, width: "100%", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ fontSize: 52, marginBottom: 14 }}>📄</div>
+        <div style={{ fontSize: 52, marginBottom: 14 }}>{isPdf ? "📄" : "📷"}</div>
         <div style={{ fontWeight: 800, fontSize: 18, color: "#fff", marginBottom: 6 }}>{att.name}</div>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>
-          Les PDF s'ouvrent dans un nouvel onglet pour un affichage optimal.
+          {isPdf
+            ? "Les PDF s'ouvrent dans un nouvel onglet pour un affichage optimal."
+            : "Photo au format HEIC (iPhone) — non prévisualisable dans le navigateur. Téléchargez-la pour l'ouvrir avec la visionneuse de votre ordinateur."}
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <a
@@ -75,7 +81,7 @@ function ViewerModal({ att, onClose }) {
             rel="noreferrer"
             style={{ padding: "12px 24px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 700, fontSize: 15, textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}
           >
-            🔗 Ouvrir le PDF
+            {isPdf ? "🔗 Ouvrir le PDF" : "🔗 Ouvrir"}
           </a>
           <a
             href={att.dataUrl}
@@ -167,6 +173,16 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
       // ici puisque le PDF s'imprime depuis son propre onglet séparé.
       const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
       if (pdfWin) { pdfWin.focus(); }
+      setTimeout(() => setStep("confirm"), 800);
+
+    } else if (hasFile && att.type === "heic") {
+      // ── Cas 2bis : photo HEIC (iPhone) — aucun navigateur de bureau ne peut la
+      // décoder dans une <img>, donc pas d'impression inline possible ici (le
+      // Cas 1 laisserait juste une icône brisée à l'impression). Même approche
+      // que le PDF : nouvel onglet, le navigateur télécharge ou l'ouvre selon
+      // son support HEIC — le titulaire imprime alors depuis son visualiseur.
+      const heicWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
+      if (heicWin) { heicWin.focus(); }
       setTimeout(() => setStep("confirm"), 800);
 
     } else {

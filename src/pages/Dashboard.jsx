@@ -357,6 +357,10 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
       if (ordo.extracted?._ocrSuccess) continue;
       const att = ordo.attachments?.[0];
       if (!att?.path && !att?.dataUrl) continue;
+      // HEIC (photo iPhone) : aucun décodeur navigateur, l'OCR échouerait de toute
+      // façon (Tesseract/canvas ne peuvent pas lire ces octets) — inutile de
+      // tenter le téléchargement + décodage pour un échec garanti.
+      if (att.type === "heic") continue;
       try {
         let dataUrl = att.dataUrl;
         if (!dataUrl && att.path) {

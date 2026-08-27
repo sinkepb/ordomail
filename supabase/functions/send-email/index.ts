@@ -92,10 +92,18 @@ serve(async (req) => {
   // ── 4. Uploader les pièces jointes ──────────────────────────────────────────
   for (const att of (p.Attachments || [])) {
     if (!att.Content || !att.ContentType) continue;
-    const isPdf = att.ContentType === "application/pdf";
+    const isPdf  = att.ContentType === "application/pdf";
+    // Photo iPhone envoyée par email : Apple utilise HEIC/HEIF par défaut (sauf
+    // réglage "Le plus compatible" côté patient). Repéré via un signalement
+    // "l'image ne s'affiche pas bien" : ce format est taggé "image" comme un
+    // JPEG classique, mais aucun navigateur de bureau (Chrome/Firefox/Edge) ne
+    // sait le décoder dans une balise <img> — icône brisée côté dashboard.
+    // Taggé distinctement pour que l'UI affiche un état honnête (téléchargement)
+    // plutôt qu'une prévisualisation qui échoue silencieusement.
+    const isHeic = att.ContentType === "image/heic" || att.ContentType === "image/heif";
     if (!att.ContentType.startsWith("image/") && !isPdf) continue;
 
-    const ext  = isPdf ? "pdf" : "jpg";
+    const ext  = isPdf ? "pdf" : isHeic ? "heic" : "jpg";
     const path = `${ph.id}/${ordo.id}/ordonnance.${ext}`;
     const buf  = Uint8Array.from(atob(att.Content), (c: string) => c.charCodeAt(0));
 
@@ -108,7 +116,7 @@ serve(async (req) => {
       .update({
         fichier_url:    path,
         fichier_nom:    att.Name,
-        fichier_type:   isPdf ? "pdf" : "image",
+        fichier_type:   isPdf ? "pdf" : isHeic ? "heic" : "image",
         fichier_taille: `${Math.round(buf.length / 1024)} Ko`,
       })
       .eq("id", ordo.id);
