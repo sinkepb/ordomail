@@ -34,6 +34,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [listErr, setListErr] = useState("");
   const [viewingQr, setViewingQr] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [unassigningId, setUnassigningId] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [stickerDiameter, setStickerDiameter] = useState(350);
   const [stickerBusy, setStickerBusy] = useState(false);
@@ -104,6 +105,19 @@ function QrCodesAdmin({ adminToken } = {}) {
       setAssignErr("Échec : " + e.message);
     }
     setAssigning(false);
+  }
+
+  async function handleUnassign(row) {
+    if (!window.confirm(`Déconnecter ${row.code} de ${row.pharmacies?.nom || "cette pharmacie"} ? Le sticker physique ne fonctionnera plus tant qu'il n'est pas réattribué, mais le code reste utilisable pour un autre client.`)) return;
+    setUnassigningId(row.id); setListErr("");
+    try {
+      await callSecureData("admin_qrcodes_unassign", { id: row.id });
+      if (viewingQr?.id === row.id) setViewingQr(null);
+      loadList();
+    } catch (e) {
+      setListErr("Échec de la déconnexion : " + e.message);
+    }
+    setUnassigningId(null);
   }
 
   async function handleDelete(row) {
@@ -303,6 +317,12 @@ function QrCodesAdmin({ adminToken } = {}) {
                         style={{ background: "none", border: "1px solid #334155", borderRadius: 6, padding: "4px 8px", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginRight: 6 }}>
                         👁️
                       </button>
+                      {r.status === "attribue" && (
+                        <button onClick={() => handleUnassign(r)} disabled={unassigningId === r.id} title="Déconnecter de la pharmacie (remet en stock)"
+                          style={{ background: "none", border: "1px solid #334155", borderRadius: 6, padding: "4px 8px", color: "#93c5fd", cursor: unassigningId === r.id ? "default" : "pointer", fontSize: 12, marginRight: 6, opacity: unassigningId === r.id ? 0.5 : 1 }}>
+                          🔌
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(r)} disabled={deletingId === r.id} title="Supprimer"
                         style={{ background: "none", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 8px", color: "#fca5a5", cursor: deletingId === r.id ? "default" : "pointer", fontSize: 12, opacity: deletingId === r.id ? 0.5 : 1 }}>
                         🗑️

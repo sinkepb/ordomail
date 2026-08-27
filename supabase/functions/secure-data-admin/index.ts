@@ -465,6 +465,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    if (resource === "admin_qrcodes_unassign") {
+      // Déconnecte un code de sa pharmacie sans le supprimer — remet en stock
+      // ("genere") pour ré-attribution ultérieure à un autre client (ex.
+      // pharmacie qui résilie et récupère son sticker physique), contrairement
+      // à admin_qrcodes_delete qui invalide le sticker de façon définitive.
+      const id = params?.id?.toString();
+      if (!id) {
+        return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb
+        .from("qr_codes")
+        .update({ pharmacie_id: null, status: "genere", assigned_at: null })
+        .eq("id", id)
+        .eq("status", "attribue")
+        .select()
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) {
+        return new Response(JSON.stringify({ error: "Code introuvable ou déjà en stock" }),
+          { status: 404, headers: CORS });
+      }
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "admin_qrcodes_delete") {
       const id = params?.id?.toString();
       if (!id) {
