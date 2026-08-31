@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
 import { getSignedUrl } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
-import { pdfFirstPageIfSinglePage } from "../lib/ocr.js";
+import { pdfFirstPageIfSinglePage, pdfAllPagesAsImages } from "../lib/ocr.js";
 import { escapeHtml } from "../lib/utils.js";
+
+// @flag 29/08/2026 — false = comportement livré par défaut (seul un PDF
+// mono-page est converti en image à l'impression, le multi-page garde
+// l'onglet séparé). true = convertit aussi le multi-page (toutes les pages),
+// au prix d'un délai de conversion croissant avec le nombre de pages. Un
+// simple retour à false suffit à annuler ce changement sans toucher au reste
+// du code.
+const PDF_MULTIPAGE_TO_IMAGE = true;
 
 function ViewerModal({ att, onClose }) {
   // Repéré par le linter (phase 2) : le useEffect ci-dessous était placé après un
@@ -123,57 +131,67 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
     const safeMedecin = escapeHtml(medecin);
     const safeDate    = escapeHtml(date);
 
-    // Impression inline (portail #ordomail-print-area) d'une image déjà prête —
-    // factorisé car utilisé par le Cas 1 (JPEG/PNG) et le Cas 2 (PDF mono-page
-    // converti en image, voir plus bas).
-    async function printImageInline(dataUrl) {
-      printArea.innerHTML = `<div style="text-align:center;padding:8px">
-        <img id="ordo-print-img" src="${dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
-      </div>`;
-      const imgEl = document.getElementById("ordo-print-img");
-      await new Promise(resolve => {
+    // Impression inline (portail #ordomail-print-area) d'une ou plusieurs
+    // images déjà prêtes — factorisé car utilisé par le Cas 1 (JPEG/PNG, un
+    // seul élément) et le Cas 2 (PDF converti en image, un ou plusieurs
+    // éléments selon PDF_MULTIPAGE_TO_IMAGE). page-break-after sur chaque
+    // page sauf la dernière : une image = une feuille imprimée.
+    async function printImagesInline(dataUrls) {
+      printArea.innerHTML = dataUrls.map((url, i) => `<div style="text-align:center;padding:8px;${i < dataUrls.length - 1 ? "page-break-after:always;" : ""}">
+        <img class="ordo-print-img" src="${url}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
+      </div>`).join("");
+      const imgEls = Array.from(printArea.querySelectorAll(".ordo-print-img"));
+      await Promise.all(imgEls.map(imgEl => new Promise(resolve => {
         if (imgEl.complete) resolve();
         else { imgEl.onload = resolve; imgEl.onerror = resolve; }
         setTimeout(resolve, 3000); // timeout de sécurité
-      });
+      })));
       window.print();
       setTimeout(() => { printArea.innerHTML = ""; setStep("confirm"); }, 500);
     }
 
     if (hasFile && att.type === "image") {
       // ── Cas 1 : image JPEG/PNG ────────────────────────────────────────────
-      await printImageInline(att.dataUrl);
+      await printImagesInline([att.dataUrl]);
 
     } else if (hasFile && att.type === "pdf") {
       // ── Cas 2 : PDF ───────────────────────────────────────────────────────
-      // @fix 29/08/2026 — un PDF mono-page (cas courant) est converti en image
-      // via pdf.js (déjà chargé pour l'OCR, voir lib/ocr.js) et imprimé inline
-      // comme une image : 2 actions (imprimer, confirmer) au lieu de 3 (imprimer,
-      // imprimer dans l'onglet séparé, confirmer). Un PDF multi-page GARDE le
-      // comportement précédent (onglet séparé) pour ne perdre aucune page — la
-      // conversion ne s'applique qu'au cas mono-page, où elle est sans perte.
-      let singlePageImg = null;
+      // @fix 29/08/2026 — un PDF est converti en image(s) via pdf.js (déjà
+      // chargé pour l'OCR, voir lib/ocr.js) et imprimé inline comme une image :
+      // 2 actions (imprimer, confirmer) au lieu de 3 (imprimer, imprimer dans
+      // l'onglet séparé, confirmer). Par défaut (PDF_MULTIPAGE_TO_IMAGE=false),
+      // seul le mono-page est converti, sans perte ; le multi-page garde
+      // l'onglet séparé (délai de conversion sinon croissant avec le nombre de
+      // pages). Passer le flag à true convertit aussi le multi-page.
+      let base64 = null;
       try {
         const resp = await fetch(att.dataUrl);
         const blob = await resp.blob();
-        const base64 = await new Promise(resolve => {
+        base64 = await new Promise(resolve => {
           const r = new FileReader();
           r.onload = () => resolve(r.result.split(",")[1]);
           r.readAsDataURL(blob);
         });
-        singlePageImg = await pdfFirstPageIfSinglePage(base64);
-      } catch { singlePageImg = null; }
+      } catch { base64 = null; }
 
-      if (singlePageImg) {
-        await printImageInline(singlePageImg);
+      let pageImages = null;
+      if (base64) {
+        pageImages = PDF_MULTIPAGE_TO_IMAGE
+          ? await pdfAllPagesAsImages(base64)
+          : await pdfFirstPageIfSinglePage(base64).then(img => img ? [img] : null);
+      }
+
+      if (pageImages && pageImages.length) {
+        await printImagesInline(pageImages);
       } else {
-        // Multi-page (ou échec de conversion) — comportement précédent :
-        // ouvrir dans un nouvel onglet pour impression native. @fix 27/08/2026 —
-        // remplace document.write() d'une page wrapper avec <embed src="...">
-        // (page blanche fréquente sous Chrome : le lecteur PDF intégré n'accroche
-        // pas toujours sur un <embed> inséré dans une popup about:blank via
-        // document.write) par une navigation directe vers l'URL du fichier — le
-        // navigateur ouvre alors son propre lecteur PDF natif.
+        // Échec de conversion (ou multi-page avec le flag désactivé) —
+        // comportement de repli : ouvrir dans un nouvel onglet pour
+        // impression native. @fix 27/08/2026 — remplace document.write()
+        // d'une page wrapper avec <embed src="..."> (page blanche fréquente
+        // sous Chrome : le lecteur PDF intégré n'accroche pas toujours sur un
+        // <embed> inséré dans une popup about:blank via document.write) par
+        // une navigation directe vers l'URL du fichier — le navigateur ouvre
+        // alors son propre lecteur PDF natif.
         const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
         if (pdfWin) { pdfWin.focus(); }
         setTimeout(() => setStep("confirm"), 800);

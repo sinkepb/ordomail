@@ -118,6 +118,30 @@ async function pdfFirstPageIfSinglePage(base64) {
   } catch { return null; }
 }
 
+// Convertit TOUTES les pages d'un PDF en images — variante multi-page de
+// pdfFirstPageIfSinglePage, utilisée uniquement si PDF_MULTIPAGE_TO_IMAGE
+// est activé (voir PrintModal.jsx). Le temps de conversion grandit avec le
+// nombre de pages (chaque page est rendue individuellement avant que
+// l'impression puisse démarrer) — pdfFirstPageIfSinglePage reste le
+// comportement par défaut pour cette raison.
+async function pdfAllPagesAsImages(base64) {
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+    const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
+    const images = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 2.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      images.push(canvas.toDataURL('image/jpeg', 0.92));
+    }
+    return images;
+  } catch { return null; }
+}
+
 // Parsers regex ordonnances françaises
 const OCR_PARSERS = {
   carteVitale(txt) {
@@ -213,4 +237,4 @@ function prewarmTesseract() { getTesseractWorker().catch(() => {}); }
 
 // ─── UI primitives ────────────────────────────────────────────────────────────
 
-export { getTesseractWorker, preprocessImage, pdfToImage, pdfFirstPageIfSinglePage, extractFromFile, prewarmTesseract };
+export { getTesseractWorker, preprocessImage, pdfToImage, pdfFirstPageIfSinglePage, pdfAllPagesAsImages, extractFromFile, prewarmTesseract };
