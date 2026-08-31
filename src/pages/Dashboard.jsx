@@ -902,7 +902,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
         <div id="ordomail-print-area" style={{display:"none"}}/>,
         document.body
       )}
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes popIn{0%{opacity:0;transform:scale(0.92)}100%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}@media print{body>*{display:none!important}#ordomail-print-area{display:block!important;position:fixed;top:0;left:0;width:100%;background:#fff}}@media(max-width:640px){.hide-mobile{display:none!important}.desktop-nav{display:none!important}.bottom-nav{display:flex!important}}@media(min-width:641px){.desktop-nav{display:flex!important}.bottom-nav{display:none!important}.mobile-padded{padding-bottom:0!important}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes popIn{0%{opacity:0;transform:scale(0.92)}100%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}@media print{body>*{display:none!important}#ordomail-print-area{display:block!important;position:static;width:100%;background:#fff}}@media(max-width:640px){.hide-mobile{display:none!important}.desktop-nav{display:none!important}.bottom-nav{display:flex!important}}@media(min-width:641px){.desktop-nav{display:flex!important}.bottom-nav{display:none!important}.mobile-padded{padding-bottom:0!important}}`}</style>
     </div>
   );
 }
