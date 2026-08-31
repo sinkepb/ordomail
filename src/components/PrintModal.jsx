@@ -106,7 +106,7 @@ function ViewerModal({ att, onClose }) {
   );
 }
 
-function PrintConfirmModal({ ordo, couleur, onConfirm }) {
+function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   const nom    = ordo.extracted?.nom || ordo.fromName;
   const email  = ordo.fromEmail || "";
   const medecin = ordo.extracted?.medecin || "";
@@ -252,7 +252,13 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: 24 }}>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 32, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", animation: "popIn 0.2s ease" }}>
+      <div style={{ position: "relative", background: "#fff", borderRadius: 20, padding: 32, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", animation: "popIn 0.2s ease" }}>
+        {onCancel && (
+          <button onClick={onCancel} title="Fermer sans action"
+            style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, border: "none", background: "#f1f5f9", borderRadius: "50%", color: "#64748b", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>
+            ✕
+          </button>
+        )}
         {step === "ready" ? (
           <div style={{ textAlign: "center", padding: "16px 0" }}>
             <div style={{ fontSize: 56, marginBottom: 16, display: "inline-block", animation: "pulse 0.7s ease infinite" }}>🖨️</div>
