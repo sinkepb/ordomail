@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PLAN_LIMITS } from "../lib/plans.js";
-import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel } from "../lib/utils.js";
+import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
 import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
@@ -800,7 +800,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                               color: ordImprime?"#15803d":"#475569"}}>
                               {ordImprime ? "✓" : "📎"} Ordonnance {idx+1}
                               {ord.attachments?.[0]?.name && (
-                                <span style={{color:"#94a3b8",fontWeight:400}}> — {ord.attachments[0].name}</span>
+                                <span style={{color:"#94a3b8",fontWeight:400}}> — {truncateFilename(ord.attachments[0].name)}</span>
                               )}
                             </span>
                             {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (

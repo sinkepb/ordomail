@@ -2,7 +2,7 @@
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { getSignedUrl } from "../supabase.js";
-import { timeAgo, getOrdoAccent, escapeHtml } from "../lib/utils.js";
+import { timeAgo, getOrdoAccent, escapeHtml, truncateFilename } from "../lib/utils.js";
 
 
 function generateOrdoPDF(ordo) {
@@ -196,7 +196,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
           <div onClick={onView} style={{ marginBottom: 14, background: "#f5f5f5", borderRadius: 8, padding: "10px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
             <div style={{ fontSize: 24 }}>📄</div>
-            <div style={{ fontSize: 11, color: "#888" }}>{ordo.attachments[0].name}</div>
+            <div style={{ fontSize: 11, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
           </div>
         )}
         {/* Photo iPhone (HEIC) : aucun navigateur de bureau ne peut la prévisualiser
@@ -204,7 +204,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "heic" && (
           <div onClick={onView} style={{ marginBottom: 14, background: "#f5f5f5", borderRadius: 8, padding: "10px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
             <div style={{ fontSize: 24 }}>📷</div>
-            <div style={{ fontSize: 11, color: "#888" }}>{ordo.attachments[0].name}</div>
+            <div style={{ fontSize: 11, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
             <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>Photo iPhone (HEIC) — cliquer pour télécharger</div>
           </div>
         )}

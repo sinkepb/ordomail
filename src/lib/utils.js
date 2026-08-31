@@ -13,6 +13,20 @@ export function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+// ─── Troncature des noms de fichier affichés ─────────────────────────────────
+// Un nom de fichier reçu (photo de téléphone, export d'un logiciel médical…)
+// peut dépasser largement la largeur prévue dans une carte/étiquette et
+// décaler la mise en page — tronque au milieu en conservant l'extension
+// (utile pour distinguer .pdf/.jpg au premier coup d'œil).
+export function truncateFilename(name, max = 30) {
+  if (!name || name.length <= max) return name || "";
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && dot > name.length - 8 ? name.slice(dot) : "";
+  const base = ext ? name.slice(0, dot) : name;
+  const keep = Math.max(1, max - ext.length - 1);
+  return base.slice(0, keep) + "…" + ext;
+}
+
 // ─── Masquage des logs (données sensibles) ───────────────────────────────────
 // À utiliser dans tout console.log/error/warn qui référence un email, un
 // identifiant de pharmacie ou un code patient — ces logs finissent dans les

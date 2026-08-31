@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getSignedUrl } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
 import { pdfFirstPageIfSinglePage, pdfAllPagesAsImages } from "../lib/ocr.js";
-import { escapeHtml } from "../lib/utils.js";
+import { escapeHtml, truncateFilename } from "../lib/utils.js";
 
 // @flag 29/08/2026 — false = comportement livré par défaut (seul un PDF
 // mono-page est converti en image à l'impression, le multi-page garde
@@ -49,7 +49,7 @@ function ViewerModal({ att, onClose }) {
           <div style={{ padding: "12px 18px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 18 }}>🖼️</span>
-              <span style={{ fontWeight: 700, color: "#fff", fontSize: 14 }}>{att.name}</span>
+              <span style={{ fontWeight: 700, color: "#fff", fontSize: 14 }}>{truncateFilename(att.name)}</span>
               <span style={{ fontSize: 11, color: "#64748b", background: "#0f172a", padding: "2px 8px", borderRadius: 6 }}>{att.size}</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -77,7 +77,7 @@ function ViewerModal({ att, onClose }) {
         onClick={e => e.stopPropagation()}
       >
         <div style={{ fontSize: 52, marginBottom: 14 }}>{isPdf ? "📄" : "📷"}</div>
-        <div style={{ fontWeight: 800, fontSize: 18, color: "#fff", marginBottom: 6 }}>{att.name}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, color: "#fff", marginBottom: 6 }}>{truncateFilename(att.name)}</div>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>
           {isPdf
             ? "Les PDF s'ouvrent dans un nouvel onglet pour un affichage optimal."
