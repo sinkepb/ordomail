@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getSignedUrl } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
+import { pdfFirstPageIfSinglePage } from "../lib/ocr.js";
 import { escapeHtml } from "../lib/utils.js";
 
 function ViewerModal({ att, onClose }) {
@@ -122,12 +123,13 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
     const safeMedecin = escapeHtml(medecin);
     const safeDate    = escapeHtml(date);
 
-    if (hasFile && att.type === "image") {
-      // ── Cas 1 : image JPEG/PNG — attendre le chargement avant print ──────────
+    // Impression inline (portail #ordomail-print-area) d'une image déjà prête —
+    // factorisé car utilisé par le Cas 1 (JPEG/PNG) et le Cas 2 (PDF mono-page
+    // converti en image, voir plus bas).
+    async function printImageInline(dataUrl) {
       printArea.innerHTML = `<div style="text-align:center;padding:8px">
-        <img id="ordo-print-img" src="${att.dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
+        <img id="ordo-print-img" src="${dataUrl}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
       </div>`;
-      // Attendre que l'image soit chargée avant d'imprimer
       const imgEl = document.getElementById("ordo-print-img");
       await new Promise(resolve => {
         if (imgEl.complete) resolve();
@@ -136,21 +138,46 @@ function PrintConfirmModal({ ordo, couleur, onConfirm }) {
       });
       window.print();
       setTimeout(() => { printArea.innerHTML = ""; setStep("confirm"); }, 500);
+    }
+
+    if (hasFile && att.type === "image") {
+      // ── Cas 1 : image JPEG/PNG ────────────────────────────────────────────
+      await printImageInline(att.dataUrl);
 
     } else if (hasFile && att.type === "pdf") {
-      // ── Cas 2 : PDF — ouvrir dans un nouvel onglet pour impression native ────
-      // @fix 27/08/2026 — remplace document.write() d'une page wrapper avec
-      // <embed src="..."> (page blanche fréquente sous Chrome : le lecteur PDF
-      // intégré n'accroche pas toujours sur un <embed> inséré dans une popup
-      // about:blank via document.write) par une navigation directe vers l'URL
-      // du fichier, comme le Cas 3 juste en dessous (qui n'a jamais eu ce
-      // problème) — le navigateur ouvre alors son propre lecteur PDF natif.
-      // printArea (portail #ordomail-print-area, voir Dashboard.jsx) n'est
-      // utile que pour ce que window.print() imprime sur CET onglet — inutile
-      // ici puisque le PDF s'imprime depuis son propre onglet séparé.
-      const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
-      if (pdfWin) { pdfWin.focus(); }
-      setTimeout(() => setStep("confirm"), 800);
+      // ── Cas 2 : PDF ───────────────────────────────────────────────────────
+      // @fix 29/08/2026 — un PDF mono-page (cas courant) est converti en image
+      // via pdf.js (déjà chargé pour l'OCR, voir lib/ocr.js) et imprimé inline
+      // comme une image : 2 actions (imprimer, confirmer) au lieu de 3 (imprimer,
+      // imprimer dans l'onglet séparé, confirmer). Un PDF multi-page GARDE le
+      // comportement précédent (onglet séparé) pour ne perdre aucune page — la
+      // conversion ne s'applique qu'au cas mono-page, où elle est sans perte.
+      let singlePageImg = null;
+      try {
+        const resp = await fetch(att.dataUrl);
+        const blob = await resp.blob();
+        const base64 = await new Promise(resolve => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result.split(",")[1]);
+          r.readAsDataURL(blob);
+        });
+        singlePageImg = await pdfFirstPageIfSinglePage(base64);
+      } catch { singlePageImg = null; }
+
+      if (singlePageImg) {
+        await printImageInline(singlePageImg);
+      } else {
+        // Multi-page (ou échec de conversion) — comportement précédent :
+        // ouvrir dans un nouvel onglet pour impression native. @fix 27/08/2026 —
+        // remplace document.write() d'une page wrapper avec <embed src="...">
+        // (page blanche fréquente sous Chrome : le lecteur PDF intégré n'accroche
+        // pas toujours sur un <embed> inséré dans une popup about:blank via
+        // document.write) par une navigation directe vers l'URL du fichier — le
+        // navigateur ouvre alors son propre lecteur PDF natif.
+        const pdfWin = window.open(att.dataUrl, "_blank", "noopener,noreferrer");
+        if (pdfWin) { pdfWin.focus(); }
+        setTimeout(() => setStep("confirm"), 800);
+      }
 
     } else if (hasFile && att.type === "heic") {
       // ── Cas 2bis : photo HEIC (iPhone) — aucun navigateur de bureau ne peut la

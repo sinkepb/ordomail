@@ -98,6 +98,26 @@ async function pdfToImage(base64) {
   } catch { return null; }
 }
 
+// Conversion PDF → image UNIQUEMENT si mono-page — sert à l'impression
+// (PrintModal.jsx) : imprimer une ordonnance PDF ouvrait un onglet séparé
+// (3 actions : imprimer, imprimer dans l'onglet, confirmer) contre 2 pour une
+// image (imprimer, confirmer). Un PDF multi-page garde l'onglet séparé — pas
+// de perte de pages, la conversion ne concerne que le cas mono-page.
+async function pdfFirstPageIfSinglePage(base64) {
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+    const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
+    if (pdf.numPages !== 1) return null;
+    const page = await pdf.getPage(1);
+    const vp = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } catch { return null; }
+}
+
 // Parsers regex ordonnances françaises
 const OCR_PARSERS = {
   carteVitale(txt) {
@@ -193,4 +213,4 @@ function prewarmTesseract() { getTesseractWorker().catch(() => {}); }
 
 // ─── UI primitives ────────────────────────────────────────────────────────────
 
-export { getTesseractWorker, preprocessImage, pdfToImage, extractFromFile, prewarmTesseract };
+export { getTesseractWorker, preprocessImage, pdfToImage, pdfFirstPageIfSinglePage, extractFromFile, prewarmTesseract };
