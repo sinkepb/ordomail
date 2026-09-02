@@ -156,10 +156,11 @@ Deno.serve(async (req) => {
     console.log("[register-pharmacie] Pharmacie créée:", maskId(pharmacie.id), nom);
 
     return new Response(JSON.stringify({
-      success:      true,
-      pharmacie_id: pharmacie.id,
-      code_vendeur: codeVendeur,
-      email_slug:   emailSlug,
+      success:       true,
+      pharmacie_id:  pharmacie.id,
+      code_vendeur:  codeVendeur,
+      email_slug:    emailSlug,
+      trial_ends_at: pharmacie.trial_ends_at,
     }), { headers: CORS });
 
   } catch (e) {

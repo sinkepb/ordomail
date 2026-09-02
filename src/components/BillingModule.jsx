@@ -31,6 +31,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
   const [createdEmail, setCreatedEmail] = useState("");
   const [createdEmailReception, setCreatedEmailReception] = useState("");
   const [createdPlan, setCreatedPlan] = useState("");
+  const [createdTrialEndsAt, setCreatedTrialEndsAt] = useState("");
 
   // Autocomplétion "Pharmacie *" (référentiel SIRENE, ~10k pharmacies
   // françaises actives — voir supabase/functions/search-pharmacies-referentiel)
@@ -137,30 +138,39 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
     </div>
   );
 
-  if (view==="success") return (
+  if (view==="success") {
+    // @fix 29/08/2026 — cette vue n'est atteinte QUE via le retour réel de
+    // Stripe Checkout (?checkout=success, ligne ~94) : une navigation pleine
+    // page (window.location.href vers Stripe puis retour), qui recharge
+    // entièrement l'app et perd tout état React posé juste avant de partir
+    // (createdEmail/createdTrialEndsAt inclus) — d'où le repli sur "30 jours à
+    // partir de maintenant" plutôt que la valeur exacte de trial_ends_at,
+    // fiable uniquement côté "awaiting-confirmation" (pas de navigation avant
+    // affichage). Par ailleurs, atteindre cette vue exige une session active
+    // (create-checkout-session la requiert) — donc l'email est nécessairement
+    // déjà confirmé à ce stade : l'ancien message "cliquez le lien pour
+    // activer votre compte" y était toujours faux, signalé par l'utilisateur.
+    const trialDate = new Date(createdTrialEndsAt || (Date.now() + 30*86400000))
+      .toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+    return (
     <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a3a6e,#15623a)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
         <div style={{fontSize:64,marginBottom:16}}>🎉</div>
         <h2 style={{fontWeight:900,fontSize:24,color:"#0f172a",marginBottom:8}}>Compte créé !</h2>
         <p style={{color:"#64748b",fontSize:14,marginBottom:16,lineHeight:1.7}}>
-          Essai gratuit 30 jours démarré.<br/>
-          Un email de confirmation a été envoyé à<br/>
-          <strong style={{color:"#1a3a6e"}}>{createdEmail}</strong>
+          Votre compte est actif, essai gratuit démarré.
         </p>
-        {createdEmailReception && (
-          <div style={{background:"#f0f7ff",border:"1px solid #dbeafe",borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",fontSize:13}}>
-            <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:6}}>📋 Vos informations</div>
-            <div style={{color:"#475569",marginBottom:4}}>✉️ Adresse ordonnances :<br/><strong style={{fontFamily:"monospace",fontSize:12}}>{createdEmailReception}</strong></div>
-            <div style={{color:"#475569"}}>💳 Plan : <strong>{createdPlan}</strong> — 30 jours gratuits</div>
-          </div>
-        )}
-        <div style={{background:"#fef9c3",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e",marginBottom:16,textAlign:"left"}}>
-          ⚠️ Cliquez le lien dans l'email pour activer votre compte avant de vous connecter.
+        <div style={{background:"#f0f7ff",border:"1px solid #dbeafe",borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",fontSize:13}}>
+          <div style={{fontWeight:700,color:"#1a3a6e",marginBottom:6}}>📋 Vos informations</div>
+          {createdEmailReception && <div style={{color:"#475569",marginBottom:4}}>✉️ Adresse ordonnances :<br/><strong style={{fontFamily:"monospace",fontSize:12}}>{createdEmailReception}</strong></div>}
+          {createdPlan && <div style={{color:"#475569",marginBottom:4}}>💳 Plan : <strong>{createdPlan}</strong></div>}
+          <div style={{color:"#475569"}}>🗓️ Essai gratuit jusqu'au <strong>{trialDate}</strong> — carte débitée à partir de cette date.</div>
         </div>
         <button onClick={onBack} style={{width:"100%",padding:14,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>Aller à la connexion →</button>
       </div>
     </div>
   );
+  }
 
   if (view==="checkout") return (
     <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -357,6 +367,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                     setCreatedEmail(form.email);
                     setCreatedEmailReception(emailReception);
                     setCreatedPlan(checkoutPlan);
+                    setCreatedTrialEndsAt(regData.trial_ends_at || "");
                     setView("awaiting-confirmation");
                     return;
                   }
@@ -381,6 +392,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   setCreatedEmail(form.email);
                   setCreatedEmailReception(emailReception);
                   setCreatedPlan(checkoutPlan);
+                  setCreatedTrialEndsAt(regData.trial_ends_at || "");
                   window.location.href = ckData.url; // quitte l'app vers Stripe Checkout
                 } catch(err) {
                   setCreateError(err.message || "Erreur lors de la création");
