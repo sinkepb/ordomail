@@ -149,7 +149,10 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
                   if (error) throw error;
                 }
               }
-              await onConfirm(selected.id);
+              // @fix 29/08/2026 (Phase 5) — billingCycle pilotait uniquement
+              // l'affichage des prix dans cette modale, jamais envoyé à
+              // onConfirm : "passer en annuel" n'avait aucun effet réel.
+              await onConfirm(selected.id, billingCycle);
               setStep("done");
             } catch(e) {
               console.error("[PlanSwitcher]", e.message);
@@ -169,7 +172,7 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
       <div style={{marginBottom:18}}>
         <h3 style={{fontWeight:900,fontSize:18,color:"#0f172a",marginBottom:4,marginTop:0}}>Changer de plan</h3>
         <div style={{display:"inline-flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:3}}>
-          {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
+          {[["monthly","Mensuel"],["annual","Annuel (2 mois offerts)"]].map(([k,l])=>(
             <button key={k} onClick={()=>setBillingCycle(k)} style={{padding:"5px 14px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:billingCycle===k?700:500,background:billingCycle===k?"#fff":"transparent",color:billingCycle===k?"#1a1a1a":"#94a3b8"}}>{l}</button>
           ))}
         </div>
@@ -177,7 +180,11 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
       <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
         {PLAN_ORDER.map(planId=>{
           const plan=PLAN_LIMITS[planId]; const isCurrent=pharmacie.plan===planId;
-          const isSelected=selected?.id===planId; const price=billingCycle==="annual"?plan.priceAnnual:plan.price;
+          const isSelected=selected?.id===planId;
+          // @fix 29/08/2026 (Phase 5) — priceAnnual est le TOTAL annuel réel
+          // (voir Phase 1) : le prix affiché ici reste un €/mois comparable,
+          // pas le total brut.
+          const price=billingCycle==="annual"?Math.round(plan.priceAnnual/12):plan.price;
           const isUpgrade=PLAN_ORDER.indexOf(planId)>PLAN_ORDER.indexOf(pharmacie.plan);
           const isDowngrade=PLAN_ORDER.indexOf(planId)<PLAN_ORDER.indexOf(pharmacie.plan);
           const imp=computeImpact(pharmacie,postes||[],planId);
@@ -198,6 +205,7 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
               <div style={{textAlign:"right",flexShrink:0}}>
                 <div style={{fontWeight:900,fontSize:20,color:isCurrent?"#94a3b8":plan.color}}>{price}</div>
                 <div style={{fontSize:11,color:"#94a3b8"}}>€/mois</div>
+                {billingCycle==="annual" && <div style={{fontSize:10,color:"#94a3b8"}}>{plan.priceAnnual} €/an</div>}
               </div>
               <div style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${isSelected?plan.color:"#e2e8f0"}`,background:isSelected?plan.color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 {(isSelected||isCurrent)&&<div style={{width:7,height:7,borderRadius:"50%",background:isSelected?"#fff":plan.color}}/>}

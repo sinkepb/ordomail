@@ -5,7 +5,7 @@ import { PLAN_LIMITS } from "../lib/plans.js";
 import { openInvoicePDF } from "../lib/print.jsx";
 import { Btn, Input } from "./ui.jsx";
 import { PlanSwitcherModal } from "./UpgradeModal.jsx";
-import { isDemoMode, getSupabaseClient, fetchFactures } from "../supabase.js";
+import { isDemoMode, getSupabaseClient, fetchFactures, fetchAbonnement } from "../supabase.js";
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   nom, onNomChange, adresse, onAdresseChange, couleur, onCouleurChange,
@@ -13,6 +13,35 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
   const [pwdLoading,setPwdLoading]=useState(false);
   const [showPlanSwitcher,setShowPlanSwitcher]=useState(false);
+  // Phase 5 tarification (§16) — date de prochaine facture, lue depuis
+  // `abonnements` (alimentée par stripe-webhook, jamais par le frontend).
+  const [abonnement,setAbonnement]=useState(null);
+  const [portalLoading,setPortalLoading]=useState(false);
+  const [portalErr,setPortalErr]=useState("");
+  useEffect(()=>{
+    if (isDemoMode || !pharmacie?.id) return;
+    fetchAbonnement(pharmacie.id).then(setAbonnement).catch(()=>{});
+  },[pharmacie?.id]);
+
+  async function openBillingPortal() {
+    setPortalLoading(true); setPortalErr("");
+    try {
+      const sb = getSupabaseClient();
+      const { data: { session } } = await sb.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-portal-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ pharmacieId: pharmacie.id, appUrl: window.location.origin }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || "Erreur lors de l'ouverture du portail");
+      window.location.href = data.url;
+    } catch(e) {
+      setPortalErr(e.message);
+      setPortalLoading(false);
+    }
+  }
 
   // ─── MFA (double authentification) — 07/08/2026 ──────────────────────────
   // API native Supabase Auth (auth.mfa.*), pas de TOTP maison. Le compte
@@ -249,14 +278,34 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
       {/* Abonnement */}
       <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",border:`2px solid ${plan.color}22`}}>
         <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>💳 Abonnement</div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:`${plan.color}08`,borderRadius:12,padding:"14px 16px",marginBottom:12,flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{width:40,height:40,borderRadius:10,background:plan.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{plan.icon}</div>
-            <div><div style={{fontWeight:900,fontSize:16}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#64748b"}}>{plan.price} €/mois</div></div>
+            <div>
+              <div style={{fontWeight:900,fontSize:16}}>OrdoMail {plan.label}</div>
+              {/* Phase 5 (§16) — prix réellement payé vs officiel : n'affiche
+                  le prix garanti que s'il diffère (promo active pour cette
+                  pharmacie), sinon juste le prix officiel comme avant. */}
+              {pharmacie.prix_garanti != null && pharmacie.prix_garanti !== plan.price ? (
+                <div style={{fontSize:12}}>
+                  <span style={{color:"#94a3b8",textDecoration:"line-through",marginRight:6}}>{plan.price} €/mois</span>
+                  <span style={{color:"#c2410c",fontWeight:700}}>{pharmacie.prix_garanti} €/mois</span>
+                  {pharmacie.garanti_jusqua && <span style={{color:"#64748b"}}> · garanti jusqu'au {new Date(pharmacie.garanti_jusqua).toLocaleDateString("fr-FR")}</span>}
+                </div>
+              ) : (
+                <div style={{fontSize:12,color:"#64748b"}}>{plan.price} €/mois</div>
+              )}
+            </div>
           </div>
-          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"9px 16px",border:"none",borderRadius:9,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer</button>
+          <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"9px 16px",border:"none",borderRadius:9,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer de plan</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {abonnement?.current_period_end && (
+          <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>
+            📅 Prochaine facture le <strong>{new Date(abonnement.current_period_end).toLocaleDateString("fr-FR")}</strong>
+            {abonnement.billing_cycle && ` · facturation ${abonnement.billing_cycle==="annual"?"annuelle":"mensuelle"}`}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
           {[[`🖥️ Postes`,postesActifs,plan.maxPostes===999?null:plan.maxPostes],[`📋 Ordonnances`,ordosTraitees,plan.maxOrdos===99999?null:plan.maxOrdos]].map(([l,u,m])=>(
             <div key={l} style={{background:"#f8fafc",borderRadius:9,padding:"10px 12px"}}>
               <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>{l}</div>
@@ -264,6 +313,14 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
             </div>
           ))}
         </div>
+        {/* Phase 5 (§16) — moyen de paiement + annulation via le Portail
+            client Stripe hébergé, plutôt que reconstruire ces flux sensibles
+            nous-mêmes. */}
+        <button onClick={openBillingPortal} disabled={portalLoading || isDemoMode}
+          style={{width:"100%",padding:"10px",border:"1.5px solid #e2e8f0",borderRadius:9,background:"#fff",color:"#374151",fontWeight:700,fontSize:12,cursor:portalLoading||isDemoMode?"default":"pointer",fontFamily:"inherit",opacity:portalLoading||isDemoMode?0.6:1}}>
+          {portalLoading?"Ouverture…":"🔗 Moyen de paiement, factures, résiliation"}
+        </button>
+        {portalErr && <div style={{marginTop:8,fontSize:12,color:"#dc2626",padding:"6px 10px",background:"#fee2e2",borderRadius:7}}>{portalErr}</div>}
       </div>
       {/* Factures */}
       <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>

@@ -16,7 +16,7 @@ export async function fetchFactures(pharmacieId) {
   return data || [];
 }
 
-export async function changePlan(pharmacieId, newPlan) {
+export async function changePlan(pharmacieId, newPlan, billing = "monthly") {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -32,7 +32,11 @@ export async function changePlan(pharmacieId, newPlan) {
   // jusqu'à ce que le client remarque le mauvais montant. Laisser l'erreur
   // remonter permet à PlanSwitcher (UpgradeModal.jsx) d'afficher son écran
   // d'échec au lieu de faire croire que le changement a réussi.
-  const { data, error } = await sb.functions.invoke('change-plan', { body: { pharmacieId, newPlan } });
+  // @fix 29/08/2026 (Phase 5 tarification) — billing n'était jamais envoyé :
+  // le sélecteur mensuel/annuel du PlanSwitcher (UpgradeModal.jsx) changeait
+  // l'affichage des prix mais n'avait aucun effet réel, change-plan
+  // retombant systématiquement sur son défaut "monthly" côté serveur.
+  const { data, error } = await sb.functions.invoke('change-plan', { body: { pharmacieId, newPlan, billing } });
   if (error) {
     let message = error.message || 'Échec du changement de plan';
     try {

@@ -258,14 +258,14 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
             nom={nom} onNomChange={setNom} adresse={adresse} onAdresseChange={setAdresse}
             couleur={couleur} onCouleurChange={setCouleur}
             titulaireNom={titulaireNom} onTitulaireNomChange={setTitulaireNom}
-            onUpgrade={async (newPlan)=>{
+            onUpgrade={async (newPlan, billing)=>{
             // Ne PAS avaler l'erreur ici : PlanSwitcher (UpgradeModal.jsx) attend que
             // cette promesse rejette pour afficher son écran "Échec du changement de
             // plan" — avant ce correctif, l'erreur était juste loggée en console et
             // PlanSwitcher passait à "done" comme si tout s'était bien passé, alors
             // que changePlan() pouvait avoir échoué (voir aussi billing.js:
             // changePlan() ne retombe plus sur une mise à jour DB seule sans Stripe).
-            await changePlan(pharmacie.id, newPlan);
+            await changePlan(pharmacie.id, newPlan, billing);
             const ph = await onPlanChanged?.();
             if (ph) setPostes(ph.postes || []);
           }}/>
