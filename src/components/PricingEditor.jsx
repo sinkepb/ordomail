@@ -5,10 +5,11 @@
 // 24/07/2026, "Sauvegarder" ne faisait que muter PLAN_LIMITS en mémoire : un rechargement
 // de page perdait tout changement, alors que l'écran affichait "✅ Sauvegardé".
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS } from "../lib/plans.js";
+import { PLAN_LIMITS, KIT_MATERIEL } from "../lib/plans.js";
 
 function PricingEditor({ adminToken } = {}) {
   const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
+  const [kit,setKit]=useState(()=>({...KIT_MATERIEL}));
   const [saved,setSaved]=useState(false);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
@@ -40,6 +41,8 @@ function PricingEditor({ adminToken } = {}) {
         }
         // Si la table est vide (première utilisation), on garde les valeurs par défaut
         // de PLAN_LIMITS déjà chargées dans le state initial — rien à faire.
+        const { data: kitData } = await callSecureData("admin_kit_materiel");
+        if (kitData) setKit({ prix: kitData.prix, offertSiAnnuel: kitData.offert_si_annuel, actif: kitData.actif });
       } catch(e) {
         setErr("Chargement impossible — valeurs par défaut affichées (" + e.message + ")");
       }
@@ -53,12 +56,14 @@ function PricingEditor({ adminToken } = {}) {
     setSaving(true); setErr("");
     try {
       await callSecureData("admin_update_pricing", { plans });
+      await callSecureData("admin_update_kit_materiel", { prix: kit.prix, offertSiAnnuel: kit.offertSiAnnuel, actif: kit.actif });
       // Répercuter immédiatement dans PLAN_LIMITS pour cette session (fusionne,
       // ne remplace pas : préserve les champs propres au frontend et absents de
       // `pricing_plans`, ex. offresStories — voir loadPlanLimits()). Les autres
       // onglets/visiteurs déjà chargés ne verront le changement qu'au prochain
       // chargement de page (main.jsx appelle loadPlanLimits() au démarrage).
       plans.forEach(p=>{ PLAN_LIMITS[p.id]={...PLAN_LIMITS[p.id], ...p}; });
+      Object.assign(KIT_MATERIEL, kit);
       setSaved(true); setTimeout(()=>setSaved(false),3000);
     } catch(e) {
       setErr("Échec de la sauvegarde : " + e.message);
@@ -99,6 +104,25 @@ function PricingEditor({ adminToken } = {}) {
             </div>
           </div>
         ))}
+      </div>
+      <div style={{background:"#1e293b",borderRadius:14,padding:20,border:"1px solid #334155",marginBottom:24}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#fff",marginBottom:4}}>📦 Kit matériel</div>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>3 stickers sol, 3 supports panneau acrylique, 1 présentoir plexiglas 1m — envoyé à l'inscription</div>
+        <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div>
+            <div style={{fontSize:10,color:"#475569",marginBottom:3}}>Prix €</div>
+            <input type="number" value={kit.prix} onChange={e=>{setKit(k=>({...k,prix:Number(e.target.value)}));setSaved(false);}}
+              style={{width:100,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#e2e8f0",cursor:"pointer",paddingBottom:6}}>
+            <input type="checkbox" checked={kit.offertSiAnnuel} onChange={e=>{setKit(k=>({...k,offertSiAnnuel:e.target.checked}));setSaved(false);}}/>
+            Offert si engagement annuel
+          </label>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#e2e8f0",cursor:"pointer",paddingBottom:6}}>
+            <input type="checkbox" checked={kit.actif} onChange={e=>{setKit(k=>({...k,actif:e.target.checked}));setSaved(false);}}/>
+            Actif (proposé à l'inscription)
+          </label>
+        </div>
       </div>
       <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,marginBottom:14}}>APERÇU TEMPS RÉEL</div>

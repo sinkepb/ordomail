@@ -31,7 +31,17 @@ Deno.serve(async (req) => {
       .select("id, label, icon, color, price, price_annual, max_postes, max_ordos")
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
-    return new Response(JSON.stringify({ data }), { headers: CORS });
+
+    // Kit matériel (stickers/présentoir envoyés à l'inscription) — même
+    // logique publique-sans-auth que pricing_plans, un seul aller-retour
+    // pour le front (loadPlanLimits() au démarrage, voir src/lib/plans.js).
+    const { data: kit, error: kitErr } = await sb.from("kit_materiel_settings")
+      .select("prix, offert_si_annuel, actif")
+      .eq("id", "00000000-0000-0000-0000-000000000001")
+      .maybeSingle();
+    if (kitErr) throw new Error(kitErr.message);
+
+    return new Response(JSON.stringify({ data, kit }), { headers: CORS });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
   }

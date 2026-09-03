@@ -1,10 +1,13 @@
 # OrdoMail — Configurer Stripe (phase 3)
 
-Le paiement réel (Stripe Checkout) a besoin de 6 tarifs ("Price") créés dans votre
-compte Stripe. Sans eux, `create-checkout-session` échoue avec une erreur claire
-("Tarif Stripe introuvable") plutôt que d'accepter un faux paiement.
+Le paiement réel (Stripe Checkout) a besoin de 6 tarifs d'abonnement ("Price")
+créés dans votre compte Stripe, plus 1 tarif ponctuel pour le kit matériel
+(§1bis) — sans eux, `create-checkout-session` échoue avec une erreur claire
+("Tarif Stripe introuvable") plutôt que d'accepter un faux paiement (le kit,
+lui, est juste silencieusement omis de la commande s'il manque — accessoire,
+pas bloquant).
 
-## 1. Créer les 6 Price dans Stripe
+## 1. Créer les 6 Price d'abonnement dans Stripe
 
 Aller sur **dashboard.stripe.com** (commencer en **mode Test**, bascule en haut à
 droite) → **Produits** → **+ Ajouter un produit**.
@@ -27,6 +30,15 @@ pour retrouver le bon tarif :
 `pricing_plans`, éditable depuis le backoffice (onglet Tarifs). @maj 27/08/2026 :
 ce tableau reflétait des tarifs obsolètes datant de la création initiale de ce
 document — toujours vérifier `pricing_plans` avant de recréer des Price Stripe.)
+
+## 1bis. Créer le Price du kit matériel (29/08/2026)
+
+Un 7e Price, ponctuel (pas récurrent) : **Produit** "OrdoMail — Kit matériel"
+→ tarif **unique** (pas mensuel/annuel), lookup key `price_kit_materiel`,
+montant = le prix réglé dans le backoffice (onglet Tarifs → Kit matériel,
+149 € par défaut). Facturé immédiatement à la validation du paiement (même
+si l'abonnement est en essai), sauf si l'engagement est annuel ET "offert si
+annuel" est coché dans ce même écran.
 
 Si le champ "Clé de référence" n'est pas visible dans l'UI de création rapide,
 utiliser "Ajouter un autre tarif" sur la fiche produit, qui donne accès aux

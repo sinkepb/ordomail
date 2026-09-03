@@ -88,6 +88,24 @@ serve(async (req) => {
       );
     }
 
+    // 2b. Kit matériel (3 stickers sol, 3 supports panneau acrylique, 1
+    // présentoir plexiglas 1m) — ligne one-time optionnelle ajoutée à la
+    // session, facturée immédiatement à la validation du paiement (même
+    // pendant l'essai gratuit de l'abonnement) : cohérent, le matériel est
+    // expédié dès l'inscription, pas après 30 jours. Offert si engagement
+    // annuel et réglage activé (backoffice, onglet Tarifs). Absence du prix
+    // Stripe (pas encore créé) : on ignore silencieusement plutôt que de
+    // bloquer l'abonnement pour un accessoire.
+    const kitLineItems: { price: string; quantity: number }[] = [];
+    const { data: kitSettings } = await supabase.from("kit_materiel_settings")
+      .select("prix, offert_si_annuel, actif")
+      .eq("id", "00000000-0000-0000-0000-000000000001")
+      .maybeSingle();
+    if (kitSettings?.actif && !(billing === "annual" && kitSettings.offert_si_annuel)) {
+      const kitPrices = await stripe.prices.list({ lookup_keys: ["price_kit_materiel"], active: true, limit: 1 });
+      if (kitPrices.data[0]) kitLineItems.push({ price: kitPrices.data[0].id, quantity: 1 });
+    }
+
     // 3. Créer (ou réutiliser) le Customer Stripe, et le mémoriser tout de suite sur la
     // pharmacie — stripe-webhook en a besoin pour retrouver la pharmacie au retour du
     // paiement (customer.subscription.created cherche par stripe_customer_id).
@@ -114,7 +132,7 @@ serve(async (req) => {
       mode: "subscription",
       customer: customerId,
       client_reference_id: pharmacieId,
-      line_items: [{ price: price.id, quantity: 1 }],
+      line_items: [{ price: price.id, quantity: 1 }, ...kitLineItems],
       subscription_data: { trial_period_days: TRIAL_DAYS, metadata: { pharmacie_id: pharmacieId } },
       success_url: `${base}/?checkout=success`,
       cancel_url: `${base}/?checkout=cancelled`,

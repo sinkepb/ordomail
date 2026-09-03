@@ -158,6 +158,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    if (resource === "admin_kit_materiel") {
+      const { data, error } = await sb.from("kit_materiel_settings")
+        .select("prix, offert_si_annuel, actif")
+        .eq("id", "00000000-0000-0000-0000-000000000001")
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_update_kit_materiel") {
+      const { prix, offertSiAnnuel, actif } = params || {};
+      const { error } = await sb.from("kit_materiel_settings").update({
+        prix: Number(prix) || 0,
+        offert_si_annuel: !!offertSiAnnuel,
+        actif: !!actif,
+        updated_at: new Date().toISOString(),
+      }).eq("id", "00000000-0000-0000-0000-000000000001");
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     if (resource === "admin_stories") {
       const { data, error } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
       if (error) throw new Error(error.message);

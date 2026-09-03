@@ -17,6 +17,13 @@ export const PLAN_LIMITS = {
 // pour lui (price_premium_monthly/annual absents), aucun client dessus.
 export const PLAN_ORDER = ["starter","standard","pro"];
 
+// Kit matériel (3 stickers sol, 3 supports panneau acrylique, 1 présentoir
+// plexiglas 1m) envoyé à l'inscription — prix et "offert si annuel"
+// paramétrables en backoffice (PricingEditor.jsx), rechargés par
+// loadPlanLimits() comme PLAN_LIMITS. Repli par défaut ci-dessous si le
+// chargement échoue.
+export const KIT_MATERIEL = { prix: 149, offertSiAnnuel: true, actif: true };
+
 // @conformite-tarifs 25/08/2026 — les valeurs ci-dessus sont le repli par
 // défaut (démo, ou si le chargement échoue). L'admin édite les tarifs réels
 // dans `pricing_plans` (backoffice, onglet Tarifs) ; jusqu'ici rien d'autre
@@ -39,7 +46,12 @@ export async function loadPlanLimits() {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     if (!supabaseUrl) return; // mode démo — pas de backend à interroger
     const res = await fetch(`${supabaseUrl}/functions/v1/get-pricing`, { method: "POST" });
-    const { data } = await res.json();
+    const { data, kit } = await res.json();
+    if (kit) {
+      KIT_MATERIEL.prix = kit.prix;
+      KIT_MATERIEL.offertSiAnnuel = kit.offert_si_annuel;
+      KIT_MATERIEL.actif = kit.actif;
+    }
     if (!Array.isArray(data)) return;
     data.forEach(p => {
       PLAN_LIMITS[p.id] = {
