@@ -20,12 +20,21 @@ export const PLAN_LIMITS = {
 // pour lui (price_premium_monthly/annual absents), aucun client dessus.
 export const PLAN_ORDER = ["starter","standard","pro"];
 
-// Kit matériel (3 stickers sol, 3 supports panneau acrylique, 1 présentoir
-// plexiglas 1m) envoyé à l'inscription — prix et "offert si annuel"
-// paramétrables en backoffice (PricingEditor.jsx), rechargés par
-// loadPlanLimits() comme PLAN_LIMITS. Repli par défaut ci-dessous si le
-// chargement échoue.
-export const KIT_MATERIEL = { prix: 149, offertSiAnnuel: true, actif: true };
+// @conformite-tarifs 29/08/2026 — Phase 3 : le kit matériel dépend du plan ET
+// de l'intervalle de facturation (§17), remplace l'ancien réglage global
+// unique KIT_MATERIEL. KIT_RULES[planId][billing] = {label, contenu, prix,
+// offert} — paramétrable en backoffice (PricingEditor.jsx), rechargé par
+// loadPlanLimits(). Repli par défaut ci-dessous si le chargement échoue.
+export const KIT_RULES = {
+  starter:  { monthly: { label:"Kit matériel",         prix:49, offert:false }, annual: { label:"Kit matériel",         prix:49, offert:false } },
+  standard: { monthly: { label:"Kit QR Code",           prix:49, offert:false }, annual: { label:"Kit QR Code",           prix:49, offert:true  } },
+  pro:      { monthly: { label:"Kit matériel premium",  prix:99, offert:false }, annual: { label:"Kit matériel premium",  prix:99, offert:true  } },
+};
+
+export function getKitRule(planId, billing) {
+  const b = billing === "annual" ? "annual" : "monthly";
+  return (KIT_RULES[planId] || KIT_RULES.starter)[b];
+}
 
 // @conformite-tarifs 25/08/2026 — les valeurs ci-dessus sont le repli par
 // défaut (démo, ou si le chargement échoue). L'admin édite les tarifs réels
@@ -49,11 +58,12 @@ export async function loadPlanLimits() {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     if (!supabaseUrl) return; // mode démo — pas de backend à interroger
     const res = await fetch(`${supabaseUrl}/functions/v1/get-pricing`, { method: "POST" });
-    const { data, kit } = await res.json();
-    if (kit) {
-      KIT_MATERIEL.prix = kit.prix;
-      KIT_MATERIEL.offertSiAnnuel = kit.offert_si_annuel;
-      KIT_MATERIEL.actif = kit.actif;
+    const { data, kitRules } = await res.json();
+    if (Array.isArray(kitRules)) {
+      kitRules.forEach(r => {
+        if (!KIT_RULES[r.plan_id]) KIT_RULES[r.plan_id] = {};
+        KIT_RULES[r.plan_id][r.billing_interval] = { label: r.label, contenu: r.contenu, prix: r.prix, offert: r.offert };
+      });
     }
     if (!Array.isArray(data)) return;
     data.forEach(p => {

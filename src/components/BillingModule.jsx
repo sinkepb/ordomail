@@ -5,7 +5,7 @@
 // + le paiement Stripe Checkout réel (phase 3), déjà testé de bout en bout le
 // 24/07/2026. Ne pas modifier son comportement lors d'un futur refactor sans retester.
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS, PLAN_ORDER, KIT_MATERIEL } from "../lib/plans.js";
+import { PLAN_LIMITS, PLAN_ORDER, getKitRule } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { getSupabaseClient, setPendingCheckout } from "../supabase.js";
 
@@ -259,19 +259,19 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                 <span style={{fontSize:20}}>🔒</span>
                 <span>Le numéro de carte est saisi sur la page sécurisée de Stripe — il ne transite jamais par nos serveurs.</span>
               </div>
-              {KIT_MATERIEL.actif && (
+              {(() => { const kitRule = getKitRule(checkoutPlan, checkoutBilling); return kitRule && (
                 <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"12px 14px",marginBottom:16,fontSize:13}}>
                   <div style={{display:"flex",justifyContent:"space-between",color:"#475569",marginBottom:4}}>
                     <span>Abonnement {PLAN_LIMITS[checkoutPlan]?.label}</span><span>0 € pendant 30 jours</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",color:"#475569"}}>
-                    <span>📦 Kit matériel (envoyé à l'inscription)</span>
-                    <span style={{fontWeight:700,color: checkoutBilling==="annual"&&KIT_MATERIEL.offertSiAnnuel ? "#15803d" : "#0f172a"}}>
-                      {checkoutBilling==="annual"&&KIT_MATERIEL.offertSiAnnuel ? "Offert" : `${KIT_MATERIEL.prix} € (débité aujourd'hui)`}
+                    <span>📦 {kitRule.label} (envoyé à l'inscription)</span>
+                    <span style={{fontWeight:700,color: kitRule.offert ? "#15803d" : "#0f172a"}}>
+                      {kitRule.offert ? "Offert" : `${kitRule.prix} € (débité aujourd'hui)`}
                     </span>
                   </div>
                 </div>
-              )}
+              ); })()}
               {createError && (
                 <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
               )}
@@ -456,6 +456,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
             // le total réel facturé s'affiche en dessous, non arrondi.
             const pr = billingTab==="annual" ? Math.round(p.priceAnnual/12) : p.price;
             const isPopular=pid==="standard";
+            const kitRule = getKitRule(pid, billingTab);
             return (
               <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
                 {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>⭐ RECOMMANDÉ</div>}
@@ -467,31 +468,16 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                 <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep(resumePharmacieId?"card":"details");setView("checkout");}}
                   style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
                   Commencer gratuitement</button>
-                <div style={{fontSize:12,color:"#475569"}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>
+                <div style={{fontSize:12,color:"#475569",marginBottom:kitRule?8:0}}>{p.maxPostes===999?"Postes illimités":`${p.maxPostes} postes`} · {p.maxOrdos===99999?"Volume illimité":`${p.maxOrdos.toLocaleString("fr-FR")} ordo/mois`}</div>
+                {kitRule && (
+                  <div style={{fontSize:12,color:kitRule.offert?"#15803d":"#94a3b8",fontWeight:kitRule.offert?700:400,display:"flex",alignItems:"center",gap:5}}>
+                    📦 {kitRule.label} {kitRule.offert ? "offert" : `— ${kitRule.prix} €`}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-        {KIT_MATERIEL.actif && (
-          <div style={{maxWidth:640,margin:"0 auto",background:"#fff",borderRadius:16,padding:"22px 24px",border:"2px solid #e2e8f0",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-            <div style={{fontSize:36}}>📦</div>
-            <div style={{flex:1,minWidth:220}}>
-              <div style={{fontWeight:800,fontSize:15,color:"#0f172a",marginBottom:4}}>Kit matériel offert avec votre inscription</div>
-              <div style={{fontSize:13,color:"#64748b",lineHeight:1.6}}>3 stickers sol, 3 supports panneau acrylique, 1 présentoir plexiglas 1m — envoyé directement à votre pharmacie.</div>
-            </div>
-            <div style={{textAlign:"right"}}>
-              {billingTab==="annual" && KIT_MATERIEL.offertSiAnnuel ? (
-                <div style={{fontWeight:900,fontSize:18,color:"#15803d"}}>Offert</div>
-              ) : (
-                <>
-                  <div style={{fontWeight:900,fontSize:18,color:"#0f172a"}}>{KIT_MATERIEL.prix} €</div>
-                  <div style={{fontSize:11,color:"#94a3b8"}}>paiement unique</div>
-                  {KIT_MATERIEL.offertSiAnnuel && <div style={{fontSize:11,color:"#15803d",fontWeight:700,marginTop:2}}>Offert en annuel</div>}
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

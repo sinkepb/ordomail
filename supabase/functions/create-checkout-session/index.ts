@@ -88,22 +88,29 @@ serve(async (req) => {
       );
     }
 
-    // 2b. Kit matériel (3 stickers sol, 3 supports panneau acrylique, 1
-    // présentoir plexiglas 1m) — ligne one-time optionnelle ajoutée à la
-    // session, facturée immédiatement à la validation du paiement (même
-    // pendant l'essai gratuit de l'abonnement) : cohérent, le matériel est
-    // expédié dès l'inscription, pas après 30 jours. Offert si engagement
-    // annuel et réglage activé (backoffice, onglet Tarifs). Absence du prix
-    // Stripe (pas encore créé) : on ignore silencieusement plutôt que de
-    // bloquer l'abonnement pour un accessoire.
-    const kitLineItems: { price: string; quantity: number }[] = [];
-    const { data: kitSettings } = await supabase.from("kit_materiel_settings")
-      .select("prix, offert_si_annuel, actif")
-      .eq("id", "00000000-0000-0000-0000-000000000001")
+    // 2b. Kit matériel — ligne one-time optionnelle ajoutée à la session,
+    // facturée immédiatement à la validation du paiement (même pendant
+    // l'essai gratuit de l'abonnement) : cohérent, le matériel est expédié
+    // dès l'inscription, pas après 30 jours.
+    // @fix 29/08/2026 (Phase 3) — une règle par (plan, intervalle) au lieu
+    // d'un réglage global unique (§17 : Essentiel jamais offert, Fluidité
+    // offert seulement en annuel, Performance a un kit "premium" distinct).
+    // Prix construit dynamiquement (price_data) plutôt qu'un Price Stripe
+    // pré-créé par lookup_key : le montant peut changer à tout moment depuis
+    // le backoffice (Prix Stripe immuables une fois créés — pas de Price à
+    // archiver/recréer à chaque édition). Absence de règle ou "offert" :
+    // silencieusement omis, jamais bloquant pour l'abonnement.
+    const kitLineItems: { price_data: { currency: string; unit_amount: number; product_data: { name: string } }; quantity: number }[] = [];
+    const { data: kitRule } = await supabase.from("kit_materiel_rules")
+      .select("label, prix, offert")
+      .eq("plan_id", plan)
+      .eq("billing_interval", billing === "annual" ? "annual" : "monthly")
       .maybeSingle();
-    if (kitSettings?.actif && !(billing === "annual" && kitSettings.offert_si_annuel)) {
-      const kitPrices = await stripe.prices.list({ lookup_keys: ["price_kit_materiel"], active: true, limit: 1 });
-      if (kitPrices.data[0]) kitLineItems.push({ price: kitPrices.data[0].id, quantity: 1 });
+    if (kitRule && !kitRule.offert && kitRule.prix > 0) {
+      kitLineItems.push({
+        price_data: { currency: "eur", unit_amount: Math.round(kitRule.prix * 100), product_data: { name: kitRule.label || "Kit matériel OrdoMail" } },
+        quantity: 1,
+      });
     }
 
     // 3. Créer (ou réutiliser) le Customer Stripe, et le mémoriser tout de suite sur la

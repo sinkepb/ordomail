@@ -160,23 +160,32 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
-    if (resource === "admin_kit_materiel") {
-      const { data, error } = await sb.from("kit_materiel_settings")
-        .select("prix, offert_si_annuel, actif")
-        .eq("id", "00000000-0000-0000-0000-000000000001")
-        .maybeSingle();
+    // @fix 29/08/2026 (Phase 3 tarification) — remplace l'ancien réglage
+    // unique global (kit_materiel_settings) par une règle par (plan,
+    // intervalle de facturation) — voir kit_materiel_rules, §17 du brief.
+    if (resource === "admin_kit_materiel_rules") {
+      const { data, error } = await sb.from("kit_materiel_rules")
+        .select("plan_id, billing_interval, label, contenu, prix, offert");
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
-    if (resource === "admin_update_kit_materiel") {
-      const { prix, offertSiAnnuel, actif } = params || {};
-      const { error } = await sb.from("kit_materiel_settings").update({
-        prix: Number(prix) || 0,
-        offert_si_annuel: !!offertSiAnnuel,
-        actif: !!actif,
+    if (resource === "admin_update_kit_materiel_rules") {
+      const { rules } = params || {};
+      if (!Array.isArray(rules) || !rules.length) {
+        return new Response(JSON.stringify({ error: "rules requis (tableau)" }),
+          { status: 400, headers: CORS });
+      }
+      const rows = rules.map((r: any) => ({
+        plan_id: r.planId,
+        billing_interval: r.billingInterval,
+        label: r.label || "Kit matériel",
+        contenu: r.contenu || null,
+        prix: Number(r.prix) || 0,
+        offert: !!r.offert,
         updated_at: new Date().toISOString(),
-      }).eq("id", "00000000-0000-0000-0000-000000000001");
+      }));
+      const { error } = await sb.from("kit_materiel_rules").upsert(rows, { onConflict: "plan_id,billing_interval" });
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }

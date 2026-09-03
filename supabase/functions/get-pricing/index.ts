@@ -32,16 +32,16 @@ Deno.serve(async (req) => {
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
 
-    // Kit matériel (stickers/présentoir envoyés à l'inscription) — même
-    // logique publique-sans-auth que pricing_plans, un seul aller-retour
-    // pour le front (loadPlanLimits() au démarrage, voir src/lib/plans.js).
-    const { data: kit, error: kitErr } = await sb.from("kit_materiel_settings")
-      .select("prix, offert_si_annuel, actif")
-      .eq("id", "00000000-0000-0000-0000-000000000001")
-      .maybeSingle();
+    // Kit matériel — une règle par (plan, intervalle de facturation) depuis
+    // la Phase 3 (§17 : Essentiel jamais offert, Fluidité offert seulement en
+    // annuel, Performance a un kit "premium" distinct). Même logique
+    // publique-sans-auth que pricing_plans, un seul aller-retour pour le
+    // front (loadPlanLimits() au démarrage, voir src/lib/plans.js).
+    const { data: kitRules, error: kitErr } = await sb.from("kit_materiel_rules")
+      .select("plan_id, billing_interval, label, contenu, prix, offert");
     if (kitErr) throw new Error(kitErr.message);
 
-    return new Response(JSON.stringify({ data, kit }), { headers: CORS });
+    return new Response(JSON.stringify({ data, kitRules }), { headers: CORS });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
   }

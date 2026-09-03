@@ -5,11 +5,13 @@
 // 24/07/2026, "Sauvegarder" ne faisait que muter PLAN_LIMITS en mémoire : un rechargement
 // de page perdait tout changement, alors que l'écran affichait "✅ Sauvegardé".
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS, KIT_MATERIEL } from "../lib/plans.js";
+import { PLAN_LIMITS, PLAN_ORDER, KIT_RULES } from "../lib/plans.js";
+
+const BILLING_INTERVALS = ["monthly", "annual"];
 
 function PricingEditor({ adminToken } = {}) {
   const [plans,setPlans]=useState(()=>Object.entries(PLAN_LIMITS).map(([id,p])=>({...p,id})));
-  const [kit,setKit]=useState(()=>({...KIT_MATERIEL}));
+  const [kitRules,setKitRules]=useState(()=>PLAN_ORDER.flatMap(planId=>BILLING_INTERVALS.map(billingInterval=>({planId,billingInterval,...KIT_RULES[planId]?.[billingInterval]}))));
   const [saved,setSaved]=useState(false);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
@@ -42,8 +44,10 @@ function PricingEditor({ adminToken } = {}) {
         }
         // Si la table est vide (première utilisation), on garde les valeurs par défaut
         // de PLAN_LIMITS déjà chargées dans le state initial — rien à faire.
-        const { data: kitData } = await callSecureData("admin_kit_materiel");
-        if (kitData) setKit({ prix: kitData.prix, offertSiAnnuel: kitData.offert_si_annuel, actif: kitData.actif });
+        const { data: kitData } = await callSecureData("admin_kit_materiel_rules");
+        if (kitData && kitData.length) {
+          setKitRules(kitData.map(r => ({ planId: r.plan_id, billingInterval: r.billing_interval, label: r.label, contenu: r.contenu, prix: r.prix, offert: r.offert })));
+        }
       } catch(e) {
         setErr("Chargement impossible — valeurs par défaut affichées (" + e.message + ")");
       }
@@ -52,19 +56,27 @@ function PricingEditor({ adminToken } = {}) {
   }, []);
 
   function update(planId,field,value){setPlans(prev=>prev.map(p=>p.id===planId?{...p,[field]:field.includes("price")||field.includes("max")?Number(value):value}:p));setSaved(false);}
+  function updateKit(planId,billingInterval,field,value){
+    setKitRules(prev=>prev.map(r=>r.planId===planId&&r.billingInterval===billingInterval?{...r,[field]:field==="prix"?Number(value):value}:r));
+    setSaved(false);
+  }
 
   async function save(){
     setSaving(true); setErr("");
     try {
       await callSecureData("admin_update_pricing", { plans });
-      await callSecureData("admin_update_kit_materiel", { prix: kit.prix, offertSiAnnuel: kit.offertSiAnnuel, actif: kit.actif });
-      // Répercuter immédiatement dans PLAN_LIMITS pour cette session (fusionne,
-      // ne remplace pas : préserve les champs propres au frontend et absents de
-      // `pricing_plans`, ex. offresStories — voir loadPlanLimits()). Les autres
-      // onglets/visiteurs déjà chargés ne verront le changement qu'au prochain
-      // chargement de page (main.jsx appelle loadPlanLimits() au démarrage).
+      await callSecureData("admin_update_kit_materiel_rules", { rules: kitRules });
+      // Répercuter immédiatement dans PLAN_LIMITS/KIT_RULES pour cette session
+      // (fusionne, ne remplace pas : préserve les champs propres au frontend et
+      // absents de `pricing_plans`, ex. offresStories — voir loadPlanLimits()).
+      // Les autres onglets/visiteurs déjà chargés ne verront le changement
+      // qu'au prochain chargement de page (main.jsx appelle loadPlanLimits()
+      // au démarrage).
       plans.forEach(p=>{ PLAN_LIMITS[p.id]={...PLAN_LIMITS[p.id], ...p}; });
-      Object.assign(KIT_MATERIEL, kit);
+      kitRules.forEach(r=>{
+        if (!KIT_RULES[r.planId]) KIT_RULES[r.planId] = {};
+        KIT_RULES[r.planId][r.billingInterval] = { label: r.label, contenu: r.contenu, prix: r.prix, offert: r.offert };
+      });
       setSaved(true); setTimeout(()=>setSaved(false),3000);
     } catch(e) {
       setErr("Échec de la sauvegarde : " + e.message);
@@ -118,21 +130,33 @@ function PricingEditor({ adminToken } = {}) {
       </div>
       <div style={{background:"#1e293b",borderRadius:14,padding:20,border:"1px solid #334155",marginBottom:24}}>
         <div style={{fontWeight:800,fontSize:15,color:"#fff",marginBottom:4}}>📦 Kit matériel</div>
-        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>3 stickers sol, 3 supports panneau acrylique, 1 présentoir plexiglas 1m — envoyé à l'inscription</div>
-        <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div>
-            <div style={{fontSize:10,color:"#475569",marginBottom:3}}>Prix €</div>
-            <input type="number" value={kit.prix} onChange={e=>{setKit(k=>({...k,prix:Number(e.target.value)}));setSaved(false);}}
-              style={{width:100,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:900,fontSize:16,fontFamily:"monospace",outline:"none"}}/>
-          </div>
-          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#e2e8f0",cursor:"pointer",paddingBottom:6}}>
-            <input type="checkbox" checked={kit.offertSiAnnuel} onChange={e=>{setKit(k=>({...k,offertSiAnnuel:e.target.checked}));setSaved(false);}}/>
-            Offert si engagement annuel
-          </label>
-          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#e2e8f0",cursor:"pointer",paddingBottom:6}}>
-            <input type="checkbox" checked={kit.actif} onChange={e=>{setKit(k=>({...k,actif:e.target.checked}));setSaved(false);}}/>
-            Actif (proposé à l'inscription)
-          </label>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>Une règle par plan et par intervalle de facturation — Essentiel n'est jamais offert, Fluidité/Performance peuvent l'être en engagement annuel.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {plans.map(plan=>(
+            <div key={plan.id} style={{border:"1px solid #334155",borderRadius:10,padding:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span>{plan.icon}</span><span style={{fontWeight:700,fontSize:13,color:"#fff"}}>{plan.label}</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:12}}>
+                {BILLING_INTERVALS.map(billingInterval=>{
+                  const rule = kitRules.find(r=>r.planId===plan.id&&r.billingInterval===billingInterval) || {};
+                  return (
+                    <div key={billingInterval} style={{background:"#0f172a",borderRadius:8,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>{billingInterval==="monthly"?"Mensuel":"Annuel"}</div>
+                      <input value={rule.label||""} onChange={e=>updateKit(plan.id,billingInterval,"label",e.target.value)} placeholder="Libellé (ex: Kit QR Code)"
+                        style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:"#e2e8f0",fontSize:12,marginBottom:6,outline:"none",boxSizing:"border-box"}}/>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <input type="number" value={rule.prix||0} onChange={e=>updateKit(plan.id,billingInterval,"prix",e.target.value)}
+                          style={{width:70,background:"#1e293b",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:"#e2e8f0",fontWeight:900,fontSize:14,fontFamily:"monospace",outline:"none"}}/>
+                        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#94a3b8",cursor:"pointer"}}>
+                          <input type="checkbox" checked={!!rule.offert} onChange={e=>updateKit(plan.id,billingInterval,"offert",e.target.checked)}/>
+                          Offert
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
       <div style={{background:"#1e293b",borderRadius:12,padding:18,border:"1px solid #334155"}}>
