@@ -37,6 +37,7 @@ function PricingEditor({ adminToken } = {}) {
             id: p.id, label: p.label, icon: p.icon, color: p.color,
             price: p.price, priceAnnual: p.price_annual,
             maxPostes: p.max_postes, maxOrdos: p.max_ordos,
+            offresStories: !!p.feature_offres_stories, sonnette: !!p.feature_sonnette,
           })));
         }
         // Si la table est vide (première utilisation), on garde les valeurs par défaut
@@ -97,10 +98,20 @@ function PricingEditor({ adminToken } = {}) {
                   <input type="number" value={plan[field]} onChange={e=>update(plan.id,field,e.target.value)} style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontWeight:700,fontSize:13,fontFamily:"monospace",outline:"none"}}/></div>
               ))}
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
               <input type="color" value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{width:30,height:30,border:"none",cursor:"pointer",borderRadius:5}}/>
               <input value={plan.color} onChange={e=>update(plan.id,"color",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",color:plan.color,fontWeight:700,fontSize:12,fontFamily:"monospace",outline:"none"}}/>
               <div style={{width:26,height:26,borderRadius:7,background:plan.color}}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,paddingTop:10,borderTop:"1px solid #334155"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#e2e8f0",cursor:"pointer"}}>
+                <input type="checkbox" checked={plan.offresStories} onChange={e=>update(plan.id,"offresStories",e.target.checked)}/>
+                Offres & Stories
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#e2e8f0",cursor:"pointer"}}>
+                <input type="checkbox" checked={plan.sonnette} onChange={e=>update(plan.id,"sonnette",e.target.checked)}/>
+                Sonnette patient
+              </label>
             </div>
           </div>
         ))}

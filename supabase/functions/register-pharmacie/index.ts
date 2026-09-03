@@ -73,7 +73,12 @@ Deno.serve(async (req) => {
           email_slug:      emailSlug,
           code_vendeur:    codeVendeur,
           plan:            "starter",
-          sonnette_active: true,
+          // @fix 29/08/2026 (Phase 2 tarification) — la sonnette est une
+          // fonctionnalité Fluidité+ (voir pricing_plans.feature_sonnette) ;
+          // toute inscription démarre sur Essentiel (plan "starter" par
+          // défaut, ligne ci-dessus), qui ne l'inclut pas. change-plan
+          // resynchronise cette valeur à chaque changement de plan.
+          sonnette_active: false,
           couleur:         "#1a3a6e",
         })
         .select()

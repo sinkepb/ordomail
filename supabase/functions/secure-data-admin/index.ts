@@ -150,6 +150,8 @@ Deno.serve(async (req) => {
         price_annual: Number(p.priceAnnual) || 0,
         max_postes: Number(p.maxPostes) || 0,
         max_ordos: Number(p.maxOrdos) || 0,
+        feature_offres_stories: !!p.offresStories,
+        feature_sonnette: !!p.sonnette,
         sort_order: i,
         updated_at: new Date().toISOString(),
       }));

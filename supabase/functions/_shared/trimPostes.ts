@@ -5,13 +5,14 @@
 // postes excédentaires (UpgradeModal.jsx, côté client, contournable), les deux
 // autres chemins laissaient la base dans un état incohérent (25/08/2026).
 //
-// Dupliqué depuis src/lib/plans.js:PLAN_LIMITS (même limitation déjà en place
-// pour AdminPage.jsx — pas d'import cross-runtime possible entre le bundle
-// Vite et les Edge Functions Deno).
-const MAX_POSTES: Record<string, number> = { starter: 2, standard: 5, pro: 15 };
+// @fix 29/08/2026 (Phase 2 tarification) — la limite était codée en dur ici
+// (une troisième copie désynchronisable, en plus de PLAN_LIMITS côté client
+// et du trigger check_poste_limit() côté DB) : lit maintenant pricing_plans
+// via getPlanLimit(), source unique partagée avec le trigger SQL.
+import { getPlanLimit } from "./planFeatures.ts";
 
 export async function trimExcessPostes(sb: any, pharmacieId: string, plan: string): Promise<void> {
-  const limit = MAX_POSTES[plan] ?? 2;
+  const limit = await getPlanLimit(sb, plan, "maxPostes");
   const { data: postes } = await sb
     .from("pharmacie_postes")
     .select("id, created_at")

@@ -9,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
+import { planHasFeature } from "../_shared/planFeatures.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -60,7 +61,12 @@ serve(async (req) => {
       items: [{ id: sub.items.data[0].id, price: price.id }],
       proration_behavior: "create_prorations",
     });
-    await supabase.from("pharmacies").update({ plan: newPlan }).eq("id", pharmacieId);
+    // @fix 29/08/2026 (Phase 2 tarification) — resynchronise sonnette_active
+    // sur l'entitlement du nouveau plan (activée automatiquement en montant
+    // vers Fluidité+, désactivée en redescendant vers Essentiel) — jusqu'ici
+    // ce booléen restait figé à sa valeur de création, indépendant du plan.
+    const sonnetteEnabled = await planHasFeature(supabase, newPlan, "sonnette");
+    await supabase.from("pharmacies").update({ plan: newPlan, sonnette_active: sonnetteEnabled }).eq("id", pharmacieId);
     await trimExcessPostes(supabase, pharmacieId, newPlan);
 
     return new Response(JSON.stringify({ success: true, newPlan }), { headers: CORS });

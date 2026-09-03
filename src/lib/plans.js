@@ -62,6 +62,13 @@ export async function loadPlanLimits() {
         id: p.id, label: p.label, icon: p.icon, color: p.color,
         price: p.price, priceAnnual: p.price_annual,
         maxPostes: p.max_postes, maxOrdos: p.max_ordos,
+        // @fix 29/08/2026 (Phase 2) — jusqu'ici offresStories restait bloqué
+        // sur son repli codé en dur ci-dessus (jamais synchronisé depuis
+        // pricing_plans, contrairement à price/maxPostes) : le backoffice
+        // pouvait "activer" la fonctionnalité pour un plan sans aucun effet
+        // réel. sonnette est un nouveau champ, même mécanisme.
+        offresStories: !!p.feature_offres_stories,
+        sonnette: !!p.feature_sonnette,
       };
       const landing = PLANS.find(l => l.id === p.id);
       if (landing) {
@@ -75,6 +82,19 @@ export async function loadPlanLimits() {
     // Réseau indisponible / fonction pas encore déployée : on garde les
     // valeurs par défaut ci-dessus plutôt que de bloquer le démarrage.
   }
+}
+
+// Couche centrale de gestion des fonctionnalités/limites par plan (Phase 2
+// tarification, §14) — à utiliser partout plutôt que de re-tester
+// `plan === "standard"` en dur. Purement indicatif côté client (UI) : la
+// vérification qui compte reste côté serveur (RLS + edge functions, voir
+// plan_has_feature() SQL et _shared/planFeatures.ts).
+export function hasFeature(plan, feature) {
+  return !!(PLAN_LIMITS[plan] || PLAN_LIMITS.starter)[feature];
+}
+
+export function getLimit(plan, limit) {
+  return (PLAN_LIMITS[plan] || PLAN_LIMITS.starter)[limit];
 }
 
 export function getNextPlan(currentPlan) {

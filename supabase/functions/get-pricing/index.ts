@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const { data, error } = await sb.from("pricing_plans")
-      .select("id, label, icon, color, price, price_annual, max_postes, max_ordos")
+      .select("id, label, icon, color, price, price_annual, max_postes, max_ordos, feature_offres_stories, feature_sonnette")
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
 
