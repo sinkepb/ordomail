@@ -224,33 +224,34 @@ function PricingSection({ onGoToPricing }) {
           <p style={{ fontSize:16, color:C.slate, marginBottom:24 }}>30 jours gratuits · Sans carte bancaire · Résiliable à tout moment</p>
           {/* Toggle billing */}
           <div style={{ display:"inline-flex", background:C.surface, borderRadius:10, padding:3, gap:3 }}>
-            {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
+            {[["monthly","Mensuel"],["annual","Annuel (2 mois offerts)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBilling(k)} style={{ padding:"7px 18px", border:"none", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:billing===k?700:500, background:billing===k?"#fff":"transparent", color:billing===k?C.ink:C.muted, boxShadow:billing===k?"0 1px 4px rgba(0,0,0,0.08)":"none", transition:"all 0.15s" }}>{l}</button>
             ))}
           </div>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap:14, marginBottom:24 }}>
           {PLANS.map(p=>{
-            // 11 mois facturés = 12 mois de service (1 mois offert) — total exact
-            // ci-dessous aligné sur le Price Stripe price_{plan}_annual réel
-            // (price × 11), l'équivalent mensuel affiché est arrondi séparément
-            // pour éviter un écart d'arrondi entre les deux lignes affichées.
-            const annualTotal = p.price * 11;
-            const price = billing==="annual" ? Math.round(annualTotal/12) : p.price;
+            // priceAnnual = total réel facturé une fois par an (10 mois payés
+            // pour 12 mois d'usage, "2 mois offerts" — voir Phase 1 chantier
+            // tarification, aligné sur le Price Stripe price_{plan}_annual réel).
+            // Ne JAMAIS recalculer depuis price×N ici : le repli ci-dessus et
+            // loadPlanLimits() alimentent tous deux priceAnnual directement.
+            const price = billing==="annual" ? Math.round(p.priceAnnual/12) : p.price;
             return (
               <div key={p.id} style={{ borderRadius:16, padding:"24px 22px", border:p.popular?`2px solid ${p.color}`:`2px solid ${C.border}`, background:"#fff", boxShadow:p.popular?`0 8px 32px ${p.color}20`:"none", position:"relative", display:"flex", flexDirection:"column" }}>
-                {p.popular && <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", background:p.color, color:"#fff", fontSize:10, fontWeight:800, padding:"3px 12px", borderRadius:20, letterSpacing:0.5 }}>LE PLUS CHOISI</div>}
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                {p.popular && <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", background:p.color, color:"#fff", fontSize:10, fontWeight:800, padding:"3px 12px", borderRadius:20, letterSpacing:0.5 }}>⭐ RECOMMANDÉ</div>}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
                   <div style={{ width:34,height:34,borderRadius:9,background:p.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18 }}>{p.icon}</div>
                   <span style={{ fontWeight:800, fontSize:17, color:C.ink }}>{p.name}</span>
                 </div>
+                {p.positioning && <p style={{ fontSize:12.5, color:C.slate, lineHeight:1.6, margin:"0 0 14px" }}>{p.positioning}</p>}
                 <div style={{ marginBottom:16 }}>
                   <span style={{ fontSize:38, fontWeight:900, color:p.color }}>{price}</span>
-                  <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> €/mois</span>
+                  <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> € HT/mois</span>
                   {billing==="annual" && (
                     <>
                       <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>
-                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {annualTotal}€ facturés une fois par an (1 mois offert)</div>
+                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {p.priceAnnual}€ HT facturés une fois par an (2 mois offerts)</div>
                     </>
                   )}
                 </div>
@@ -258,9 +259,14 @@ function PricingSection({ onGoToPricing }) {
                   onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                   Commencer l'essai gratuit
                 </button>
+                {p.includesPrev && (
+                  <div style={{ fontSize:12, fontWeight:700, color:C.ink, marginBottom:9, fontStyle:"italic" }}>
+                    Tout ce qui est inclus dans {p.includesPrev}, plus :
+                  </div>
+                )}
                 {p.features.map((f,i)=>(
-                  <div key={i} style={{ display:"flex", gap:8, marginBottom:7, fontSize:13, color:C.slate }}>
-                    <span style={{ color:p.color, fontWeight:700, fontSize:14 }}>✓</span>{f}
+                  <div key={i} style={{ display:"flex", gap:8, marginBottom:9, fontSize:13, color:C.slate, lineHeight:1.5 }}>
+                    <span style={{ color:p.color, fontWeight:700, fontSize:14, flexShrink:0 }}>✓</span>{f}
                   </div>
                 ))}
               </div>

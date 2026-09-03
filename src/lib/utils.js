@@ -155,10 +155,57 @@ export { useFadeIn };
 // prix officiels et libellés (Essentiel/Fluidité/Performance), resynchronisés
 // à l'exécution par loadPlanLimits() (plans.js) — valeurs ci-dessous = repli
 // avant ce premier chargement uniquement.
+// @conformite-tarifs 04/09/2026 — la page d'accueil n'avait jamais reçu le
+// détail complet des offres (positionnement + liste de fonctionnalités
+// exhaustive) défini pendant le chantier tarification : seul BillingModule.jsx
+// (page /tarifs) l'avait. priceAnnual/le badge "RECOMMANDÉ" étaient également
+// restés sur leurs anciennes valeurs ("1 mois offert", "LE PLUS CHOISI") alors
+// que le reste de l'app est passé à "2 mois offerts" en Phase 1. `includesPrev`
+// référence le palier précédent pour le "Tout ce qui est inclus dans X, plus :"
+// — features listées ici = uniquement ce que CE palier ajoute.
 const PLANS = [
-  { id: "starter",  name: "Essentiel",   price: 39, icon: "🌱", color: "#0369a1", features: ["3 postes", "200 ordonnances/mois", "QR Code + Email", "Logs & export CSV"] },
-  { id: "standard", name: "Fluidité",    price: 59, icon: "⭐", color: C.navy,    features: ["10 postes", "Sonnette patient", "Stories & promotions", "Support prioritaire"], popular: true },
-  { id: "pro",      name: "Performance", price: 89, icon: "🏥", color: "#4c1d95", features: ["Postes illimités", "QR Codes multiples", "Statistiques avancées", "Onboarding prioritaire"] },
+  {
+    id: "starter", name: "Essentiel", price: 39, priceAnnual: 390, icon: "🌱", color: "#0369a1",
+    positioning: "Pour les pharmacies souhaitant simplement recevoir et traiter efficacement les ordonnances.",
+    features: [
+      "Réception des ordonnances : QR Code, upload direct par le patient, ou email dédiée",
+      "OCR local dans le navigateur avec extraction automatique des informations",
+      "Impression optimisée : conversion PDF→image, multi-pages, photos HEIC",
+      "Dashboard avec vue liste et statuts de traitement",
+      "Jusqu'à 3 postes vendeurs, avec QR Code personnalisé pour la pharmacie",
+      "Journal d'activité et audit des actions",
+      "Purge automatique selon la politique de rétention, RLS sur les données sensibles",
+      "Support standard",
+    ],
+  },
+  {
+    id: "standard", name: "Fluidité", price: 59, priceAnnual: 590, icon: "⭐", color: C.navy, popular: true,
+    positioning: "Fluidifier le parcours patient, réduire les frictions au comptoir et améliorer l'expérience d'attente.",
+    includesPrev: "Essentiel",
+    features: [
+      "Jusqu'à 10 postes vendeurs",
+      "Sonnette patient : appel + vibration + affichage \"C'est votre tour !\" quand la commande est prête",
+      "Vue carte des ordonnances avec filtrage avancé",
+      "Stories santé et promotions de la pharmacie affichées aux patients",
+      "Module Avis Google — lien direct vers la page d'avis de la pharmacie",
+      "Statistiques de consultation des contenus",
+      "Support prioritaire",
+      "Kit QR Code offert avec engagement annuel",
+    ],
+  },
+  {
+    id: "pro", name: "Performance", price: 89, priceAnnual: 890, icon: "🏥", color: "#4c1d95",
+    positioning: "Pour les pharmacies souhaitant utiliser pleinement OrdoMail comme outil de fluidification et de communication auprès des patients.",
+    includesPrev: "Fluidité",
+    features: [
+      "Postes vendeurs illimités",
+      "Plusieurs QR Codes par pharmacie, dédiés à différentes zones ou usages",
+      "Personnalisation avancée des contenus affichés aux patients",
+      "Statistiques avancées : interactions avec les stories et les promotions",
+      "Accompagnement onboarding et support prioritaires, accès anticipé aux nouvelles fonctionnalités",
+      "Kit matériel premium inclus avec engagement annuel",
+    ],
+  },
 ];
 
 export { PLANS };

@@ -100,6 +100,7 @@ export async function loadPlanLimits() {
         landing.icon = p.icon;
         landing.color = p.color;
         landing.price = p.price;
+        landing.priceAnnual = p.price_annual;
       }
     });
   } catch {
