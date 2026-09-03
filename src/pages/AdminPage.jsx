@@ -7,6 +7,7 @@ import { ContratEditor } from "../components/ContratEditor.jsx";
 import { HistoriqueSparkline } from "../components/HistoriqueSparkline.jsx";
 import { PricingEditor } from "../components/PricingEditor.jsx";
 import { PromotionsAdmin } from "../components/PromotionsAdmin.jsx";
+import { KitCommandesAdmin } from "../components/KitCommandesAdmin.jsx";
 import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
@@ -315,7 +316,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -402,6 +403,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           <PricingEditor adminToken={adminToken}/>
         ) : tab === "promotions" ? (
           <PromotionsAdmin adminToken={adminToken}/>
+        ) : tab === "materiel" ? (
+          <KitCommandesAdmin adminToken={adminToken}/>
         ) : tab === "qrcodes" ? (
           <QrCodesAdmin adminToken={adminToken}/>
         ) : tab === "monitoring" ? (

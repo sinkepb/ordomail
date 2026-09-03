@@ -124,10 +124,40 @@ serve(async (req) => {
         await supabase.from("abonnements").update({ status: "canceled", updated_at: new Date().toISOString() }).eq("stripe_sub_id", sub.id);
       }
     }
-    if (event.type === "invoice.payment_succeeded") {
+    // @fix 29/08/2026 (audit Phase 7, §19) — invoice.payment_succeeded ne
+    // couvre pas tous les cas qu'invoice.paid couvre (facture marquée payée
+    // hors prélèvement automatique, facture à 0 € pendant l'essai…) : les deux
+    // événements sont distincts côté Stripe, pas des synonymes. upsert sur
+    // stripe_invoice_id rend le doublon (les deux se déclenchent ensemble
+    // dans le cas courant) inoffensif.
+    if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
       const inv = obj as Stripe.Invoice;
       const { data:ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id",inv.customer).single();
       if (ph) await supabase.from("factures").upsert({ pharmacie_id:ph.id, stripe_invoice_id:inv.id, montant_ttc:inv.amount_paid, statut:"paid", pdf_url:inv.invoice_pdf, created_at:new Date(inv.created*1000).toISOString() }, { onConflict:"stripe_invoice_id" });
+    }
+    // @fix 29/08/2026 (audit Phase 7, §18-19) — seul événement qui expose les
+    // line items du Checkout : c'est ici, pas sur customer.subscription.*
+    // (qui ne voit que l'abonnement récurrent), qu'on peut détecter un kit
+    // matériel acheté (ligne one-time ajoutée par create-checkout-session) —
+    // jusqu'ici rien ne traçait qu'un kit payé devait être expédié.
+    if (event.type === "checkout.session.completed") {
+      const session = obj as Stripe.Checkout.Session;
+      const pharmacieId = session.client_reference_id;
+      if (session.mode === "subscription" && pharmacieId) {
+        const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
+        const kitItem = lineItems.data.find(li => li.price?.type === "one_time");
+        if (kitItem) {
+          const { data: already } = await supabase.from("kit_commandes").select("id").eq("stripe_checkout_session_id", session.id).maybeSingle();
+          if (!already) {
+            await supabase.from("kit_commandes").insert({
+              pharmacie_id: pharmacieId,
+              label: kitItem.description || "Kit matériel OrdoMail",
+              prix_paye: Math.round((kitItem.amount_total || 0) / 100),
+              stripe_checkout_session_id: session.id,
+            });
+          }
+        }
+      }
     }
     // Échec de prélèvement automatique (carte refusée, fonds insuffisants…) — jusqu'ici
     // aucun événement Stripe lié à un échec de paiement n'était traité : le statut de

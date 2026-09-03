@@ -259,6 +259,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true, data: promo }), { headers: CORS });
     }
 
+    // Phase 7 tarification (§18) — file d'expédition du kit matériel,
+    // alimentée par stripe-webhook (checkout.session.completed) dès qu'un
+    // paiement de kit est confirmé.
+    if (resource === "admin_kit_commandes_list") {
+      const { data, error } = await sb.from("kit_commandes")
+        .select("id, pharmacie_id, label, prix_paye, expedie, expedie_at, created_at, pharmacies(nom, adresse, email)")
+        .order("expedie", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_kit_commandes_marquer_expedie") {
+      const { id, expedie } = params || {};
+      if (!id) return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
+      const { error } = await sb.from("kit_commandes")
+        .update({ expedie: !!expedie, expedie_at: expedie ? new Date().toISOString() : null })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     if (resource === "admin_stories") {
       const { data, error } = await sb.from("stories_content").select("*").order("created_at", { ascending: false });
       if (error) throw new Error(error.message);
