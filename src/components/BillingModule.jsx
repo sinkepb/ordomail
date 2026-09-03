@@ -442,21 +442,27 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
           <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>{resumePharmacieId ? "Finalisez votre abonnement" : "Choisissez votre plan"}</h1>
           <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>{resumePharmacieId ? "Votre compte est confirmé — choisissez votre plan pour activer votre essai gratuit de 30 jours." : "30 jours gratuits · Sans carte bancaire"}</p>
           <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
-            {[["monthly","Mensuel"],["annual","Annuel (1 mois offert)"]].map(([k,l])=>(
+            {[["monthly","Mensuel"],["annual","Annuel (2 mois offerts)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
             ))}
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:14,marginBottom:32}}>
           {PLAN_ORDER.map(pid=>{
-            const p=PLAN_LIMITS[pid]; const pr=billingTab==="annual"?p.priceAnnual:p.price; const isPopular=pid==="standard";
+            const p=PLAN_LIMITS[pid];
+            // @conformite-tarifs 29/08/2026 — priceAnnual est le TOTAL annuel réel
+            // (facturé une fois par an), pas un tarif mensuel équivalent : le
+            // "gros" prix affiché reste un €/mois comparable au mensuel (arrondi),
+            // le total réel facturé s'affiche en dessous, non arrondi.
+            const pr = billingTab==="annual" ? Math.round(p.priceAnnual/12) : p.price;
+            const isPopular=pid==="standard";
             return (
               <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
-                {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>LE PLUS CHOISI</div>}
+                {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>⭐ RECOMMANDÉ</div>}
                 <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:20}}>{p.icon}</span><span style={{fontWeight:800,fontSize:17,color:"#0f172a"}}>{p.label}</span></div>
                 <div style={{marginBottom:14}}>
                   <span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span>
-                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {pr*12} € facturés / an</div>}
+                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {p.priceAnnual} € facturés une fois / an</div>}
                 </div>
                 <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep(resumePharmacieId?"card":"details");setView("checkout");}}
                   style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>

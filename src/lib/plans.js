@@ -1,16 +1,19 @@
 // ─── Définition des plans et logique d'upgrade ───────────────────────────────
 import { PLANS } from "./utils.js";
 
-// priceAnnual = équivalent mensuel affiché quand l'annuel est sélectionné —
-// 19/08/2026 : passage de -20% (chiffre arbitraire, sans tarif Stripe réel
-// derrière) à "11 mois facturés = 12 mois de service" (1 mois offert),
-// aligné sur les Price Stripe price_{plan}_annual réellement créés
-// (montant exact facturé une fois par an = price × 11 ; voir
-// create-checkout-session/_shared/checkout.ts buildLookupKey).
+// @conformite-tarifs 29/08/2026 — Phase 1 du chantier tarification : nouveaux
+// prix officiels (39/59/89 €/mois) et libellés commerciaux (Essentiel/
+// Fluidité/Performance) — id techniques starter/standard/pro conservés
+// (décision explicite, aucun code métier à toucher pour un changement
+// purement commercial). priceAnnual change de SIGNIFICATION : ce n'est plus
+// un tarif mensuel équivalent (×12 pour obtenir le total) mais le TOTAL
+// ANNUEL réel facturé une fois par an ("10 mois payés pour 12 mois d'usage",
+// 2 mois offerts — 39×10=390 etc.), aligné sur les Price Stripe
+// price_{plan}_annual réellement créés (interval=year, montant exact).
 export const PLAN_LIMITS = {
-  starter:  { id:"starter",  maxPostes: 2,   maxOrdos: 200,   label:"Starter",  price:19,  priceAnnual:17, icon:"🌱", color:"#0369a1", offresStories: false },
-  standard: { id:"standard", maxPostes: 5,   maxOrdos: 1000,  label:"Standard", price:39,  priceAnnual:36, icon:"⭐", color:"#1a3a6e", offresStories: false },
-  pro:      { id:"pro",      maxPostes: 15,  maxOrdos: 99999, label:"Pro",       price:79,  priceAnnual:72, icon:"🏥", color:"#4c1d95", offresStories: true },
+  starter:  { id:"starter",  maxPostes: 3,   maxOrdos: 200,   label:"Essentiel",   price:39, priceAnnual:390, icon:"🌱", color:"#0369a1", offresStories: false },
+  standard: { id:"standard", maxPostes: 10,  maxOrdos: 1000,  label:"Fluidité",    price:59, priceAnnual:590, icon:"⭐", color:"#1a3a6e", offresStories: true },
+  pro:      { id:"pro",      maxPostes: 999, maxOrdos: 99999, label:"Performance", price:89, priceAnnual:890, icon:"🏥", color:"#4c1d95", offresStories: true },
 };
 
 // Palier Premium retiré (19/08/2026) — aucun tarif Stripe n'a jamais existé

@@ -16,7 +16,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 const PLAN_COLORS = { starter: "#0369a1", standard: "#1a3a6e", pro: "#4c1d95", premium: "#be185d" };
-const PLAN_LABELS = { starter: "Starter", standard: "Standard", pro: "Pro", premium: "Premium" };
+const PLAN_LABELS = { starter: "Essentiel", standard: "Fluidité", pro: "Performance", premium: "Premium" };
 const FRANCE_CENTER = [46.6, 2.2];
 
 function ClientsMap({ clients }) {
