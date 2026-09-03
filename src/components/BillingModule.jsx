@@ -5,7 +5,7 @@
 // + le paiement Stripe Checkout réel (phase 3), déjà testé de bout en bout le
 // 24/07/2026. Ne pas modifier son comportement lors d'un futur refactor sans retester.
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS, PLAN_ORDER, getKitRule } from "../lib/plans.js";
+import { PLAN_LIMITS, PLAN_ORDER, getKitRule, ACTIVE_PROMOTION, getPromoPrice } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { getSupabaseClient, setPendingCheckout } from "../supabase.js";
 
@@ -446,6 +446,16 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>
             ))}
           </div>
+          {ACTIVE_PROMOTION && (
+            <div style={{marginTop:16,fontSize:13,color:"#c2410c",fontWeight:700}}>
+              🚀 {ACTIVE_PROMOTION.nom}
+              {ACTIVE_PROMOTION.placesRestantes != null && (
+                ACTIVE_PROMOTION.placesRestantes > 0
+                  ? ` — Plus que ${ACTIVE_PROMOTION.placesRestantes} place${ACTIVE_PROMOTION.placesRestantes>1?"s":""} disponible${ACTIVE_PROMOTION.placesRestantes>1?"s":""}`
+                  : " — Offre clôturée"
+              )}
+            </div>
+          )}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:14,marginBottom:32}}>
           {PLAN_ORDER.map(pid=>{
@@ -454,16 +464,28 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
             // (facturé une fois par an), pas un tarif mensuel équivalent : le
             // "gros" prix affiché reste un €/mois comparable au mensuel (arrondi),
             // le total réel facturé s'affiche en dessous, non arrondi.
-            const pr = billingTab==="annual" ? Math.round(p.priceAnnual/12) : p.price;
+            const officialPr = billingTab==="annual" ? Math.round(p.priceAnnual/12) : p.price;
+            // @conformite-tarifs 29/08/2026 (Phase 4, §12) — l'offre de lancement
+            // reste visible mais secondaire : prix promo mis en avant, prix
+            // officiel affiché barré à côté, jamais masqué.
+            const promoAmount = getPromoPrice(pid, billingTab); // montant brut (mensuel ou total annuel selon l'onglet)
+            const pr = promoAmount != null ? (billingTab==="annual" ? Math.round(promoAmount/12) : promoAmount) : officialPr;
             const isPopular=pid==="standard";
             const kitRule = getKitRule(pid, billingTab);
             return (
               <div key={pid} style={{background:"#fff",borderRadius:16,padding:"24px 20px",border:isPopular?`2px solid ${p.color}`:"2px solid #e2e8f0",position:"relative"}}>
                 {isPopular&&<div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 12px",borderRadius:20}}>⭐ RECOMMANDÉ</div>}
                 <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:20}}>{p.icon}</span><span style={{fontWeight:800,fontSize:17,color:"#0f172a"}}>{p.label}</span></div>
+                {promoAmount != null && (
+                  <div style={{fontSize:11,fontWeight:800,color:"#c2410c",background:"#ffedd5",display:"inline-block",padding:"3px 10px",borderRadius:20,marginBottom:8}}>🚀 Offre de lancement</div>
+                )}
                 <div style={{marginBottom:14}}>
+                  {promoAmount != null && (
+                    <span style={{fontSize:15,color:"#94a3b8",textDecoration:"line-through",marginRight:8}}>{officialPr} €</span>
+                  )}
                   <span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span>
-                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {p.priceAnnual} € facturés une fois / an</div>}
+                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {promoAmount != null ? promoAmount : p.priceAnnual} € facturés une fois / an</div>}
+                  {promoAmount != null && <div style={{fontSize:11,color:"#c2410c",fontWeight:700,marginTop:2}}>Prix garanti {ACTIVE_PROMOTION.dureeGarantieMois} mois</div>}
                 </div>
                 <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep(resumePharmacieId?"card":"details");setView("checkout");}}
                   style={{width:"100%",padding:"10px",border:`1.5px solid ${p.color}`,borderRadius:10,background:isPopular?p.color:"transparent",color:isPopular?"#fff":p.color,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>

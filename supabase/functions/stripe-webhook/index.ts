@@ -68,6 +68,60 @@ serve(async (req) => {
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
         await trimExcessPostes(supabase, ph.id, plan);
+
+        // Phase 4 tarification (§8) — une place promo n'est comptée QU'ICI,
+        // après confirmation réelle du paiement par Stripe, jamais à la
+        // création du compte ni au démarrage du Checkout. Uniquement sur
+        // .created (pas .updated, qui refire à chaque renouvellement/
+        // changement) — idempotent sur stripe_subscription_id pour survivre
+        // à une redélivrance du même événement par Stripe.
+        if (event.type === "customer.subscription.created" && sub.metadata?.promotion_id) {
+          const promotionId = sub.metadata.promotion_id;
+          const { data: already } = await supabase.from("promotion_redemptions")
+            .select("id").eq("stripe_subscription_id", sub.id).maybeSingle();
+          if (!already) {
+            const { data: claimed } = await supabase.rpc("claim_promotion_slot", { p_promotion_id: promotionId });
+            if (claimed) {
+              const { data: promoRow } = await supabase.from("promotions").select("duree_garantie_mois").eq("id", promotionId).maybeSingle();
+              const dureeMois = promoRow?.duree_garantie_mois ?? 24;
+              const garantiJusqua = new Date();
+              garantiJusqua.setMonth(garantiJusqua.getMonth() + dureeMois);
+              const prixGaranti = Math.round((sub.items.data[0]?.price.unit_amount || 0) / 100);
+              const billingInterval = sub.items.data[0]?.price.recurring?.interval === "year" ? "annual" : "monthly";
+              await supabase.from("promotion_redemptions").insert({
+                promotion_id: promotionId, pharmacie_id: ph.id, plan_id: plan,
+                billing_interval: billingInterval, prix_garanti: prixGaranti,
+                garanti_jusqua: garantiJusqua.toISOString(), stripe_subscription_id: sub.id,
+              });
+              await supabase.from("pharmacies").update({
+                promotion_id: promotionId, prix_garanti: prixGaranti, garanti_jusqua: garantiJusqua.toISOString(),
+              }).eq("id", ph.id);
+            } else {
+              // Promo complète au moment du webhook (course sur la dernière
+              // place) — le paiement reste honoré (déjà facturé par Stripe),
+              // mais la place n'est pas comptée : revue manuelle nécessaire.
+              await reportAlert(supabase, {
+                source: "stripe-webhook", severity: "warning",
+                message: `Promotion ${promotionId} pleine au moment de la confirmation — abonnement ${sub.id} facturé au tarif promo sans place comptée, à vérifier manuellement`,
+                meta: { subId: sub.id, promotionId, pharmacieId: ph.id },
+              });
+            }
+          }
+        }
+      }
+    }
+    // @fix 29/08/2026 (audit Phase 1) — événement jamais géré jusqu'ici :
+    // une annulation (résiliation, ou webhook natif après épuisement des
+    // relances sur échec de paiement répété) ne mettait à jour aucun état
+    // côté OrdoMail. §8 : le comportement "abonnement annulé" doit être
+    // défini explicitement — statut synchronisé, place promo déjà consommée
+    // conservée (le service a été rendu, pas de "remboursement" de place).
+    if (event.type === "customer.subscription.deleted") {
+      const sub = obj as Stripe.Subscription;
+      const { data: ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id", sub.customer).single();
+      if (ph) {
+        await supabase.from("pharmacies").update({ plan_status: "canceled" }).eq("id", ph.id);
+        await supabase.from("abonnements").update({ status: "canceled", updated_at: new Date().toISOString() }).eq("stripe_sub_id", sub.id);
       }
     }
     if (event.type === "invoice.payment_succeeded") {

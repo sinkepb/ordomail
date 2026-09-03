@@ -77,18 +77,46 @@ serve(async (req) => {
         { status: 404, headers: CORS });
     }
 
-    // 2. Retrouver le Price Stripe par lookup_key (voir note en tête de fichier)
-    const lookupKey = buildLookupKey(plan, billing);
-    const prices = await stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
-    const price = prices.data[0];
-    if (!price) {
-      return new Response(
-        JSON.stringify({ error: `Tarif Stripe introuvable (lookup_key="${lookupKey}") — voir DEPLOIEMENT_PHASE3_STRIPE.md` }),
-        { status: 500, headers: CORS },
-      );
+    // 2. Promotion active éligible (Phase 4, §6-9) — vérification "molle" ici,
+    // pas une réservation : une place n'est comptée qu'après paiement
+    // confirmé (voir stripe-webhook, claim_promotion_slot()). Un panier
+    // abandonné ou une simple visite de la page tarifs ne bloque jamais une
+    // place pour quelqu'un d'autre — c'est pour ça que la place "restante"
+    // affichée peut légitimement varier entre l'affichage et le paiement.
+    const billingInterval = billing === "annual" ? "annual" : "monthly";
+    let priceId: string | null = null;
+    let promotionId: string | null = null;
+    const { data: promo } = await supabase.from("promotions")
+      .select("id, max_pharmacies, slots_used")
+      .eq("actif", true)
+      .contains("plans", [plan])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (promo && (promo.max_pharmacies == null || promo.slots_used < promo.max_pharmacies)) {
+      const { data: promoPrice } = await supabase.from("promotion_stripe_prices")
+        .select("stripe_price_id")
+        .eq("promotion_id", promo.id)
+        .eq("plan_id", plan)
+        .eq("billing_interval", billingInterval)
+        .maybeSingle();
+      if (promoPrice) { priceId = promoPrice.stripe_price_id; promotionId = promo.id; }
     }
 
-    // 2b. Kit matériel — ligne one-time optionnelle ajoutée à la session,
+    // 2b. Sinon, Price officiel par lookup_key (voir note en tête de fichier)
+    if (!priceId) {
+      const lookupKey = buildLookupKey(plan, billing);
+      const prices = await stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
+      if (!prices.data[0]) {
+        return new Response(
+          JSON.stringify({ error: `Tarif Stripe introuvable (lookup_key="${lookupKey}") — voir DEPLOIEMENT_PHASE3_STRIPE.md` }),
+          { status: 500, headers: CORS },
+        );
+      }
+      priceId = prices.data[0].id;
+    }
+
+    // 2c. Kit matériel — ligne one-time optionnelle ajoutée à la session,
     // facturée immédiatement à la validation du paiement (même pendant
     // l'essai gratuit de l'abonnement) : cohérent, le matériel est expédié
     // dès l'inscription, pas après 30 jours.
@@ -104,7 +132,7 @@ serve(async (req) => {
     const { data: kitRule } = await supabase.from("kit_materiel_rules")
       .select("label, prix, offert")
       .eq("plan_id", plan)
-      .eq("billing_interval", billing === "annual" ? "annual" : "monthly")
+      .eq("billing_interval", billingInterval)
       .maybeSingle();
     if (kitRule && !kitRule.offert && kitRule.prix > 0) {
       kitLineItems.push({
@@ -139,8 +167,11 @@ serve(async (req) => {
       mode: "subscription",
       customer: customerId,
       client_reference_id: pharmacieId,
-      line_items: [{ price: price.id, quantity: 1 }, ...kitLineItems],
-      subscription_data: { trial_period_days: TRIAL_DAYS, metadata: { pharmacie_id: pharmacieId } },
+      line_items: [{ price: priceId, quantity: 1 }, ...kitLineItems],
+      subscription_data: {
+        trial_period_days: TRIAL_DAYS,
+        metadata: { pharmacie_id: pharmacieId, ...(promotionId ? { promotion_id: promotionId } : {}) },
+      },
       success_url: `${base}/?checkout=success`,
       cancel_url: `${base}/?checkout=cancelled`,
     });

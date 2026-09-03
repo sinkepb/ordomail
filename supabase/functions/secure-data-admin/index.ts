@@ -16,6 +16,7 @@
 // verify-admin et secure-data).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@14.0.0";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
@@ -188,6 +189,74 @@ Deno.serve(async (req) => {
       const { error } = await sb.from("kit_materiel_rules").upsert(rows, { onConflict: "plan_id,billing_interval" });
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Phase 4 tarification (§6-9, §18) — promotions configurables ("Founding
+    // Pharmacies" est la première instance, pas un cas codé en dur).
+    if (resource === "admin_promotions_list") {
+      const { data, error } = await sb.from("promotions").select("*").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_promotions_redemptions") {
+      const { promotionId } = params || {};
+      if (!promotionId) return new Response(JSON.stringify({ error: "promotionId requis" }), { status: 400, headers: CORS });
+      const { data, error } = await sb.from("promotion_redemptions")
+        .select("id, pharmacie_id, plan_id, billing_interval, prix_garanti, garanti_jusqua, created_at, pharmacies(nom, email)")
+        .eq("promotion_id", promotionId)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_promotions_save") {
+      const p = params || {};
+      if (!p.nom || !Array.isArray(p.plans) || !p.plans.length) {
+        return new Response(JSON.stringify({ error: "nom et plans requis" }), { status: 400, headers: CORS });
+      }
+      const row = {
+        id: p.id || undefined,
+        nom: p.nom,
+        actif: !!p.actif,
+        plans: p.plans,
+        prix_promo_monthly: p.prixPromoMonthly || {},
+        prix_promo_annual: p.prixPromoAnnual || {},
+        duree_garantie_mois: Number(p.dureeGarantieMois) || 24,
+        max_pharmacies: p.maxPharmacies != null && p.maxPharmacies !== "" ? Number(p.maxPharmacies) : null,
+        date_debut: p.dateDebut || null,
+        date_fin: p.dateFin || null,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: promo, error } = await sb.from("promotions").upsert(row).select().single();
+      if (error) throw new Error(error.message);
+
+      // Synchronise les Price Stripe pour chaque (plan, intervalle) où un prix
+      // promo est défini — un Price déjà créé n'est jamais modifié (montant
+      // Stripe immuable) : seul un prix encore absent en déclenche un nouveau.
+      // Changer un prix promo après coup nécessite donc de le confirmer
+      // explicitement (voir "forceRecreatePrices"), pour ne jamais faire
+      // dériver silencieusement le prix payé par des clients déjà inscrits
+      // sur l'ancien montant.
+      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
+      const { data: existingPrices } = await sb.from("promotion_stripe_prices").select("*").eq("promotion_id", promo.id);
+      const existingMap = new Map((existingPrices || []).map((r: any) => [`${r.plan_id}_${r.billing_interval}`, r.stripe_price_id]));
+
+      let product: Stripe.Product | null = null;
+      for (const planId of p.plans) {
+        const monthlyAmount = Number(row.prix_promo_monthly[planId]) || 0;
+        const annualAmount = Number(row.prix_promo_annual[planId]) || 0;
+        for (const [billing, amount, interval] of [["monthly", monthlyAmount, "month"], ["annual", annualAmount, "year"]] as const) {
+          if (!amount || existingMap.has(`${planId}_${billing}`)) continue;
+          if (!product) {
+            product = await stripe.products.create({ name: `OrdoMail — ${p.nom}` });
+          }
+          const newPrice = await stripe.prices.create({ product: product.id, unit_amount: Math.round(amount * 100), currency: "eur", recurring: { interval } });
+          await sb.from("promotion_stripe_prices").upsert({ promotion_id: promo.id, plan_id: planId, billing_interval: billing, stripe_price_id: newPrice.id });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, data: promo }), { headers: CORS });
     }
 
     if (resource === "admin_stories") {

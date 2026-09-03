@@ -41,7 +41,31 @@ Deno.serve(async (req) => {
       .select("plan_id, billing_interval, label, contenu, prix, offert");
     if (kitErr) throw new Error(kitErr.message);
 
-    return new Response(JSON.stringify({ data, kitRules }), { headers: CORS });
+    // Promotion active (Phase 4, §12) — les places restantes DOIVENT venir du
+    // serveur (jamais calculées côté client à partir d'un total statique) :
+    // slots_used est incrémenté atomiquement par claim_promotion_slot(),
+    // appelé uniquement par le webhook Stripe après paiement confirmé.
+    const now = new Date().toISOString();
+    const { data: promoRows, error: promoErr } = await sb.from("promotions")
+      .select("id, nom, plans, prix_promo_monthly, prix_promo_annual, duree_garantie_mois, max_pharmacies, slots_used")
+      .eq("actif", true)
+      .or(`date_debut.is.null,date_debut.lte.${now}`)
+      .or(`date_fin.is.null,date_fin.gte.${now}`)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (promoErr) throw new Error(promoErr.message);
+    const promoRow = promoRows?.[0];
+    const promotion = promoRow ? {
+      id: promoRow.id,
+      nom: promoRow.nom,
+      plans: promoRow.plans,
+      prixPromoMonthly: promoRow.prix_promo_monthly,
+      prixPromoAnnual: promoRow.prix_promo_annual,
+      dureeGarantieMois: promoRow.duree_garantie_mois,
+      placesRestantes: promoRow.max_pharmacies != null ? Math.max(0, promoRow.max_pharmacies - promoRow.slots_used) : null,
+    } : null;
+
+    return new Response(JSON.stringify({ data, kitRules, promotion }), { headers: CORS });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
   }

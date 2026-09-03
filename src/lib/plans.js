@@ -36,6 +36,19 @@ export function getKitRule(planId, billing) {
   return (KIT_RULES[planId] || KIT_RULES.starter)[b];
 }
 
+// @conformite-tarifs 29/08/2026 — Phase 4 : promotion active (§12), null
+// si aucune n'est en cours. placesRestantes vient TOUJOURS du serveur
+// (jamais recalculé côté client) — voir get-pricing.
+export let ACTIVE_PROMOTION = null;
+
+export function getPromoPrice(planId, billing) {
+  if (!ACTIVE_PROMOTION || !ACTIVE_PROMOTION.plans.includes(planId)) return null;
+  if (ACTIVE_PROMOTION.placesRestantes === 0) return null; // offre clôturée
+  const map = billing === "annual" ? ACTIVE_PROMOTION.prixPromoAnnual : ACTIVE_PROMOTION.prixPromoMonthly;
+  const prix = map?.[planId];
+  return prix ? Number(prix) : null;
+}
+
 // @conformite-tarifs 25/08/2026 — les valeurs ci-dessus sont le repli par
 // défaut (démo, ou si le chargement échoue). L'admin édite les tarifs réels
 // dans `pricing_plans` (backoffice, onglet Tarifs) ; jusqu'ici rien d'autre
@@ -58,7 +71,8 @@ export async function loadPlanLimits() {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     if (!supabaseUrl) return; // mode démo — pas de backend à interroger
     const res = await fetch(`${supabaseUrl}/functions/v1/get-pricing`, { method: "POST" });
-    const { data, kitRules } = await res.json();
+    const { data, kitRules, promotion } = await res.json();
+    ACTIVE_PROMOTION = promotion || null;
     if (Array.isArray(kitRules)) {
       kitRules.forEach(r => {
         if (!KIT_RULES[r.plan_id]) KIT_RULES[r.plan_id] = {};
