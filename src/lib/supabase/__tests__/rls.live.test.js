@@ -220,4 +220,158 @@ describe.skipIf(!canRun)('RLS live — offre_interets, rate-limit, stories_conte
       expect(res.ok).toBe(false);
     });
   });
+
+  // Phase 8 tarification (§20) — la promesse "§4 : aucune fonctionnalité
+  // métier gérée par plan_has_feature()/hasFeature() ne doit être
+  // contournable en appelant directement l'API REST" (voir Phase 2,
+  // 20260829_phase2_feature_gating.sql) n'était vérifiée jusqu'ici que
+  // manuellement. Nécessite une VRAIE session Supabase Auth (auth.uid() dans
+  // la policy RLS) — pas un jeton `secure-data` maison — donc crée un compte
+  // titulaire de test via l'API admin (service role).
+  describe.skipIf(!canRun)('plan_has_feature() — Offres/Stories bloquées côté serveur pour un plan non éligible (Phase 2)', () => {
+    let authedClient, userId, offreId;
+    const TEST_TITULAIRE_EMAIL = `rls-titulaire-${Date.now()}@ordomail-test.invalid`;
+    const TEST_PASSWORD = `Test${Date.now()}!Aa1`;
+
+    beforeAll(async () => {
+      const { data: created, error: createErr } = await service.auth.admin.createUser({
+        email: TEST_TITULAIRE_EMAIL, password: TEST_PASSWORD, email_confirm: true,
+      });
+      if (createErr) throw new Error(`Création utilisateur test : ${createErr.message}`);
+      userId = created.user.id;
+      const { error: linkErr } = await service.from('pharmacie_users')
+        .insert({ id: userId, pharmacie_id: testPharmacieId, nom: 'Titulaire test', role: 'admin' });
+      if (linkErr) throw new Error(`Lien pharmacie_users : ${linkErr.message}`);
+
+      const signInClient = createClient(SUPABASE_URL, ANON_KEY);
+      const { data: session, error: signInErr } = await signInClient.auth.signInWithPassword({
+        email: TEST_TITULAIRE_EMAIL, password: TEST_PASSWORD,
+      });
+      if (signInErr) throw new Error(`Connexion test : ${signInErr.message}`);
+      authedClient = createClient(SUPABASE_URL, ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${session.session.access_token}` } },
+      });
+    });
+
+    afterAll(async () => {
+      if (offreId) await service.from('offres_stories').delete().eq('id', offreId);
+      if (userId) {
+        await service.from('pharmacie_users').delete().eq('id', userId);
+        await service.auth.admin.deleteUser(userId).catch(() => {});
+      }
+    });
+
+    it('plan Essentiel (starter, feature_offres_stories=false) : INSERT direct refusé par RLS', async () => {
+      await service.from('pharmacies').update({ plan: 'starter' }).eq('id', testPharmacieId);
+      const { error } = await authedClient.from('offres_stories').insert({
+        pharmacie_id: testPharmacieId, type: 'promo', titre: '__RLS_TEST_OFFRE__', description: 'x', actif: true,
+      });
+      expect(error).not.toBeNull();
+      expect(error.code).toBe('42501'); // row-level security policy violation
+    });
+
+    it('plan Fluidité (standard, feature_offres_stories=true) : INSERT direct accepté', async () => {
+      await service.from('pharmacies').update({ plan: 'standard' }).eq('id', testPharmacieId);
+      const { data, error } = await authedClient.from('offres_stories').insert({
+        pharmacie_id: testPharmacieId, type: 'promo', titre: '__RLS_TEST_OFFRE__', description: 'x', actif: true,
+      }).select('id').single();
+      expect(error).toBeNull();
+      offreId = data?.id;
+    });
+
+    it("un downgrade ultérieur ne supprime pas rétroactivement l'offre déjà créée (pas de perte immédiate, §13)", async () => {
+      await service.from('pharmacies').update({ plan: 'starter' }).eq('id', testPharmacieId);
+      const { data } = await service.from('offres_stories').select('id').eq('id', offreId);
+      expect(data).toHaveLength(1);
+    });
+  });
+
+  // Phase 8 tarification (§20) — la réservation de place promo (§8 : "un slot
+  // ne doit être compté qu'après confirmation de paiement, jamais avant, et
+  // jamais deux fois pour la dernière place") repose entièrement sur
+  // claim_promotion_slot() (UPDATE ... WHERE slots_used < max_pharmacies
+  // RETURNING) pour être atomique sous accès concurrent — vérifié une fois
+  // manuellement en Phase 4, jamais figé en test automatisé jusqu'ici.
+  describe.skipIf(!canRun)('claim_promotion_slot() — réservation atomique sous accès concurrent (Phase 4, §8)', () => {
+    let promoId;
+
+    beforeAll(async () => {
+      const { data, error } = await service.from('promotions').insert({
+        nom: '__RLS_TEST_PROMO__', actif: true, plans: ['starter'],
+        prix_promo_monthly: { starter: 29 }, prix_promo_annual: {},
+        duree_garantie_mois: 24, max_pharmacies: 1, slots_used: 0,
+      }).select('id').single();
+      if (error) throw new Error(`Fixture promotion : ${error.message}`);
+      promoId = data.id;
+    });
+
+    afterAll(async () => {
+      if (promoId) await service.from('promotions').delete().eq('id', promoId);
+    });
+
+    it('deux réservations simultanées sur la dernière place : une seule réussit', async () => {
+      const [r1, r2] = await Promise.all([
+        service.rpc('claim_promotion_slot', { p_promotion_id: promoId }),
+        service.rpc('claim_promotion_slot', { p_promotion_id: promoId }),
+      ]);
+      const results = [r1.data, r2.data].sort();
+      expect(results).toEqual([false, true]);
+
+      const { data: promo } = await service.from('promotions').select('slots_used').eq('id', promoId).single();
+      expect(promo.slots_used).toBe(1); // jamais 2 : pas de double-décompte
+    });
+
+    it('une 3e tentative après épuisement est refusée', async () => {
+      const { data } = await service.rpc('claim_promotion_slot', { p_promotion_id: promoId });
+      expect(data).toBe(false);
+    });
+  });
+
+  // Phase 8 tarification (§20) — isolation cross-pharmacie : change-plan
+  // vérifiait jusqu'ici (Phase 3, @phase3 24/07/2026) que l'appelant est bien
+  // titulaire de la pharmacie CIBLÉE, pas seulement authentifié — jamais
+  // couvert par un test automatisé.
+  describe.skipIf(!canRun)('change-plan — isolation cross-pharmacie (Phase 3)', () => {
+    let otherPharmacieId, authedClient, userId;
+    const TEST_EMAIL_B = `rls-titulaire-b-${Date.now()}@ordomail-test.invalid`;
+    const TEST_PASSWORD_B = `Test${Date.now()}!Bb2`;
+
+    beforeAll(async () => {
+      const { data: ph, error: phErr } = await service.from('pharmacies')
+        .insert({ nom: '__RLS_TEST_B__', email: TEST_EMAIL_B }).select('id').single();
+      if (phErr) throw new Error(`Fixture pharmacie B : ${phErr.message}`);
+      otherPharmacieId = ph.id;
+
+      const { data: created, error: createErr } = await service.auth.admin.createUser({
+        email: TEST_EMAIL_B, password: TEST_PASSWORD_B, email_confirm: true,
+      });
+      if (createErr) throw new Error(`Création utilisateur test B : ${createErr.message}`);
+      userId = created.user.id;
+      await service.from('pharmacie_users').insert({ id: userId, pharmacie_id: otherPharmacieId, nom: 'Titulaire B', role: 'admin' });
+
+      const signInClient = createClient(SUPABASE_URL, ANON_KEY);
+      const { data: session, error: signInErr } = await signInClient.auth.signInWithPassword({
+        email: TEST_EMAIL_B, password: TEST_PASSWORD_B,
+      });
+      if (signInErr) throw new Error(`Connexion test B : ${signInErr.message}`);
+      authedClient = session.session.access_token;
+    });
+
+    afterAll(async () => {
+      if (userId) {
+        await service.from('pharmacie_users').delete().eq('id', userId);
+        await service.auth.admin.deleteUser(userId).catch(() => {});
+      }
+      if (otherPharmacieId) await service.from('pharmacies').delete().eq('id', otherPharmacieId);
+    });
+
+    it("le titulaire de la pharmacie B ne peut pas changer le plan de la pharmacie A (403)", async () => {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/change-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY, 'Authorization': `Bearer ${authedClient}` },
+        body: JSON.stringify({ pharmacieId: testPharmacieId, newPlan: 'pro' }),
+      });
+      expect(res.status).toBe(403);
+    });
+  });
 });
