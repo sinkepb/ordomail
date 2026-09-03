@@ -1,8 +1,11 @@
 // Extrait de Dashboard.jsx (phase 4) — composant autonome (props + état local
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
-import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData } from "../supabase.js";
+import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData, subscribeToOffres } from "../supabase.js";
 import { fileToBase64 } from "../lib/utils.js";
+import { QRCode } from "./QRCode.jsx";
+import { OffreTemplatesPanel } from "./OffreTemplatesPanel.jsx";
+import { OffreReservationsPanel } from "./OffreReservationsPanel.jsx";
 
 function formatDuree(ms) {
   if (!ms) return "—";
@@ -24,11 +27,56 @@ function OffresSection({ pharmacie }) {
   const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"" });
+  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"", prix:"" });
   const [saving, setSaving]       = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgError, setImgError]   = useState("");
+  const [tab, setTab]             = useState("mes-offres"); // mes-offres | modeles | commandes
+  const [mobileQR, setMobileQR]   = useState(null); // { url, expiresAt } | null
+  const [mobileQRLoading, setMobileQRLoading] = useState(false);
+  const [mobileQRError, setMobileQRError]     = useState("");
+  const [epuiseBusyId, setEpuiseBusyId]       = useState(null);
   const sb = getSupabaseClient();
+
+  // Offres mobile (03/09/2026) — une offre publiée depuis le téléphone (ou une
+  // rupture signalée) doit apparaître ici sans rafraîchissement manuel. Les
+  // événements INSERT/UPDATE/DELETE sont fusionnés dans la liste locale plutôt
+  // que de tout recharger à chaque fois.
+  useEffect(() => {
+    if (!pharmacie?.id || isDemoMode) return;
+    return subscribeToOffres(pharmacie.id, ({ eventType, new: row, old }) => {
+      setOffres(prev => {
+        if (eventType === "INSERT") return prev.some(o => o.id === row.id) ? prev : [row, ...prev];
+        if (eventType === "UPDATE") return prev.map(o => o.id === row.id ? { ...o, ...row } : o);
+        if (eventType === "DELETE") return prev.filter(o => o.id !== old.id);
+        return prev;
+      });
+    });
+  }, [pharmacie?.id]);
+
+  async function genererLienMobile() {
+    setMobileQRLoading(true); setMobileQRError("");
+    try {
+      const { url, expiresInSeconds } = await callSecureData("offre_mint_mobile_token", { appUrl: window.location.origin });
+      setMobileQR({ url, expiresAt: Date.now() + expiresInSeconds * 1000 });
+    } catch (e) {
+      setMobileQRError("Échec de la génération : " + e.message);
+    }
+    setMobileQRLoading(false);
+  }
+
+  async function toggleEpuise(offre) {
+    setEpuiseBusyId(offre.id);
+    setOffres(prev => prev.map(o => o.id === offre.id ? { ...o, epuise: !o.epuise } : o));
+    try {
+      if (sb && !isDemoMode) await callSecureData("offre_mark_epuise", { offreId: offre.id, epuise: !offre.epuise });
+    } catch (e) {
+      // Retour arrière si l'appel échoue — ne pas laisser l'UI mentir sur l'état réel.
+      setOffres(prev => prev.map(o => o.id === offre.id ? { ...o, epuise: offre.epuise } : o));
+      console.error("[toggleEpuise]", e.message);
+    }
+    setEpuiseBusyId(null);
+  }
 
   async function handleImageUpload(file) {
     if (!file || isDemoMode) return;
@@ -72,7 +120,7 @@ function OffresSection({ pharmacie }) {
     setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
       emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
       actif:offre.actif, date_fin:offre.date_fin||"", image_url:offre.image_url||"",
-      lien_url:offre.lien_url||"" });
+      lien_url:offre.lien_url||"", prix:offre.prix!=null?String(offre.prix):"" });
     setShowForm(true);
   }
 
@@ -80,7 +128,7 @@ function OffresSection({ pharmacie }) {
     if (!form.titre.trim()) return;
     if (form.type === "avis_google" && !form.lien_url.trim()) return;
     setSaving(true);
-    const payload = { ...form, pharmacie_id: pharmacie.id };
+    const payload = { ...form, prix: form.prix!==""?Number(form.prix):null, pharmacie_id: pharmacie.id };
     if (editingId) {
       // Modification
       if (sb && !isDemoMode) {
@@ -96,7 +144,7 @@ function OffresSection({ pharmacie }) {
         setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
       }
     }
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"" });
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"", prix:"" });
     setEditingId(null);
     setShowForm(false);
     setSaving(false);
@@ -115,17 +163,62 @@ function OffresSection({ pharmacie }) {
 
   return (
     <div style={{ background:"#fff", borderRadius:14, padding:22, boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:10 }}>
         <div>
           <div style={{ fontWeight:800, fontSize:15 }}>🎯 Offres & Promotions</div>
           <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>Affichées dans les stories de vos patients en attente</div>
         </div>
-        <button onClick={()=>setShowForm(true)}
-          style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-          + Nouvelle offre
-        </button>
+        {tab==="mes-offres" && (
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={()=>{ setMobileQR(null); setMobileQRError(""); genererLienMobile(); }}
+              style={{ padding:"8px 14px", border:"1.5px solid #1a3a6e", borderRadius:10, background:"#fff", color:"#1a3a6e", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              📱 Créer depuis mobile
+            </button>
+            <button onClick={()=>setShowForm(true)}
+              style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              + Nouvelle offre
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Sous-onglets */}
+      <div style={{ display:"flex", gap:6, marginBottom:18, borderBottom:"1.5px solid #f0f4ff" }}>
+        {[["mes-offres","🎯 Mes offres"],["modeles","🗂️ Modèles"],["commandes","🛒 Commandes"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)}
+            style={{ padding:"8px 14px", border:"none", borderBottom:tab===k?"2.5px solid #1a3a6e":"2.5px solid transparent",
+              background:"none", color:tab===k?"#1a3a6e":"#94a3b8", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Lien magique mobile — QR à scanner, zéro connexion côté téléphone */}
+      {mobileQR && (
+        <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18, textAlign:"center" }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>📱 Scannez pour créer une offre depuis votre téléphone</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:14 }}>Aucune connexion nécessaire — l'appareil photo s'ouvre directement. Valable 15 minutes.</div>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:12 }}>
+            <QRCode url={mobileQR.url} size={200}/>
+          </div>
+          <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
+            <button onClick={genererLienMobile} disabled={mobileQRLoading}
+              style={{ padding:"7px 14px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#fff", color:"#1a3a6e", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              {mobileQRLoading?"…":"🔄 Nouveau lien"}
+            </button>
+            <button onClick={()=>setMobileQR(null)}
+              style={{ padding:"7px 14px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#fff", color:"#64748b", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+      {mobileQRError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:14 }}>⚠️ {mobileQRError}</div>}
+
+      {tab==="modeles" && <OffreTemplatesPanel onChanged={()=>{}}/>}
+      {tab==="commandes" && <OffreReservationsPanel/>}
+
+      {tab==="mes-offres" && <>
       {/* Formulaire création */}
       {showForm && (
         <div style={{ background:"#f8faff", border:"1.5px solid #e0e7ff", borderRadius:12, padding:18, marginBottom:18 }}>
@@ -201,6 +294,14 @@ function OffresSection({ pharmacie }) {
               style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
           </div>
 
+          {/* Prix (optionnel) — affiche le bouton "Ajouter à la commande" côté patient */}
+          <div style={{ marginBottom:14 }}>
+            <input type="number" min="0" step="0.01" value={form.prix} onChange={e=>setForm(f=>({...f,prix:e.target.value}))}
+              placeholder="Prix en € (optionnel)"
+              style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Avec un prix, le patient voit un bouton "Ajouter à la commande" (réservation — encaissement au comptoir, jamais de paiement en ligne pour ce produit).</div>
+          </div>
+
           {/* Preview story */}
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
@@ -241,7 +342,7 @@ function OffresSection({ pharmacie }) {
       {offres.map(offre => {
         const stats = aggregateOffre(events, offre.id);
         return (
-        <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.actif?"#f8faff":"#f8f9fa" }}>
+        <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.epuise?"#fecaca":offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.epuise?"#fff5f5":offre.actif?"#f8faff":"#f8f9fa" }}>
           <div style={{ width:44, height:44, borderRadius:10,
             background: offre.image_url
               ? `linear-gradient(135deg,${offre.couleur||"#1a3a6e"}cc,${offre.couleur||"#1a3a6e"}cc), url(${offre.image_url}) center/cover`
@@ -257,8 +358,11 @@ function OffresSection({ pharmacie }) {
               <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":offre.type==="avis_google"?"#fef9c3":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":offre.type==="avis_google"?"#92400e":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
                 {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":offre.type==="avis_google"?"Avis Google":"Fidélité"}
               </span>
+              {offre.epuise && <span style={{ fontSize:10, background:"#fee2e2", color:"#dc2626", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>🚫 Rupture</span>}
+              {offre.created_via==="mobile" && <span title="Créée depuis mobile" style={{ fontSize:10 }}>📱</span>}
             </div>
             {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
+            {offre.prix!=null && <div style={{ fontSize:12, color:"#1a3a6e", fontWeight:700, marginTop:2 }}>{offre.prix} € · réservable</div>}
             {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
             <div style={{ fontSize:11, color:"#64748b", marginTop:4, display:"flex", gap:12, flexWrap:"wrap" }}>
               <span>👁️ {stats.vues} vue{stats.vues>1?"s":""}</span>
@@ -267,6 +371,14 @@ function OffresSection({ pharmacie }) {
             </div>
           </div>
           <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+            {offre.prix!=null && (
+              <button onClick={()=>toggleEpuise(offre)} disabled={epuiseBusyId===offre.id}
+                style={{ padding:"5px 10px", border:`1.5px solid ${offre.epuise?"#fecaca":"#e0e7ff"}`, borderRadius:8,
+                  background:offre.epuise?"#fee2e2":"#fff", color:offre.epuise?"#dc2626":"#374151",
+                  fontSize:11, fontWeight:700, cursor:epuiseBusyId===offre.id?"default":"pointer", fontFamily:"inherit", opacity:epuiseBusyId===offre.id?0.6:1 }}>
+                {offre.epuise?"↺ Réassort":"🚫 Épuisé"}
+              </button>
+            )}
             <button onClick={()=>toggleOffre(offre.id, offre.actif)}
               style={{ padding:"5px 10px", border:`1.5px solid ${offre.actif?"#fecdd3":"#bbf7d0"}`, borderRadius:8,
                 background:offre.actif?"#fff5f5":"#f0fdf4", color:offre.actif?"#dc2626":"#15803d",
@@ -287,6 +399,7 @@ function OffresSection({ pharmacie }) {
         </div>
         );
       })}
+      </>}
     </div>
   );
 }

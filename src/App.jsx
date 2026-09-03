@@ -20,6 +20,7 @@ const LandingPage      = lazy(() => import("./pages/LandingPage.jsx").then(m => 
 const AppLogin         = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.AppLogin })));
 const ResetPasswordPage = lazy(() => import("./pages/LoginPage.jsx").then(m => ({ default: m.ResetPasswordPage })));
 const PatientPage      = lazy(() => import("./pages/PatientPage.jsx").then(m => ({ default: m.PatientPage })));
+const MobileOffreCapture = lazy(() => import("./pages/MobileOffreCapture.jsx").then(m => ({ default: m.MobileOffreCapture })));
 const LegalPage        = lazy(() => import("./pages/LegalPage.jsx").then(m => ({ default: m.LegalPage })));
 // Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
 // (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
@@ -165,6 +166,12 @@ function AppInner() {
   // imprimé avant qu'aucune pharmacie n'existe, donc son URL ne peut pas encoder
   // pharmacie_id comme le fait l'ancien lien ?patient=&t=.
   const qrCodeParam = urlParams.get("qr");
+  // Lien magique "offre mobile" (03/09/2026, ?m=<jeton>) : le préparateur
+  // scanne le QR affiché sur le dashboard PC, atterrit directement ici sans
+  // écran de login/PIN — voir mobile-offre (edge function) pour la
+  // vérification du jeton. Prioritaire au même niveau que ?patient=/?qr= (ne
+  // co-occurre jamais avec eux en usage réel — trois QR différents).
+  const mobileOffreToken = urlParams.get("m");
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");
@@ -175,11 +182,11 @@ function AppInner() {
   // détourné vers "finish-subscription" par l'effet de restauration de
   // session pharmacie plus bas (qui ne vérifiait pas l'existence d'une
   // session admin avant de s'exécuter — voir son garde-fou juste en dessous).
-  const initialRoute = isRecovery ? "reset-password" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : "landing"));
+  const initialRoute = isRecovery ? "reset-password" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : "landing"));
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
-  const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam);
+  const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam && !mobileOffreToken);
   const [authError, setAuthError] = useState(() => hashErrorCode ? friendlyAuthError(hashErrorCode, hashErrorDescription) : null);
   // Compte confirmé mais jamais passé par Stripe Checkout (ex. confirmation
   // d'email cliquée sur un autre appareil que celui de l'inscription, donc pas
@@ -218,7 +225,7 @@ function AppInner() {
     // (ex. un compte pharmacie de test utilisé dans le même onglet), cet
     // effet s'exécutait quand même et pouvait détourner un admin en train de
     // rafraîchir le backoffice vers "finish-subscription".
-    if (isDemoMode || isRecovery || patientParam || qrCodeParam || checkoutReturn || readStoredAdminToken()) { setSessionLoading(false); return; }
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam || mobileOffreToken || checkoutReturn || readStoredAdminToken()) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {
@@ -367,6 +374,7 @@ function AppInner() {
       {route==="reset-password"&&(
         <ResetPasswordPage onDone={()=>{window.history.replaceState({},"",window.location.pathname);setRoute("landing");}}/>
       )}
+      {route==="mobile-offre"&&<MobileOffreCapture token={mobileOffreToken}/>}
       {route==="patient"&&patientPharmacieQR&&(
         <PatientPage pharmacie={patientPharmacieQR} onBack={()=>{ window.history.replaceState({},"",window.location.pathname); setRoute("landing"); setPatientPharmacieQR(null); }}/>
       )}

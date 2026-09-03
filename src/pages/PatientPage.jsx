@@ -1,7 +1,7 @@
 // @version 16/07/2026 14:23 — swipe-natural
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance } from "../supabase.js";
+import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
@@ -369,6 +369,71 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   );
   const [interets, setInterets]     = useState({});
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
+  const [commande, setCommande]     = useState({}); // { offreId: quantite } — "Ajouter à la commande" (Click & Collect, PAS un paiement)
+  const [commandeBusy, setCommandeBusy] = useState(null); // offreId en cours d'envoi
+
+  // Offres mobile (03/09/2026) — une offre publiée depuis le téléphone d'un
+  // vendeur (ou marquée en rupture) doit apparaître/se mettre à jour ici sans
+  // que le patient recharge sa page. Pas de refetch complet : on modifie
+  // seulement l'entrée concernée dans allStories.
+  useEffect(() => {
+    if (!isProPlan || isDemoMode || !pharmacie?.id) return;
+    return subscribeToOffres(pharmacie.id, ({ eventType, new: row, old }) => {
+      if (eventType === "INSERT") {
+        if (!row.actif || row.epuise) return;
+        const storyId = `offre-${row.id}`;
+        setAllStories(prev => {
+          if (prev.some(s => s.id === storyId)) return prev;
+          const next = [...prev];
+          const insertAt = Math.min(1, next.length);
+          next.splice(insertAt, 0, {
+            id: storyId, offreId: row.id, offreType: row.type || "promo",
+            emoji: row.emoji || "🎁", bg: [row.couleur || "#1a3a6e", (row.couleur || "#1a3a6e") + "99"],
+            title: row.titre, text: row.description || "", image: row.image_url || null,
+            type: "offre", badge: row.badge || null, lienUrl: row.lien_url || null,
+            prix: row.prix != null ? Number(row.prix) : null, epuise: false,
+          });
+          return next;
+        });
+      } else if (eventType === "UPDATE") {
+        const storyId = `offre-${row.id}`;
+        setAllStories(prev => prev.map(s => s.id === storyId ? { ...s, epuise: !!row.epuise } : s));
+      } else if (eventType === "DELETE") {
+        const storyId = `offre-${old.id}`;
+        setAllStories(prev => prev.filter(s => s.id !== storyId));
+      }
+    });
+  }, [isProPlan, pharmacie?.id]);
+
+  // "Ajouter à la commande" — réservation Click & Collect, PAS un paiement (voir
+  // reserver-offre : aucun Stripe, l'encaissement se fait physiquement au TPE
+  // de la pharmacie). Même schéma d'appel que toggleInteret (clé anon, edge
+  // function service-role).
+  async function ajouterCommande(story) {
+    const offreId = story.offreId ?? story.id?.toString().replace('offre-', '');
+    if (!offreId || !codePatient || commandeBusy === offreId) return;
+    setCommandeBusy(offreId);
+    const prevQte = commande[offreId] || 0;
+    setCommande(prev => ({ ...prev, [offreId]: prevQte + 1 })); // optimiste
+    try {
+      if (isDemoMode) { setCommandeBusy(null); return; }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/reserver-offre`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ pharmacieId: pharmacie?.id, codePatient, offreId, action: 'ajouter' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `Erreur ${res.status}`);
+      setCommande(prev => ({ ...prev, [offreId]: body.quantite }));
+      logStoryEvent(story, 'offer_order_add', { meta: { quantite: body.quantite } });
+    } catch(e) {
+      console.error('[ajouterCommande]', e.message);
+      setCommande(prev => ({ ...prev, [offreId]: prevQte }));
+    }
+    setCommandeBusy(null);
+  }
 
   useEffect(() => {
     const sb = getSupabaseAnon();
@@ -481,7 +546,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
             console.log("[PatientStories] exemple:", JSON.stringify(allOffres[0]).slice(0, 200));
           }
           const offres = Array.isArray(allOffres)
-            ? allOffres.filter(o => o.actif === true || o.actif === "true" || o.actif === 1)
+            ? allOffres.filter(o => (o.actif === true || o.actif === "true" || o.actif === 1) && !o.epuise)
             : [];
           console.log("[PatientStories] offres actives:", offres.length);
 
@@ -500,6 +565,8 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 type: "offre",
                 badge: o.badge || null,
                 lienUrl: o.lien_url || null,
+                prix: o.prix != null ? Number(o.prix) : null,
+                epuise: false,
               }));
             base.splice(1, 0, ...offreStories);
             console.log("[PatientStories] offres injectées:", offreStories.length);
@@ -730,14 +797,42 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         {story.type === "offre" && (() => {
           const offreId = story.id?.toString().replace("offre-", "");
           const isOn    = !!interets[offreId];
+          const qte = commande[offreId] || 0;
           return (
             <div style={{ width:"100%", maxWidth:300 }}>
+              {story.epuise && (
+                <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(220,38,38,0.9)", borderRadius:24, padding:"4px 14px", fontSize:13, fontWeight:800, color:"#fff", marginBottom:14 }}>
+                  🚫 Produit en rupture
+                </div>
+              )}
               {story.badge && (
                 <div style={{ display:"inline-block", background:"rgba(255,255,255,0.25)", borderRadius:24, padding:"4px 16px", fontSize:18, fontWeight:900, color:"#fff", marginBottom:14, border:"2px solid rgba(255,255,255,0.4)" }}>
                   {story.badge}
                 </div>
               )}
               <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280, marginBottom:20 }}>{story.text}</div>
+              {story.prix != null && (
+                <div style={{ fontSize:26, fontWeight:900, color:"#fff", marginBottom:16 }}>{story.prix} €</div>
+              )}
+
+              {/* "Ajouter à la commande" — réservation Click & Collect (pas un
+                  paiement, voir ajouterCommande) : uniquement pour les offres
+                  avec un prix, et jamais en rupture. */}
+              {story.prix != null && !story.epuise && codePatient && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); ajouterCommande(story); }}
+                  disabled={commandeBusy === offreId}
+                  style={{
+                    width:"100%", boxSizing:"border-box", padding:"14px 20px", marginBottom:10,
+                    border:"none", borderRadius:16, cursor: commandeBusy===offreId ? "default" : "pointer", fontFamily:"inherit",
+                    background: qte>0 ? "#22c55e" : "#fff",
+                    color: qte>0 ? "#052e16" : "#1a1a1a", fontWeight:800, fontSize:16,
+                    display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+                    opacity: commandeBusy===offreId ? 0.7 : 1,
+                  }}>
+                  {qte>0 ? `🛒 Ajouté (${qte}) — encaissement au comptoir` : "🛒 Ajouter à la commande"}
+                </button>
+              )}
 
               {story.offreType === "avis_google" ? (
                 // Offre "Avis Google" : ouvre directement le lien renseigné par le

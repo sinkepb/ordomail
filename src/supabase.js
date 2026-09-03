@@ -58,6 +58,7 @@ export {
 export {
   subscribeToPharmacy,
   notifyPharmacy,
+  subscribeToOffres,
 } from './lib/supabase/realtime.js';
 
 export {
