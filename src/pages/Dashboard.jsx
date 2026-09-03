@@ -265,9 +265,10 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
             // PlanSwitcher passait à "done" comme si tout s'était bien passé, alors
             // que changePlan() pouvait avoir échoué (voir aussi billing.js:
             // changePlan() ne retombe plus sur une mise à jour DB seule sans Stripe).
-            await changePlan(pharmacie.id, newPlan, billing);
+            const result = await changePlan(pharmacie.id, newPlan, billing);
             const ph = await onPlanChanged?.();
             if (ph) setPostes(ph.postes || []);
+            return result;
           }}/>
           </ErrorBoundary>
         )}

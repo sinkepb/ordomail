@@ -131,10 +131,17 @@ export function getPrevPlan(currentPlan) {
   return idx > 0 ? PLAN_ORDER[idx-1] : null;
 }
 
+// @conformite-tarifs 29/08/2026 — Phase 6 (§13) : un downgrade doit
+// permettre de prévisualiser CE QUI SERA PERDU avant confirmation — pas
+// seulement le nombre de postes désactivés. featuresLost liste les
+// fonctionnalités du plan actuel absentes du plan visé.
+const FEATURE_LABELS = { offresStories: "Offres & Stories", sonnette: "Sonnette" };
+
 export function computeImpact(pharmacie, postes, newPlanId) {
   const curr   = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
   const next   = PLAN_LIMITS[newPlanId]      || PLAN_LIMITS.starter;
   const actifs = (postes || []).filter(p => p.actif).length;
+  const featuresLost = Object.keys(FEATURE_LABELS).filter(f => curr[f] && !next[f]).map(f => FEATURE_LABELS[f]);
   return {
     curr,
     next,
@@ -142,6 +149,7 @@ export function computeImpact(pharmacie, postes, newPlanId) {
     postesActuels:   actifs,
     postesASusprimer: Math.max(0, actifs - next.maxPostes),
     priceDiff:       next.price - curr.price,
+    featuresLost,
   };
 }
 

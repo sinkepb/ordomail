@@ -11,6 +11,10 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 
+// Ordre des plans — sert uniquement à détecter upgrade vs downgrade (§13),
+// pas les limites/fonctionnalités elles-mêmes (voir planFeatures.ts).
+const PLAN_ORDER = ["starter", "standard", "pro"];
+
 serve(async (req) => {
   const CORS = corsHeaders(req, {
     "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
@@ -44,9 +48,27 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Vous n'êtes pas autorisé à modifier cet abonnement" }), { status: 403, headers: CORS });
     }
 
-    const { data: ph } = await supabase.from("pharmacies").select("stripe_subscription_id").eq("id", pharmacieId).maybeSingle();
+    const { data: ph } = await supabase.from("pharmacies").select("plan, stripe_subscription_id").eq("id", pharmacieId).maybeSingle();
     if (!ph?.stripe_subscription_id) {
       return new Response(JSON.stringify({ error: "Pas d'abonnement Stripe actif" }), { status: 400, headers: CORS });
+    }
+
+    // Phase 6 tarification (§13) — un downgrade est programmé à la fin de la
+    // période de facturation en cours, SANS perte immédiate de
+    // fonctionnalités : rien n'est touché côté Stripe/plan/postes tout de
+    // suite, juste enregistré comme "en attente". apply-pending-downgrades
+    // (cron quotidien) applique le changement réel une fois la période
+    // écoulée. Un changement d'intervalle de facturation sur le MÊME plan
+    // (ex. "passer en annuel", Phase 5) n'est pas un downgrade — reste
+    // immédiat, comme un upgrade.
+    const isDowngrade = PLAN_ORDER.indexOf(newPlan) < PLAN_ORDER.indexOf(ph.plan);
+    if (isDowngrade) {
+      const sub = await stripe.subscriptions.retrieve(ph.stripe_subscription_id);
+      const effectiveAt = new Date(sub.current_period_end * 1000).toISOString();
+      await supabase.from("pharmacies").update({
+        plan_pending: newPlan, plan_pending_billing: billing, plan_pending_effective_at: effectiveAt,
+      }).eq("id", pharmacieId);
+      return new Response(JSON.stringify({ success: true, scheduled: true, effectiveAt, newPlan }), { headers: CORS });
     }
 
     const lookupKey = `price_${newPlan}_${billing === "annual" ? "annual" : "monthly"}`;
@@ -66,7 +88,13 @@ serve(async (req) => {
     // vers Fluidité+, désactivée en redescendant vers Essentiel) — jusqu'ici
     // ce booléen restait figé à sa valeur de création, indépendant du plan.
     const sonnetteEnabled = await planHasFeature(supabase, newPlan, "sonnette");
-    await supabase.from("pharmacies").update({ plan: newPlan, sonnette_active: sonnetteEnabled }).eq("id", pharmacieId);
+    // Un upgrade (ou changement d'intervalle) annule un downgrade programmé
+    // qui n'avait pas encore pris effet — cohérent avec "le client a changé
+    // d'avis avant la fin de la période".
+    await supabase.from("pharmacies").update({
+      plan: newPlan, sonnette_active: sonnetteEnabled,
+      plan_pending: null, plan_pending_billing: null, plan_pending_effective_at: null,
+    }).eq("id", pharmacieId);
     await trimExcessPostes(supabase, pharmacieId, newPlan);
 
     return new Response(JSON.stringify({ success: true, newPlan }), { headers: CORS });

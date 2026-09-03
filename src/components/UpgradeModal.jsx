@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { PLAN_LIMITS, PLAN_ORDER, getNextPlan, computeImpact } from "../lib/plans.js";
-import { getSupabaseClient, isDemoMode } from "../supabase.js";
 
 function UpgradeModal({ currentPlan, reason, onConfirm, onClose }) {
   const nextPlan = getNextPlan(currentPlan);
@@ -57,6 +56,7 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
   const [selected, setSelected] = useState(null);
   const [step, setStep] = useState("choose");
   const [errorMsg, setErrorMsg] = useState("");
+  const [confirmResult, setConfirmResult] = useState(null);
   // Figé à l'ouverture : `pharmacie` est une prop qui se met à jour en direct une fois
   // le changement confirmé (le parent refetch après onConfirm), donc recalculer
   // computeImpact contre pharmacie.plan en direct ferait dire, une fois l'étape "done"
@@ -77,17 +77,31 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
     </div>
   );
 
-  if (step === "done") return (
-    <div style={{textAlign:"center",padding:"24px 0"}}>
-      <div style={{fontSize:64,marginBottom:16}}>✅</div>
-      <div style={{fontWeight:900,fontSize:20,color:"#0f172a",marginBottom:8}}>Plan mis à jour !</div>
-      <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.7}}>
-        Vous êtes sur le plan <strong style={{color:selected.color}}>{selected.icon} {selected.label}</strong>.<br/>
-        {impact.isUpgrade?"Accès immédiat.":"Effet au prochain renouvellement."}
+  if (step === "done") {
+    // @conformite-tarifs 29/08/2026 — Phase 6 (§13) : un downgrade est
+    // désormais programmé côté serveur (change-plan renvoie
+    // {scheduled:true, effectiveAt}) au lieu d'être appliqué tout de suite —
+    // rien n'a encore changé pour la pharmacie, distinguer clairement des
+    // upgrades (accès immédiat) pour ne pas laisser croire à un effet direct.
+    const scheduled = confirmResult?.scheduled;
+    const effectiveDate = confirmResult?.effectiveAt
+      ? new Date(confirmResult.effectiveAt).toLocaleDateString("fr-FR", { day:"numeric", month:"long", year:"numeric" })
+      : null;
+    return (
+      <div style={{textAlign:"center",padding:"24px 0"}}>
+        <div style={{fontSize:64,marginBottom:16}}>{scheduled?"📅":"✅"}</div>
+        <div style={{fontWeight:900,fontSize:20,color:"#0f172a",marginBottom:8}}>{scheduled?"Changement programmé":"Plan mis à jour !"}</div>
+        <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.7}}>
+          {scheduled ? (
+            <>Vous resterez sur <strong style={{color:impact.curr.color}}>{impact.curr.icon} {impact.curr.label}</strong> jusqu'au <strong>{effectiveDate || "prochain renouvellement"}</strong>, puis passerez automatiquement en <strong style={{color:selected.color}}>{selected.icon} {selected.label}</strong>. Aucune fonctionnalité n'est retirée avant cette date.</>
+          ) : (
+            <>Vous êtes sur le plan <strong style={{color:selected.color}}>{selected.icon} {selected.label}</strong>.<br/>Accès immédiat.</>
+          )}
+        </div>
+        <button onClick={onClose} style={{padding:"11px 28px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Fermer</button>
       </div>
-      <button onClick={onClose} style={{padding:"11px 28px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Fermer</button>
-    </div>
-  );
+    );
+  }
 
   if (step === "processing") return (
     <div style={{textAlign:"center",padding:"32px 0"}}>
@@ -129,6 +143,18 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
             🚫 {impact.postesASusprimer} poste(s) seront désactivés automatiquement
           </div>
         )}
+        {/* @conformite-tarifs 29/08/2026 — Phase 6 (§13) : lister les fonctionnalités
+            perdues avant confirmation, pas seulement les postes. */}
+        {!impact.isUpgrade && impact.featuresLost.length>0 && (
+          <div style={{marginTop:10,padding:"8px 12px",background:"#fee2e2",borderRadius:8,fontSize:12,color:"#dc2626",fontWeight:600}}>
+            🚫 Vous perdrez au prochain renouvellement : {impact.featuresLost.join(", ")}
+          </div>
+        )}
+        {!impact.isUpgrade && (
+          <div style={{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:12,color:"#1e40af",fontWeight:600}}>
+            ℹ️ Aucun effet immédiat — le plan actuel reste actif jusqu'à la fin de la période de facturation en cours.
+          </div>
+        )}
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={onClose} style={{flex:1,padding:"11px",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Annuler</button>
@@ -136,23 +162,18 @@ function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
           setStep("processing");
           (async () => {
             try {
-              // Si downgrade : désactiver les postes excédentaires en Supabase.
-              // ⚠️ Utilise `postes` (prop, source de l'avertissement affiché à l'écran
-              // précédent) et non `pharmacie.postes` (peut être obsolète — pas
-              // resynchronisé avec les modifications faites dans l'onglet Postes tant
-              // qu'un refetch de la pharmacie n'a pas eu lieu).
-              if (impact && impact.postesASusprimer > 0 && !isDemoMode) {
-                const sb = getSupabaseClient();
-                const actifs = (postes||[]).filter(p=>p.actif);
-                for (let i = actifs.length-1; i >= selected.maxPostes; i--) {
-                  const { error } = await sb.from("pharmacie_postes").update({ actif: false }).eq("id", actifs[i].id);
-                  if (error) throw error;
-                }
-              }
+              // @conformite-tarifs 29/08/2026 (Phase 6, §13) — un downgrade est
+              // désormais programmé côté serveur (change-plan) et n'a plus
+              // d'effet immédiat : plus de désactivation de postes ici, ça
+              // romprait la promesse "aucune perte immédiate de fonctionnalité".
+              // apply-pending-downgrades (cron nocturne) s'en charge à la date
+              // effective. Un upgrade n'augmente jamais postesASusprimer
+              // (maxPostes croît avec le plan) — rien à faire côté client non plus.
               // @fix 29/08/2026 (Phase 5) — billingCycle pilotait uniquement
               // l'affichage des prix dans cette modale, jamais envoyé à
               // onConfirm : "passer en annuel" n'avait aucun effet réel.
-              await onConfirm(selected.id, billingCycle);
+              const result = await onConfirm(selected.id, billingCycle);
+              setConfirmResult(result || null);
               setStep("done");
             } catch(e) {
               console.error("[PlanSwitcher]", e.message);

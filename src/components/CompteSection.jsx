@@ -18,6 +18,22 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   const [abonnement,setAbonnement]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
   const [portalErr,setPortalErr]=useState("");
+  // Phase 6 tarification (§13) — annuler un downgrade programmé avant sa
+  // date effective : réutilise onUpgrade en visant le plan ACTUEL, qui suit
+  // la même branche que les upgrades côté change-plan et efface
+  // plan_pending* comme effet de bord (voir le commentaire dans
+  // change-plan/index.ts) — pas besoin d'un endpoint dédié.
+  const [cancelingDowngrade,setCancelingDowngrade]=useState(false);
+  const [cancelErr,setCancelErr]=useState("");
+  async function cancelPendingDowngrade() {
+    setCancelingDowngrade(true); setCancelErr("");
+    try {
+      await onUpgrade(pharmacie.plan, pharmacie.plan_pending_billing || abonnement?.billing_cycle || "monthly");
+    } catch(e) {
+      setCancelErr(e.message || "Erreur lors de l'annulation");
+    }
+    setCancelingDowngrade(false);
+  }
   useEffect(()=>{
     if (isDemoMode || !pharmacie?.id) return;
     fetchAbonnement(pharmacie.id).then(setAbonnement).catch(()=>{});
@@ -303,6 +319,23 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
           <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>
             📅 Prochaine facture le <strong>{new Date(abonnement.current_period_end).toLocaleDateString("fr-FR")}</strong>
             {abonnement.billing_cycle && ` · facturation ${abonnement.billing_cycle==="annual"?"annuelle":"mensuelle"}`}
+          </div>
+        )}
+        {/* Phase 6 (§13) — downgrade programmé mais pas encore appliqué :
+            le plan actuel reste actif, apply-pending-downgrades (cron) bascule
+            à la date indiquée. Option d'annuler avant cette date. */}
+        {pharmacie.plan_pending && (
+          <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:12,color:"#92400e",fontWeight:600,lineHeight:1.6}}>
+              📅 Passage prévu en <strong>{PLAN_LIMITS[pharmacie.plan_pending]?.label || pharmacie.plan_pending}</strong> le{" "}
+              <strong>{pharmacie.plan_pending_effective_at ? new Date(pharmacie.plan_pending_effective_at).toLocaleDateString("fr-FR") : "prochain renouvellement"}</strong>.
+              Vous conservez {plan.label} jusque-là.
+            </div>
+            <button onClick={cancelPendingDowngrade} disabled={cancelingDowngrade}
+              style={{marginTop:8,padding:"6px 12px",border:"1.5px solid #fdba74",borderRadius:8,background:"#fff",color:"#92400e",fontWeight:700,fontSize:11,cursor:cancelingDowngrade?"default":"pointer",fontFamily:"inherit",opacity:cancelingDowngrade?0.6:1}}>
+              {cancelingDowngrade?"Annulation…":"Annuler ce changement"}
+            </button>
+            {cancelErr && <div style={{marginTop:6,fontSize:11,color:"#dc2626"}}>{cancelErr}</div>}
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
