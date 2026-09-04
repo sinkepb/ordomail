@@ -885,8 +885,12 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         )}
       </div>
 
-      {/* Indicateur swipe — masqué sur Starter/Standard, rien vers quoi swiper */}
-      {isProPlan && quizAnswer === null && !isQuiz && (
+      {/* Indicateur swipe — masqué sur Starter/Standard, rien vers quoi swiper.
+          @fix 04/09/2026 — masqué aussi sur la dernière story (avis Google +
+          Terminer) : son propre indicateur s'affiche APRÈS ces boutons plus
+          bas (demande explicite : boutons plus haut, "Swipez" en dessous). */}
+      {isProPlan && quizAnswer === null && !isQuiz
+        && !(current === allStories.length - 1 && (progress > 80 || !isProPlan)) && (
         <div style={{ padding: "0 0 24px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 12, zIndex: 10 }}>
           ← Swipez →
         </div>
@@ -1104,7 +1108,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       {/* Starter/Standard : pas de minuteur (progress reste à 0), le bouton
           doit donc apparaître directement plutôt qu'attendre progress>80. */}
       {current === allStories.length - 1 && (progress > 80 || !isProPlan) && (
-        <div style={{ padding: "0 20px 20px", zIndex: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <>
+        {/* @fix 04/09/2026 — remonté (padding bas réduit à 8px, contre 20px
+            avant) pour laisser la place à l'indicateur swipe juste en dessous
+            plutôt qu'au-dessus (demande explicite). */}
+        <div style={{ padding: "0 20px 8px", zIndex: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Avis Google (04/09/2026) — fusionnée avec cette dernière story
               plutôt que d'occuper sa propre carte au milieu du diaporama.
               @fix 04/09/2026 — bloc resserré (padding/gap réduits) : ajouter
@@ -1128,6 +1136,15 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
             Terminer et repartir de zéro
           </button>
         </div>
+        {/* Indicateur swipe de cette story — sous les boutons (demande
+            explicite), contrairement à l'indicateur par défaut plus haut
+            (masqué pour cette story précise, voir sa condition). */}
+        {isProPlan && (
+          <div style={{ padding: "0 0 16px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 12, zIndex: 10 }}>
+            ← Swipez →
+          </div>
+        )}
+        </>
       )}
     </div>
   );
