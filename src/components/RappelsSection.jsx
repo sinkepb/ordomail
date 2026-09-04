@@ -30,6 +30,19 @@ function normalizeTel(v) {
 function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
 }
+// Format YYYY-MM-DD attendu par <input type="date"> — J+21 par défaut
+// (04/09/2026), modifiable ensuite par le pharmacien.
+function toDateInputValue(date) {
+  return date.toISOString().slice(0, 10);
+}
+function defaultDateRappel() {
+  const d = new Date();
+  d.setDate(d.getDate() + 21);
+  return toDateInputValue(d);
+}
+function todayDateInputValue() {
+  return toDateInputValue(new Date());
+}
 
 // Exporté (04/09/2026) — réutilisé depuis Dashboard.jsx pour créer un rappel
 // directement depuis une carte d'ordonnance (nom/prénom pré-remplis à partir
@@ -38,6 +51,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   const [nom, setNom] = useState(initialNom);
   const [prenom, setPrenom] = useState(initialPrenom);
   const [telephone, setTelephone] = useState("");
+  const [dateRappel, setDateRappel] = useState(defaultDateRappel);
   const [commentaire, setCommentaire] = useState("");
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
@@ -53,13 +67,17 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
       setError("Numéro de téléphone invalide (format français attendu).");
       return;
     }
+    if (!dateRappel || dateRappel < todayDateInputValue()) {
+      setError("La date de rappel ne peut pas être dans le passé.");
+      return;
+    }
     if (!consentement) {
       setError("Le patient doit avoir consenti à être recontacté par SMS.");
       return;
     }
     setCreating(true);
     try {
-      await onCreated({ nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), consentement });
+      await onCreated({ nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), dateRappel, commentaire: commentaire.trim(), consentement });
     } catch (e2) {
       setError(e2.message || "Échec de la création du rappel.");
     }
@@ -83,6 +101,11 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
         <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Date de rappel</label>
+        <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>Pré-remplie à J+21 (renouvellement standard) — modifiable si besoin.</div>
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Commentaire (optionnel)</label>
         <textarea value={commentaire} onChange={e => setCommentaire(e.target.value)} rows={2} placeholder="Ex : traitement chronique, renouvellement tous les 3 mois"
@@ -199,6 +222,11 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
                 <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}</div>
+                {r.statut === "en_attente" && r.date_prochaine_relance && (
+                  <div style={{ fontSize: 12, color: "#4338ca", marginTop: 2 }}>
+                    Rappel prévu le {new Date(r.date_prochaine_relance).toLocaleDateString("fr-FR")}
+                  </div>
+                )}
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
                 {r.statut === "a_traiter" && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>

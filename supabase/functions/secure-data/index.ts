@@ -434,7 +434,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
@@ -445,6 +445,23 @@ Deno.serve(async (req) => {
       if (!consentement) {
         return new Response(JSON.stringify({ error: "Le consentement du patient à être recontacté est requis" }), { status: 400, headers: CORS });
       }
+      // Date de rappel modifiable (04/09/2026) — J+21 par défaut, calculé et
+      // pré-rempli côté UI (RappelForm), mais le pharmacien peut l'ajuster
+      // (ex. renouvellement connu pour une date précise). Un point dans le
+      // passé n'a pas de sens (le cron le traiterait dès le prochain scan
+      // sans que ce soit voulu) — seule contrainte : pas avant aujourd'hui.
+      let dateProchaineRelance: string | undefined;
+      if (dateRappel) {
+        const parsed = new Date(dateRappel);
+        if (Number.isNaN(parsed.getTime())) {
+          return new Response(JSON.stringify({ error: "Date de rappel invalide" }), { status: 400, headers: CORS });
+        }
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (parsed < today) {
+          return new Response(JSON.stringify({ error: "La date de rappel ne peut pas être dans le passé" }), { status: 400, headers: CORS });
+        }
+        dateProchaineRelance = parsed.toISOString();
+      }
       const { data, error } = await sb.from("rappels_ordonnance").insert({
         pharmacie_id: pharmacieId,
         patient_nom: nom.trim(),
@@ -452,6 +469,7 @@ Deno.serve(async (req) => {
         patient_telephone: telephone.trim(),
         commentaire: commentaire?.trim() || null,
         consentement_sms: true,
+        ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
       await sb.from("rappels_evenements").insert({ rappel_id: data.id, type: "cree" });

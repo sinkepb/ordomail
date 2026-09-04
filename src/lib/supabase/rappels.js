@@ -19,7 +19,7 @@ export async function fetchRappels(pharmacieId, statut = null) {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, commentaire, consentement }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -30,13 +30,13 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, commen
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
       commentaire: commentaire || null, consentement_sms: !!consentement,
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
-      date_prochaine_relance: new Date(Date.now() + 21 * 86400000).toISOString(),
+      date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
       created_at: new Date().toISOString(),
     };
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, commentaire, consentement });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement });
 }
 
 export async function traiterRappel(rappelId) {
