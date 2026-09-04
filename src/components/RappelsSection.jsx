@@ -198,10 +198,125 @@ function EnvoyerTestModal({ rappel, onCancel, onSend, sending, error }) {
   );
 }
 
+// Prochaine date de rappel par défaut selon le choix du patient (04/09/2026)
+// — J+21 pour un renouvellement (total ou partiel), ou un écart croissant
+// pour "ne rien prendre" (numéro de cycle ACTUEL, avant incrémentation, ×31
+// jours + 21) : un patient qui décline plusieurs fois de suite n'a pas
+// besoin d'être rappelé aussi souvent. Même formule que côté serveur
+// (secure-data:rappels_traiter) — dupliquée ici pour pré-remplir le champ,
+// le serveur reste la source de vérité qui valide la date finale envoyée.
+function defaultDateForChoix(rappel) {
+  const d = new Date();
+  const jours = rappel.choix_patient === "rien" ? rappel.cycle_numero * 31 + 21 : 21;
+  d.setDate(d.getDate() + jours);
+  return toDateInputValue(d);
+}
+
+// Popup de confirmation à la validation d'un rappel "à traiter" (04/09/2026)
+// — le contenu dépend du choix du patient : une confirmation de livraison
+// est exigée pour un renouvellement (total ou partiel, formulée différemment
+// selon le cas — un renouvellement partiel suppose d'avoir déjà appelé le
+// patient pour préciser sa demande), mais pas pour "ne rien prendre" où
+// seule la prochaine date compte.
+function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
+  const [dateRappel, setDateRappel] = useState(() => defaultDateForChoix(rappel));
+  const [livre, setLivre] = useState(false);
+  const [error, setError] = useState("");
+  const requiresLivraison = rappel.choix_patient === "tout_renouveler" || rappel.choix_patient === "partiel";
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!dateRappel || dateRappel < todayDateInputValue()) {
+      setError("La date de rappel ne peut pas être dans le passé.");
+      return;
+    }
+    if (requiresLivraison && !livre) {
+      setError("Confirmez que le médicament a bien été livré avant de valider.");
+      return;
+    }
+    onConfirm(dateRappel);
+  }
+
+  const titre = rappel.choix_patient === "tout_renouveler" ? "✅ Confirmer le renouvellement"
+    : rappel.choix_patient === "partiel" ? "🔶 Confirmer le renouvellement partiel"
+    : "🚫 Confirmer";
+  const consigne = rappel.choix_patient === "tout_renouveler"
+    ? "Le médicament a bien été livré au patient."
+    : rappel.choix_patient === "partiel"
+    ? "Après avoir appelé le patient pour préciser sa demande, le médicament a bien été livré."
+    : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{titre}</div>
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>{rappel.patient_prenom} {rappel.patient_nom}</div>
+
+        {consigne && (
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer", background: "#f8fafc", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0" }}>
+            <input type="checkbox" checked={livre} onChange={e => setLivre(e.target.checked)} style={{ marginTop: 3 }} />
+            <span style={{ fontSize: 13, color: "#334155", lineHeight: 1.4, fontWeight: 600 }}>{consigne}</span>
+          </label>
+        )}
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de rappel</label>
+        <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>
+          {rappel.choix_patient === "rien" ? "Espacée automatiquement (le patient a décliné) — modifiable si besoin." : "Pré-remplie à J+21 — modifiable si besoin."}
+        </div>
+
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button type="submit" disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? "Validation…" : "Valider"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Confirmation avant fin de traitement définitive (04/09/2026) — irréversible
+// (plus aucune relance), une confirmation explicite évite un clic accidentel.
+function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>⚠️ Terminer ce rappel ?</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+          Le suivi de <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> s'arrêtera définitivement — aucune nouvelle relance ne sera envoyée.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? "…" : "Confirmer la fin"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RappelsSection({ pharmacie, onCountATraiter }) {
   const [rappels, setRappels] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filtre, setFiltre] = useState("tous");
+  // "à traiter" par défaut (04/09/2026, retour direct) — c'est ce qui demande
+  // une action du pharmacien, ça ne doit pas être noyé derrière "Tous".
+  const [filtre, setFiltre] = useState("a_traiter");
   const [showForm, setShowForm] = useState(false);
   const [editingRappel, setEditingRappel] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -209,6 +324,8 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [sendModalRappel, setSendModalRappel] = useState(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [validatingRappel, setValidatingRappel] = useState(null);
+  const [terminatingRappel, setTerminatingRappel] = useState(null);
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -249,26 +366,30 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setSending(false);
   }
 
-  async function handleValider(rappel) {
+  async function handleValiderConfirm(dateRappel) {
+    const rappel = validatingRappel;
     setBusyId(rappel.id);
     try {
-      await traiterRappel(rappel.id);
+      await traiterRappel(rappel.id, dateRappel);
       setRappels(prev => prev.map(r => r.id === rappel.id
-        ? { ...r, statut: "en_attente", choix_patient: null, cycle_numero: (r.cycle_numero || 1) + 1 }
+        ? { ...r, statut: "en_attente", choix_patient: null, cycle_numero: (r.cycle_numero || 1) + 1, date_prochaine_relance: new Date(dateRappel).toISOString() }
         : r));
+      setValidatingRappel(null);
     } catch (e) {
-      console.error("[handleValider]", e.message);
+      console.error("[handleValiderConfirm]", e.message);
     }
     setBusyId(null);
   }
 
-  async function handleTerminer(rappel) {
+  async function handleTerminerConfirm() {
+    const rappel = terminatingRappel;
     setBusyId(rappel.id);
     try {
       await terminerRappel(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "termine" } : r));
+      setTerminatingRappel(null);
     } catch (e) {
-      console.error("[handleTerminer]", e.message);
+      console.error("[handleTerminerConfirm]", e.message);
     }
     setBusyId(null);
   }
@@ -340,13 +461,13 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                 </button>
               )}
               {r.statut === "a_traiter" && (
-                <button onClick={() => handleValider(r)} disabled={busy}
+                <button onClick={() => setValidatingRappel(r)} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "…" : "✅ Valider"}
                 </button>
               )}
               {r.statut !== "termine" && (
-                <button onClick={() => handleTerminer(r)} disabled={busy}
+                <button onClick={() => setTerminatingRappel(r)} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   Fin de traitement
                 </button>
@@ -359,6 +480,8 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
       {showForm && <RappelForm onCancel={() => setShowForm(false)} onCreated={handleCreated} creating={creating} setCreating={setCreating} />}
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
+      {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
+      {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
     </div>
   );
 }

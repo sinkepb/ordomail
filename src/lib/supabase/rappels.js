@@ -39,9 +39,9 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
   return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement });
 }
 
-export async function traiterRappel(rappelId) {
+export async function traiterRappel(rappelId, dateRappel = null) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_traiter', { rappelId });
+  return await callSecureData('rappels_traiter', { rappelId, dateRappel });
 }
 
 export async function terminerRappel(rappelId) {

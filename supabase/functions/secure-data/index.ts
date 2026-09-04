@@ -499,22 +499,44 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId } = params || {};
+      const { rappelId, dateRappel } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero").eq("id", rappelId).maybeSingle();
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient").eq("id", rappelId).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
       if (existing.statut !== "a_traiter") {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
       }
+      // Prochaine date de rappel (04/09/2026) — le pharmacien peut l'ajuster
+      // dans la popup de confirmation (voir RappelsSection.jsx:ValiderModal),
+      // sinon un défaut selon le choix du patient : J+21 pour un
+      // renouvellement (total ou partiel), ou un écart croissant à chaque
+      // refus successif (numéro de CYCLE ACTUEL, avant incrémentation, ×31
+      // jours + 21) pour "ne rien prendre" — un patient qui décline
+      // plusieurs fois de suite n'a pas besoin d'être rappelé aussi souvent.
+      let dateProchaineRelance: string;
+      if (dateRappel) {
+        const parsed = new Date(dateRappel);
+        if (Number.isNaN(parsed.getTime())) {
+          return new Response(JSON.stringify({ error: "Date de rappel invalide" }), { status: 400, headers: CORS });
+        }
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (parsed < today) {
+          return new Response(JSON.stringify({ error: "La date de rappel ne peut pas être dans le passé" }), { status: 400, headers: CORS });
+        }
+        dateProchaineRelance = parsed.toISOString();
+      } else {
+        const joursOffset = existing.choix_patient === "rien" ? existing.cycle_numero * 31 + 21 : 21;
+        dateProchaineRelance = new Date(Date.now() + joursOffset * 86400000).toISOString();
+      }
       const { error } = await sb.from("rappels_ordonnance").update({
         statut: "en_attente",
         choix_patient: null,
         cycle_numero: existing.cycle_numero + 1,
-        date_prochaine_relance: new Date(Date.now() + 21 * 86400000).toISOString(),
+        date_prochaine_relance: dateProchaineRelance,
         date_traite: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
