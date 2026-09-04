@@ -70,3 +70,21 @@ export function subscribeToOffres(pharmacieId, onChange) {
     .subscribe();
   return () => sb.removeChannel(channel);
 }
+
+// Rappels de renouvellement (04/09/2026) — un patient répond depuis
+// resolve-rappel (sa propre session anonyme, jamais celle du pharmacien) :
+// sans ceci, le passage à "a_traiter" et le badge associé n'apparaissaient
+// qu'après un rechargement manuel de l'onglet Rappels. Même schéma que
+// subscribeToOffres (nom de canal unique par abonnement, payload brut
+// {eventType, new, old} laissé à l'appelant).
+export function subscribeToRappels(pharmacieId, onChange) {
+  if (IS_DEMO) return () => {};
+  const sb = getSupabase();
+  const channel = sb.channel(`rappels:${pharmacieId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'rappels_ordonnance',
+      filter: `pharmacie_id=eq.${pharmacieId}`,
+    }, (payload) => onChange(payload))
+    .subscribe();
+  return () => sb.removeChannel(channel);
+}

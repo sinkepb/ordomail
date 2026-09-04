@@ -34,6 +34,7 @@ import {
   appellerPatient,
   createRappel,
   fetchRappels,
+  subscribeToRappels,
 } from "../supabase.js";
 
 // Découpe au mieux "NOM Prénom" (format des données extraites/démo, voir
@@ -371,6 +372,18 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   useEffect(() => {
     if (!pharmacieId) return;
     fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
+  }, [pharmacieId]);
+
+  // Temps réel (04/09/2026, retour direct) — le patient répond depuis sa
+  // propre session (resolve-rappel), jamais celle du pharmacien : sans ça, le
+  // badge de la barre du haut n'était à jour qu'après un rechargement complet
+  // du dashboard. Un simple re-fetch du compte à chaque événement plutôt
+  // qu'un calcul incrémental — peu fréquent, et toujours exact.
+  useEffect(() => {
+    if (!pharmacieId) return;
+    return subscribeToRappels(pharmacieId, () => {
+      fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
+    });
   }, [pharmacieId]);
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);

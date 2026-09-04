@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, createRappel, traiterRappel, terminerRappel, updateRappel, envoyerTestRappel } from "../supabase.js";
+import { fetchRappels, createRappel, traiterRappel, terminerRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
 
 // Adresse de test mémorisée localement (04/09/2026) — pure commodité pour ne
 // pas la retaper à chaque envoi de test ; jamais partagée, jamais envoyée
@@ -10,7 +10,7 @@ import { fetchRappels, createRappel, traiterRappel, terminerRappel, updateRappel
 const TEST_EMAIL_KEY = "ordomail_rappel_test_email";
 
 const STATUT_INFO = {
-  en_attente: { label: "En attente (J+21)", bg: "#eef2ff", fg: "#4338ca" },
+  en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
   termine:    { label: "Terminé",    bg: "#f0fdf4", fg: "#15803d" },
@@ -331,6 +331,23 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     if (!pharmacie?.id) return;
     setLoading(true);
     fetchRappels(pharmacie.id).then(data => { setRappels(data || []); setLoading(false); });
+  }, [pharmacie?.id]);
+
+  // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
+  // propre session (resolve-rappel), jamais celle du pharmacien : sans ça,
+  // le passage à "à traiter" n'apparaissait qu'après un rechargement manuel
+  // de cet onglet. Fusionne l'événement dans la liste locale plutôt que de
+  // tout recharger (même schéma que subscribeToOffres/OffresSection.jsx).
+  useEffect(() => {
+    if (!pharmacie?.id) return;
+    return subscribeToRappels(pharmacie.id, ({ eventType, new: row, old }) => {
+      setRappels(prev => {
+        if (eventType === "INSERT") return prev.some(r => r.id === row.id) ? prev : [row, ...prev];
+        if (eventType === "UPDATE") return prev.map(r => r.id === row.id ? { ...r, ...row } : r);
+        if (eventType === "DELETE") return prev.filter(r => r.id !== old.id);
+        return prev;
+      });
+    });
   }, [pharmacie?.id]);
 
   useEffect(() => {
