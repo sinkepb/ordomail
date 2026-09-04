@@ -98,6 +98,11 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22, 0 1px 4px rgba(0,0,0,0.08)` : "0 1px 6px rgba(0,0,0,0.06)",
       border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
       transition: "box-shadow 0.2s",
+      // Grille stretch les cartes d'une même ligne à la même hauteur (voir
+      // Dashboard.jsx, display:grid) mais un contenu variable (bandeau
+      // "intéressé(e)" présent ou non) faisait flotter sonnette/imprimer à des
+      // hauteurs différentes d'une carte à l'autre au lieu de rester en bas.
+      display: "flex", flexDirection: "column",
     }}>
       {/* Bandeau statut — couleur unique par ordonnance */}
       <div style={{
@@ -210,8 +215,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Actions — marginTop:"auto" les pousse toujours en bas de la carte
+          (celle-ci est display:flex/column), quelle que soit la hauteur du
+          contenu au-dessus (bandeau "intéressé(e)" présent ou non). */}
+      <div style={{ marginTop: "auto", padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", gap: 8 }}>
           {ordo.attachments[0]?.dataUrl ? (
             <button onClick={onView} style={{
@@ -376,6 +383,10 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
       background: "#fff", borderRadius: 16, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
       border: allImprime ? "2px solid #bbf7d0" : isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
+      // Même correctif que OrdoCard : sonnette/imprimer toujours en bas de la
+      // carte (marginTop:"auto" sur les Actions plus bas), quel que soit le
+      // nombre d'ordonnances du groupe ou la présence du badge intérêts.
+      display: "flex", flexDirection: "column",
     }}>
       {/* Bandeau compact : statut | source | code | time */}
       {(()=>{ const allImprime = group.ordonnances.every(o=>o.status==="imprime"); return (
@@ -513,8 +524,10 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
         </div>
       </div>
 
-      {/* Footer fixe — sonnette toujours en bas */}
-      <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
+      {/* Footer fixe — sonnette toujours en bas (marginTop:"auto" nécessite
+          que le conteneur soit display:flex/column, voir plus haut — c'était
+          documenté comme l'intention ici mais jamais réellement appliqué). */}
+      <div style={{ marginTop: "auto", padding: "0 14px 14px", display: "flex", gap: 8 }}>
         {onSonnette && sonnetteActive !== false && (
           <button onClick={onSonnette}
             title="Appeler le patient"
