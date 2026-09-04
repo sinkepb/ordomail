@@ -10,11 +10,26 @@
 // si la création (secure-data:rappels_create) l'exige déjà côté UI.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendSms } from "./sms.ts";
+import { generateShortToken } from "./shortToken.ts";
 
 export interface RappelScanResult {
   scanned: number;
   sent: number;
   failed: number;
+}
+
+// Construit le lien court (voir shortToken.ts) et le message patient — une
+// seule source de vérité pour le texte, réutilisée par le cron (SMS mock) ET
+// par l'envoi de test manuel (email, voir secure-data:rappels_envoyer_test)
+// pour que tester par email reflète fidèlement ce qu'un vrai SMS dirait.
+// Le nom de la pharmacie n'apparaît pas dans le corps : l'identité expéditrice
+// (nom de l'expéditeur SMS) porte déjà cette information en production.
+export function buildRappelLien(appUrl: string, token: string): string {
+  return `${appUrl}/?r=${token}`;
+}
+
+export function buildRappelMessage(prenom: string, lien: string): string {
+  return `Bonjour ${prenom}, votre renouvellement d'ordonnance est prévu prochainement. Cliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
 }
 
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
@@ -29,10 +44,10 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
   let sent = 0, failed = 0;
   for (const rappel of dus || []) {
     try {
-      const newToken = crypto.randomUUID();
+      const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const lien = `${appUrl}/?rappel=${newToken}`;
-      const message = `Bonjour ${rappel.patient_prenom}, votre renouvellement d'ordonnance chez ${pharmacieNom} est prévu prochainement. Cliquez ici pour nous indiquer ce que vous souhaitez faire : ${lien}`;
+      const lien = buildRappelLien(appUrl, newToken);
+      const message = buildRappelMessage(rappel.patient_prenom, lien);
 
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 

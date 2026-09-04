@@ -33,6 +33,7 @@ import {
   fetchInteretsDuJour,
   appellerPatient,
   createRappel,
+  fetchRappels,
 } from "../supabase.js";
 
 // Découpe au mieux "NOM Prénom" (format des données extraites/démo, voir
@@ -360,6 +361,17 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
   const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
+
+  // Chargé indépendamment de l'onglet Rappels (04/09/2026, retour direct) —
+  // RappelsSection ne fetch/n'appelle onCountATraiter qu'une fois montée,
+  // donc jamais tant que le titulaire n'a pas déjà ouvert cet onglet une
+  // première fois. Le badge de la barre du haut doit être visible dès
+  // l'arrivée sur le dashboard, sans dépendre de ça — même logique que
+  // "nouveaux" (ordonnances), déjà calculé indépendamment de l'onglet actif.
+  useEffect(() => {
+    if (!pharmacieId) return;
+    fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
+  }, [pharmacieId]);
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth]         = useState(() => {
@@ -614,6 +626,13 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
           {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {/* Badge rappels à traiter — barre du haut, toujours visible quel
+              que soit l'onglet actif ou la taille d'écran (04/09/2026,
+              retour direct) : contrairement au badge posé sur l'onglet
+              "Rappels" lui-même (desktop-nav ci-dessus, masqué sur mobile —
+              remplacé par BottomNav tout en bas de l'écran), ce header reste
+              affiché partout. */}
+          {rappelsATraiter>0&&<div style={{background:"#dc2626",color:"#fff",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{rappelsATraiter} ⏰</div>}
           {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
         </div>
       </header>

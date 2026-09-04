@@ -173,11 +173,13 @@ function AppInner() {
   // vérification du jeton. Prioritaire au même niveau que ?patient=/?qr= (ne
   // co-occurre jamais avec eux en usage réel — trois QR différents).
   const mobileOffreToken = urlParams.get("m");
-  // Rappel de renouvellement d'ordonnance (04/09/2026, ?rappel=<token>) : lien
-  // reçu par SMS, résolu côté serveur par resolve-rappel — page entièrement
+  // Rappel de renouvellement d'ordonnance (04/09/2026, ?r=<token>) : lien reçu
+  // par SMS, résolu côté serveur par resolve-rappel — page entièrement
   // autonome (pas de session, pas de contexte pharmacie chargé ici), voir
-  // RappelChoixPage.jsx.
-  const rappelToken = urlParams.get("rappel");
+  // RappelChoixPage.jsx. Paramètre volontairement court ("r", pas "rappel")
+  // et token court (voir _shared/shortToken.ts) : chaque caractère compte
+  // dans un SMS (accents → encodage UCS-2, limite de segment à 70 caractères).
+  const rappelToken = urlParams.get("r");
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");

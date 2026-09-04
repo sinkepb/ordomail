@@ -29,6 +29,8 @@ import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
+import { generateShortToken } from "../_shared/shortToken.ts";
+import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -470,6 +472,7 @@ Deno.serve(async (req) => {
         patient_telephone: telephone.trim(),
         commentaire: commentaire?.trim() || null,
         consentement_sms: true,
+        token: generateShortToken(),
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
@@ -599,13 +602,14 @@ Deno.serve(async (req) => {
       if (rappel.statut !== "en_attente" && rappel.statut !== "sms_envoye") {
         return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse ou est terminé — impossible de renvoyer un lien" }), { status: 409, headers: CORS });
       }
-      const { data: ph } = await sb.from("pharmacies").select("nom").eq("id", pharmacieId).maybeSingle();
-      const pharmacieNom = ph?.nom || "votre pharmacie";
       const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
-      const newToken = crypto.randomUUID();
-      const lien = `${appUrl}/?rappel=${newToken}`;
-      const html = `<p>Bonjour,</p><p>Ceci est un <strong>email de test</strong> (l'envoi réel se fera par SMS) pour le rappel de renouvellement de <strong>${rappel.patient_prenom}</strong> chez ${pharmacieNom}.</p><p><a href="${lien}">${lien}</a></p><p>Ouvrez ce lien pour tester la page de réponse patient et suivre le workflow du rappel.</p>`;
-      const text = `[TEST] Rappel de renouvellement — ${rappel.patient_prenom} chez ${pharmacieNom}\n${lien}`;
+      const newToken = generateShortToken();
+      const lien = buildRappelLien(appUrl, newToken);
+      // Même texte que le vrai SMS (buildRappelMessage, _shared/rappelLogic.ts)
+      // — retour direct : le test doit reproduire le message réel pour
+      // vérifier fidèlement le parcours patient, pas une description du test.
+      const text = buildRappelMessage(rappel.patient_prenom, lien);
+      const html = `<p>${text.split("\n")[0]}</p><p><a href="${lien}">${lien}</a></p>`;
       const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, text);
       if (!result.success) {
         return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
