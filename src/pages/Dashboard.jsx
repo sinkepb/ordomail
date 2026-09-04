@@ -11,6 +11,7 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
+import { RappelsSection } from "../components/RappelsSection.jsx";
 import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
@@ -42,6 +43,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
+  const [rappelsATraiter, setRappelsATraiter] = useState(0);
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   async function addPoste() {
@@ -90,6 +92,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
 
   const tabs = [["postes","🖥️","Postes"],
     ...(planInfo.offresStories ? [["offres","🎯","Offres"],["stories","📊","Stories"]] : []),
+    ["rappels","🔔","Rappels"],
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
@@ -99,6 +102,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           {tabs.map(([k,icon,label])=>(
             <button key={k} onClick={()=>setSection(k)} style={{padding:"6px 12px",border:`1.5px solid ${section===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:section===k?"#1a3a6e":"#fff",color:section===k?"#fff":"#64748b",fontWeight:section===k?700:500,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
               <span>{icon}</span><span className="hide-mobile">{label}</span>
+              {k==="rappels"&&rappelsATraiter>0&&(
+                <span style={{background:section==="rappels"?"#fff":"#dc2626",color:section==="rappels"?"#dc2626":"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>
+              )}
             </button>
           ))}
         </div>
@@ -250,6 +256,11 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
         {section==="stories"&&planInfo.offresStories&&(
           <ErrorBoundary compact label="Stories">
           <StoriesSection pharmacie={pharmacie}/>
+          </ErrorBoundary>
+        )}
+        {section==="rappels"&&(
+          <ErrorBoundary compact label="Rappels">
+          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>
           </ErrorBoundary>
         )}
         {section==="compte"&&(

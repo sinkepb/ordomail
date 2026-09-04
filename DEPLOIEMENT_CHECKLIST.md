@@ -116,7 +116,7 @@ une lecture anon large sur la table pour fonctionner.
 supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
   ORDOMAIL_JWT_SECRET=... STRIPE_SECRET_KEY=... STRIPE_WEBHOOK_SECRET=... \
   APP_URL=https://ordomail.fr SNAPSHOT_CRON_SECRET=... ALERT_WEBHOOK_URL=... \
-  PURGE_CRON_SECRET=...
+  PURGE_CRON_SECRET=... RAPPEL_CRON_SECRET=...
 ```
 
 - [ ] `ORDOMAIL_JWT_SECRET` — secret HMAC partagé (verify-pin, verify-admin, secure-data)
@@ -125,6 +125,7 @@ supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
 - [ ] `APP_URL` — utilisé pour l'allowlist CORS (`_shared/cors.ts`) ET les URLs de retour Stripe Checkout — **doit matcher le domaine de production exact**
 - [ ] `ALERT_WEBHOOK_URL` — **optionnel** (07/08/2026), webhook entrant Slack/Discord/Teams pour une notification immédiate sur les alertes critiques (`_shared/alert.ts`). Sans lui, les alertes restent visibles dans le panneau Monitoring du backoffice (table `alerts`), juste sans push immédiat.
 - [ ] `PURGE_CRON_SECRET` — **(09/08/2026)** partagé avec le job pg_cron qui appelle `purge-ordonnances`, même schéma que `SNAPSHOT_CRON_SECRET`.
+- [x] `RAPPEL_CRON_SECRET` — **(04/09/2026)** partagé avec le job pg_cron qui appelle `send-rappel-sms` (rappels de renouvellement d'ordonnance) — déjà configuré + job créé sur preview et production lors du lancement de la fonctionnalité. **⚠️ L'envoi SMS est un adaptateur mock (`_shared/sms.ts`) — aucun SMS réel n'est envoyé tant qu'un prestataire (Brevo, décidé) n'est branché.**
 
 Déployer chaque fonction modifiée :
 ```bash
@@ -141,9 +142,11 @@ supabase functions deploy change-plan
 supabase functions deploy stripe-webhook
 supabase functions deploy snapshot-metriques
 supabase functions deploy purge-ordonnances
+supabase functions deploy send-rappel-sms
+supabase functions deploy resolve-rappel
 ```
 
-⚠️ `purge-ordonnances` nécessite aussi un job pg_cron nocturne dédié (même principe que `snapshot-metriques`, à créer côté base de données) — voir `DEPLOIEMENT_PHASE4.md` pour la syntaxe du job existant à dupliquer.
+⚠️ `purge-ordonnances` nécessite aussi un job pg_cron nocturne dédié (même principe que `snapshot-metriques`, à créer côté base de données) — voir `DEPLOIEMENT_PHASE4.md` pour la syntaxe du job existant à dupliquer. `send-rappel-sms` suit exactement le même principe (job `send-rappel-sms`, quotidien 8h — voir le commentaire de fin de `20260904_rappels_ordonnance.sql` pour la syntaxe), déjà créé sur preview et production.
 
 ---
 

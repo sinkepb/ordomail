@@ -92,3 +92,10 @@ export {
   ecouterAppels,
   updateSonnetteActive,
 } from './lib/supabase/sonnette.js';
+
+export {
+  fetchRappels,
+  createRappel,
+  traiterRappel,
+  terminerRappel,
+} from './lib/supabase/rappels.js';

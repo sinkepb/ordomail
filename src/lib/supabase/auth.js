@@ -24,10 +24,15 @@ async function _fetchPharmacieForUser(sb, userId) {
     return null;
   }
 
-  // 2. Récupérer la pharmacie + postes
+  // 2. Récupérer la pharmacie + postes — la relation réelle est
+  // pharmacie_postes (pas "postes", voir pharmacies.js:fetchPharmacie).
+  // @fix 04/09/2026 — connexion titulaire par email totalement cassée
+  // (PGRST200 "no relationship between pharmacies and postes") jusqu'à ce
+  // correctif, repéré en testant la nouvelle fonctionnalité Rappels : cette
+  // fonction était la seule à avoir manqué le renommage.
   const { data: ph, error: phErr } = await sb
     .from('pharmacies')
-    .select('*, postes(*)')
+    .select('*, pharmacie_postes(*)')
     .eq('id', link.pharmacie_id)
     .maybeSingle();
 
@@ -35,6 +40,7 @@ async function _fetchPharmacieForUser(sb, userId) {
     console.error('[OrdoMail] pharmacies query error:', phErr.message);
     return null;
   }
+  if (ph && ph.pharmacie_postes) ph.postes = ph.pharmacie_postes;
 
   return ph ? { ...ph, userRole: link.role } : null;
 }

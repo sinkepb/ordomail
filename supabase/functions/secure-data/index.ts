@@ -423,6 +423,104 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
+    // ── Rappels de renouvellement d'ordonnance (04/09/2026) ─────────────────
+    // Voir migration 20260904_rappels_ordonnance.sql pour le cycle de statut
+    // et _shared/rappelLogic.ts pour le scan cron qui fait avancer en_attente
+    // → sms_envoye (resolve-rappel fait ensuite avancer → a_traiter côté
+    // patient). Ici : création par le pharmacien, liste, et les deux actions
+    // qui referment un cycle ("valider" relance à J+21, "fin de traitement"
+    // arrête définitivement).
+    if (resource === "rappels_create") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { nom, prenom, telephone, commentaire, consentement } = params || {};
+      if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
+        return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
+      }
+      // Consentement du patient à être recontacté — obligatoire, jamais un
+      // défaut supposé sur une donnée de santé (même logique que
+      // retention_settings). Revérifié côté cron (rappelLogic.ts) en défense
+      // en profondeur.
+      if (!consentement) {
+        return new Response(JSON.stringify({ error: "Le consentement du patient à être recontacté est requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("rappels_ordonnance").insert({
+        pharmacie_id: pharmacieId,
+        patient_nom: nom.trim(),
+        patient_prenom: prenom.trim(),
+        patient_telephone: telephone.trim(),
+        commentaire: commentaire?.trim() || null,
+        consentement_sms: true,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: data.id, type: "cree" });
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "rappels_list") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      let q = sb.from("rappels_ordonnance").select("*").eq("pharmacie_id", pharmacieId);
+      if (params?.statut) q = q.eq("statut", params.statut);
+      q = q.order("created_at", { ascending: false }).limit(params?.limit || 200);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Le pharmacien valide un rappel "à traiter" (quel que soit le choix du
+    // patient) : le cycle repart à J+21, comme demandé ("jusqu'à ce que le
+    // pharmacien mette fin au rappel").
+    if (resource === "rappels_traiter") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (existing.statut !== "a_traiter") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
+      }
+      const { error } = await sb.from("rappels_ordonnance").update({
+        statut: "en_attente",
+        choix_patient: null,
+        cycle_numero: existing.cycle_numero + 1,
+        date_prochaine_relance: new Date(Date.now() + 21 * 86400000).toISOString(),
+        date_traite: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (error) throw new Error(error.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "traite" });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Fin de traitement définitive — arrête les relances, quel que soit le
+    // statut courant (le pharmacien peut décider d'arrêter à tout moment).
+    if (resource === "rappels_terminer") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const { error } = await sb.from("rappels_ordonnance").update({ statut: "termine", updated_at: new Date().toISOString() }).eq("id", rappelId);
+      if (error) throw new Error(error.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "termine" });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 

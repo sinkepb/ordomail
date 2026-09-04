@@ -91,6 +91,35 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
   const uploadRef = useRef();
   const isLoading = loadingId === ordo.id;
   const accent = getOrdoAccent(ordo.id); // couleur unique par ordonnance
+  const [downloading, setDownloading] = useState(false);
+
+  // Téléchargement direct du fichier (04/09/2026, retour pharmacien pilote) —
+  // en passant par un fetch+blob plutôt qu'un <a href download> direct : une
+  // URL signée Supabase Storage est cross-origin, où l'attribut download est
+  // silencieusement ignoré par le navigateur (le fichier s'ouvre au lieu de
+  // se télécharger). Un blob: (même origine que la page) le respecte toujours.
+  async function handleDownload() {
+    const att = ordo.attachments[0];
+    if (!att || downloading) return;
+    setDownloading(true);
+    try {
+      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      if (!url) return;
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.name || "ordonnance";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      console.error("[handleDownload]", e.message);
+    }
+    setDownloading(false);
+  }
 
   return (
     <div id={id} style={{
@@ -246,6 +275,17 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
                 borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 14,
               }}>
               🔔
+            </button>
+          )}
+          {/* Téléchargement direct du fichier */}
+          {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
+            <button onClick={handleDownload} disabled={downloading} title="Télécharger le fichier"
+              style={{
+                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: downloading ? "default" : "pointer", fontSize: 14,
+                opacity: downloading ? 0.6 : 1,
+              }}>
+              {downloading ? "…" : "⬇️"}
             </button>
           )}
           {/* Imprimer occupe toujours la moitié de la largeur de la ligne
