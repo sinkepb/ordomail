@@ -98,4 +98,6 @@ export {
   createRappel,
   traiterRappel,
   terminerRappel,
+  updateRappel,
+  envoyerTestRappel,
 } from './lib/supabase/rappels.js';

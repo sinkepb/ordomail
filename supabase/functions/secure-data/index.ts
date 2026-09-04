@@ -28,6 +28,7 @@ import { validateFile } from "../_shared/upload-validation.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
+import { sendTransactionalEmail } from "../_shared/email.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -536,6 +537,86 @@ Deno.serve(async (req) => {
       const { error } = await sb.from("rappels_ordonnance").update({ statut: "termine", updated_at: new Date().toISOString() }).eq("id", rappelId);
       if (error) throw new Error(error.message);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "termine" });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Modifier un rappel existant (04/09/2026) — nom/prénom/téléphone/
+    // commentaire toujours modifiables ; la date de relance ne l'est que
+    // tant que le rappel est "en_attente" (au-delà, le cycle est déjà en
+    // cours ou terminé, la changer ne rescheduler rien côté cron).
+    if (resource === "rappels_update") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, nom, prenom, telephone, dateRappel, commentaire } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (nom?.trim()) patch.patient_nom = nom.trim();
+      if (prenom?.trim()) patch.patient_prenom = prenom.trim();
+      if (telephone?.trim()) patch.patient_telephone = telephone.trim();
+      if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
+      if (dateRappel && existing.statut === "en_attente") {
+        const parsed = new Date(dateRappel);
+        if (Number.isNaN(parsed.getTime())) {
+          return new Response(JSON.stringify({ error: "Date de rappel invalide" }), { status: 400, headers: CORS });
+        }
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (parsed < today) {
+          return new Response(JSON.stringify({ error: "La date de rappel ne peut pas être dans le passé" }), { status: 400, headers: CORS });
+        }
+        patch.date_prochaine_relance = parsed.toISOString();
+      }
+      const { error } = await sb.from("rappels_ordonnance").update(patch).eq("id", rappelId);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Envoi de test (04/09/2026) — en attendant un vrai prestataire SMS
+    // (_shared/sms.ts, mock), permet au pharmacien de déclencher
+    // immédiatement l'envoi du lien de rappel PAR EMAIL (à une adresse de
+    // son choix, typiquement la sienne) pour tester le parcours patient de
+    // bout en bout sans attendre J+21 ni le scan cron. Même effet de bord
+    // que le cron réel (rotation du token, passage à "sms_envoye") — voir
+    // _shared/rappelLogic.ts pour le pendant SMS/production.
+    if (resource === "rappels_envoyer_test") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, email } = params || {};
+      if (!rappelId || !email?.trim()) {
+        return new Response(JSON.stringify({ error: "rappelId et email requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, patient_prenom, statut").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "en_attente" && rappel.statut !== "sms_envoye") {
+        return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse ou est terminé — impossible de renvoyer un lien" }), { status: 409, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies").select("nom").eq("id", pharmacieId).maybeSingle();
+      const pharmacieNom = ph?.nom || "votre pharmacie";
+      const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
+      const newToken = crypto.randomUUID();
+      const lien = `${appUrl}/?rappel=${newToken}`;
+      const html = `<p>Bonjour,</p><p>Ceci est un <strong>email de test</strong> (l'envoi réel se fera par SMS) pour le rappel de renouvellement de <strong>${rappel.patient_prenom}</strong> chez ${pharmacieNom}.</p><p><a href="${lien}">${lien}</a></p><p>Ouvrez ce lien pour tester la page de réponse patient et suivre le workflow du rappel.</p>`;
+      const text = `[TEST] Rappel de renouvellement — ${rappel.patient_prenom} chez ${pharmacieNom}\n${lien}`;
+      const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, text);
+      if (!result.success) {
+        return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
+      }
+      await sb.from("rappels_ordonnance").update({
+        statut: "sms_envoye",
+        token: newToken,
+        date_dernier_sms_envoye: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { canal: "email_test", to: email.trim() } });
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 

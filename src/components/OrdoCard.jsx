@@ -274,6 +274,17 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
             le calcul est désormais garanti au lieu d'être un filet de
             sécurité qui finissait par se déclencher. */}
         <div style={{ display: "flex", gap: 6 }}>
+          {/* Bouton sonnette — en premier (retour direct, 04/09/2026) */}
+          {onSonnette && sonnetteActive !== false && (
+            <button onClick={onSonnette} title="Appeler le patient"
+              style={{
+                width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 13,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              🔔
+            </button>
+          )}
           {/* Voir — affiché dès qu'un fichier existe (dataUrl EN DÉMO ou path
               EN PROD), pas seulement dataUrl : en prod le fichier n'a jamais
               de dataUrl (chargé à la demande via URL signée, voir
@@ -298,17 +309,6 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
                 </button>
               )}
             </div>
-          )}
-          {/* Bouton sonnette */}
-          {onSonnette && sonnetteActive !== false && (
-            <button onClick={onSonnette} title="Appeler le patient"
-              style={{
-                width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid rgba(26,58,110,0.3)",
-                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 13,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-              🔔
-            </button>
           )}
           {/* Téléchargement direct du fichier */}
           {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
@@ -440,13 +440,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-        <button onClick={onView} disabled={!hasFile}
-          style={{ padding: "6px 10px", border: `1.5px solid ${hasFile ? accent.border : "#e2e8f0"}`,
-            borderRadius: 8, background: hasFile ? "#f8faff" : "#f5f5f5",
-            color: hasFile ? accent.avatar : "#ccc", fontWeight: 700, fontSize: 13,
-            cursor: hasFile ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
-          👁
-        </button>
+        {/* Bouton sonnette — en premier (retour direct, 04/09/2026) */}
         {onSonnette && sonnetteActive !== false && (
           <button onClick={onSonnette} title="Appeler le patient"
             style={{ padding: "6px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
@@ -454,6 +448,13 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
             🔔
           </button>
         )}
+        <button onClick={onView} disabled={!hasFile}
+          style={{ padding: "6px 10px", border: `1.5px solid ${hasFile ? accent.border : "#e2e8f0"}`,
+            borderRadius: 8, background: hasFile ? "#f8faff" : "#f5f5f5",
+            color: hasFile ? accent.avatar : "#ccc", fontWeight: 700, fontSize: 13,
+            cursor: hasFile ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+          👁
+        </button>
         {/* Téléchargement direct + Créer un rappel — manquaient en vue liste
             (04/09/2026), déjà présents en vue grille (OrdoCard/OrdoGroup). */}
         {hasFile && (

@@ -48,3 +48,16 @@ export async function terminerRappel(rappelId) {
   if (IS_DEMO) return { success: true };
   return await callSecureData('rappels_terminer', { rappelId });
 }
+
+export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire }) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
+}
+
+// Envoi de test par email (04/09/2026) — en attendant un vrai prestataire
+// SMS (voir supabase/functions/_shared/sms.ts, mock), déclenche l'envoi
+// immédiat du lien de rappel par email pour tester le parcours patient.
+export async function envoyerTestRappel(rappelId, email) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_envoyer_test', { rappelId, email });
+}
