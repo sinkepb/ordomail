@@ -394,7 +394,14 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setBusyId(null);
   }
 
-  const filtered = filtre === "tous" ? rappels : rappels.filter(r => r.statut === filtre);
+  // "En attente" inclut aussi "sms_envoye" (04/09/2026, retour direct) — le
+  // rappel disparaissait silencieusement de cet onglet dès qu'un SMS (ou un
+  // envoi de test) partait, alors que rien ne distingue les deux statuts
+  // pour le pharmacien (mêmes actions disponibles sur la ligne : Modifier,
+  // Envoyer, Fin de traitement) — seul le badge de statut affiché diffère.
+  const filtered = filtre === "tous" ? rappels
+    : filtre === "en_attente" ? rappels.filter(r => r.statut === "en_attente" || r.statut === "sms_envoye")
+    : rappels.filter(r => r.statut === filtre);
   const countATraiter = rappels.filter(r => r.statut === "a_traiter").length;
 
   return (
