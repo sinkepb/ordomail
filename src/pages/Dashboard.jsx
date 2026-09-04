@@ -689,7 +689,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                 )}
               </div>
             ):viewMode==="grid"?(
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",gap:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,225px),1fr))",gap:9}}>
                 {groupedOrdos.map(o=>{
                   const accent=getOrdoAccent(o.id);
                   if (o._isGroup && o.ordonnances.length > 1) {

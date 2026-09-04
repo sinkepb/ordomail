@@ -94,7 +94,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
 
   return (
     <div id={id} style={{
-      background: "#fff", borderRadius: 11, overflow: "hidden",
+      background: "#fff", borderRadius: 12, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22, 0 1px 4px rgba(0,0,0,0.08)` : "0 1px 6px rgba(0,0,0,0.06)",
       border: isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
       transition: "box-shadow 0.2s",
@@ -107,60 +107,60 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
       {/* Bandeau statut — couleur unique par ordonnance */}
       <div style={{
         background: isNew ? accent.bandeau : accent.bg,
-        padding: "5px 11px",
+        padding: "6px 12px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 7, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 8, fontWeight: 800, color: isNew ? "#fff" : accent.avatar, letterSpacing: 0.6 }}>
             {isNew ? "NOUVEAU" : "EN COURS"}
           </span>
           {/* Icône source */}
-          <span style={{ fontSize: 9 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
+          <span style={{ fontSize: 10 }} title={ordo.source === "email" ? "Envoyé par email" : ordo.source === "qrcode" ? "Envoyé via QR code" : "Chargé manuellement"}>
             {ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️"}
           </span>
           {/* Code patient */}
           {ordo.code_patient && (
             <span style={{
-              fontSize: 9, fontWeight: 900, fontFamily: "monospace", letterSpacing: 1,
+              fontSize: 11, fontWeight: 900, fontFamily: "monospace", letterSpacing: 1.5,
               color: isNew ? "#fff" : accent.avatar,
-              background: "rgba(255,255,255,0.2)", borderRadius: 4,
+              background: "rgba(255,255,255,0.2)", borderRadius: 5,
               padding: "1px 5px", border: "1px solid rgba(255,255,255,0.35)",
             }}>
               {ordo.code_patient}
             </span>
           )}
         </div>
-        <span style={{ fontSize: 7, color: isNew ? "rgba(255,255,255,0.8)" : accent.avatar + "99" }}>{timeAgo(ordo.receivedAt)}</span>
+        <span style={{ fontSize: 8, color: isNew ? "rgba(255,255,255,0.8)" : accent.avatar + "99" }}>{timeAgo(ordo.receivedAt)}</span>
       </div>
 
       {/* Corps */}
-      <div style={{ padding: "8px 9px 7px" }}>
+      <div style={{ padding: "9px 11px 8px" }}>
 
         {/* Avatar + Nom */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
             <div style={{
-              width: 29, height: 29, borderRadius: "50%",
+              width: 33, height: 33, borderRadius: "50%",
               background: isNew ? accent.bandeau : accent.bg,
               border: `1.5px solid ${accent.border}`,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 12, color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
+              fontSize: 14, color: isNew ? "#fff" : accent.avatar, fontWeight: 900,
             }}>
             {initiale}
           </div>
 
           </div>
-          <div style={{ marginTop: ordo.code_patient ? 4 : 0 }}>
-            <div style={{ fontSize: 7, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 1 }}>Patient</div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#1a1a1a", lineHeight: 1.15, wordBreak: "break-word" }}>{nom}</div>
+          <div style={{ marginTop: ordo.code_patient ? 5 : 0 }}>
+            <div style={{ fontSize: 8, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 }}>Patient</div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: "#1a1a1a", lineHeight: 1.15, wordBreak: "break-word" }}>{nom}</div>
           </div>
         </div>
 
         {/* Carte vitale */}
-        <div style={{ marginBottom: 11 }}>
-          <div style={{ fontSize: 7, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Ordonnance</div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 8, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>Ordonnance</div>
           {isLoading
-            ? <div style={{ fontSize: 8, color: "#1a3a6e", animation: "pulse 1s ease infinite" }}>🔍 Analyse en cours…</div>
+            ? <div style={{ fontSize: 9, color: "#1a3a6e", animation: "pulse 1s ease infinite" }}>🔍 Analyse en cours…</div>
             : null
           }
         </div>
@@ -172,20 +172,20 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
             ordonnances) — le badge n'apparaissait donc jamais côté vendeur
             pour l'immense majorité des patients. */}
         {interets.length > 0 && (
-          <div style={{ marginBottom: 9 }}>
+          <div style={{ marginBottom: 11 }}>
             {interets.map(int => (
               <div key={int.id} style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "5px 8px", marginBottom: 3,
-                background: "#fff8e1", borderRadius: 7,
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 9px", marginBottom: 4,
+                background: "#fff8e1", borderRadius: 8,
                 border: "1px solid #fde68a",
               }}>
-                <span style={{ fontSize: 12 }}>{int.offre_emoji || "🎁"}</span>
+                <span style={{ fontSize: 14 }}>{int.offre_emoji || "🎁"}</span>
                 <div>
-                  <div style={{ fontSize: 7, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <div style={{ fontSize: 8, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     Intéressé(e)
                   </div>
-                  <div style={{ fontSize: 8, color: "#78350f", fontWeight: 600 }}>{int.offre_titre}</div>
+                  <div style={{ fontSize: 9, color: "#78350f", fontWeight: 600 }}>{int.offre_titre}</div>
                 </div>
               </div>
             ))}
@@ -194,23 +194,23 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
 
         {/* Miniature ordonnance si dispo */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
-          <div style={{ marginBottom: 9, cursor: "pointer" }} onClick={onView}>
-            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 60, objectFit: "cover", borderRadius: 5, border: "1px solid #eee" }} />
+          <div style={{ marginBottom: 11, cursor: "pointer" }} onClick={onView}>
+            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
           </div>
         )}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
-          <div onClick={onView} style={{ marginBottom: 9, background: "#f5f5f5", borderRadius: 5, padding: "7px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
-            <div style={{ fontSize: 16 }}>📄</div>
-            <div style={{ fontSize: 7, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
+          <div onClick={onView} style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
+            <div style={{ fontSize: 18 }}>📄</div>
+            <div style={{ fontSize: 8, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
           </div>
         )}
         {/* Photo iPhone (HEIC) : aucun navigateur de bureau ne peut la prévisualiser
             inline (icône brisée sinon) — état honnête, téléchargement via ViewerModal. */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "heic" && (
-          <div onClick={onView} style={{ marginBottom: 9, background: "#f5f5f5", borderRadius: 5, padding: "7px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
-            <div style={{ fontSize: 16 }}>📷</div>
-            <div style={{ fontSize: 7, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
-            <div style={{ fontSize: 7, color: "#aaa", marginTop: 1 }}>Photo iPhone (HEIC) — cliquer pour télécharger</div>
+          <div onClick={onView} style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
+            <div style={{ fontSize: 18 }}>📷</div>
+            <div style={{ fontSize: 8, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
+            <div style={{ fontSize: 8, color: "#aaa", marginTop: 2 }}>Photo iPhone (HEIC) — cliquer pour télécharger</div>
           </div>
         )}
       </div>
@@ -218,21 +218,21 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
       {/* Actions — marginTop:"auto" les pousse toujours en bas de la carte
           (celle-ci est display:flex/column), quelle que soit la hauteur du
           contenu au-dessus (bandeau "intéressé(e)" présent ou non). */}
-      <div style={{ marginTop: "auto", padding: "0 9px 9px", display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", gap: 5 }}>
+      <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", gap: 6 }}>
           {ordo.attachments[0]?.dataUrl ? (
             <button onClick={onView} style={{
-              flex: 1, padding: "6px", border: "1.5px solid #e0e0e0", borderRadius: 6,
-              background: "#fff", color: "#555", fontWeight: 600, fontSize: 8, cursor: "pointer", fontFamily: "inherit",
+              flex: 1, padding: "7px", border: "1.5px solid #e0e0e0", borderRadius: 7,
+              background: "#fff", color: "#555", fontWeight: 600, fontSize: 9, cursor: "pointer", fontFamily: "inherit",
             }}>👁 Voir</button>
           ) : (
-            <div style={{ flex: 1, display: "flex", gap: 3 }}>
+            <div style={{ flex: 1, display: "flex", gap: 4 }}>
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
                 <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank", "noopener,noreferrer"); }}
                   title="Voir la fiche ordonnance PDF"
-                  style={{ padding: "6px 7px", border: "1.5px solid #c7d2fe", borderRadius: 6, background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                  style={{ padding: "7px 8px", border: "1.5px solid #c7d2fe", borderRadius: 7, background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>
                   📄
                 </button>
               )}
@@ -242,16 +242,19 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
           {onSonnette && sonnetteActive !== false && (
             <button onClick={onSonnette} title="Appeler le patient"
               style={{
-                padding: "9px 7px", border: "1.5px solid rgba(26,58,110,0.3)",
-                borderRadius: 6, background: "#f0f4ff", cursor: "pointer", fontSize: 12,
+                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 14,
               }}>
               🔔
             </button>
           )}
+          {/* Imprimer occupe toujours la moitié de la largeur de la ligne
+              (demande explicite) — width:"50%" plutôt que flex:1, sinon sa
+              largeur dépend de ce qu'il y a à côté (Voir/upload, sonnette). */}
           <button onClick={onPrint} style={{
-            flex: 1, padding: "9px 5px", border: "none", borderRadius: 6,
+            width: "50%", flexShrink: 0, boxSizing: "border-box", padding: "10px 6px", border: "none", borderRadius: 7,
             background: isNew ? accent.bandeau : "#475569", color: "#fff",
-            fontWeight: 800, fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
             boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
           }}>
@@ -261,10 +264,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
         {/* Bouton remettre à traiter — visible uniquement sur les ordonnances imprimées */}
         {!isNew && (
           <button onClick={onReopen} style={{
-            width: "100%", padding: "5px", border: "1.5px solid #e6a817", borderRadius: 6,
-            background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 8,
+            width: "100%", padding: "5px", border: "1.5px solid #e6a817", borderRadius: 7,
+            background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 9,
             cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
           }}>
             ↩ Remettre à traiter
           </button>
@@ -380,7 +383,7 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
 
   return (
     <div id={id} style={{
-      background: "#fff", borderRadius: 11, overflow: "hidden",
+      background: "#fff", borderRadius: 12, overflow: "hidden",
       boxShadow: isNew ? `0 4px 20px ${accent.avatar}22` : "0 1px 6px rgba(0,0,0,0.06)",
       border: allImprime ? "2px solid #bbf7d0" : isNew ? `2px solid ${accent.border}` : `2px solid ${accent.border}55`,
       // Même correctif que OrdoCard : sonnette/imprimer toujours en bas de la
@@ -392,29 +395,29 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
       {(()=>{ const allImprime = group.ordonnances.every(o=>o.status==="imprime"); return (
       <div style={{
         background: allImprime ? "#f0fdf4" : isNew ? accent.bandeau : accent.bg,
-        padding: "5px 9px",
+        padding: "5px 11px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: 0.6,
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 0.6,
             color: allImprime ? "#15803d" : isNew ? "#fff" : accent.avatar }}>
             {allImprime ? "✓ TOUTES IMPRIMÉES" : isNew ? "NOUVEAU" : "EN COURS"}
           </span>
-          <span style={{ fontSize: 8 }}>📱</span>
+          <span style={{ fontSize: 9 }}>📱</span>
           {/* Code patient */}
           {group.code_patient && (
             <div style={{
-              fontSize: 11, fontWeight: 900, padding: "1px 7px",
+              fontSize: 12, fontWeight: 900, padding: "2px 8px",
               borderRadius: 5, background: "rgba(255,255,255,0.25)",
-              color: "#fff", fontFamily: "monospace", letterSpacing: 2,
+              color: "#fff", fontFamily: "monospace", letterSpacing: 2.5,
               border: "1px solid rgba(255,255,255,0.4)",
             }}>
               {group.code_patient}
             </div>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 7, color: allImprime ? "#15803d" : isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 8, color: allImprime ? "#15803d" : isNew ? "rgba(255,255,255,0.7)" : accent.avatar + "99" }}>
             {count} ordo{count > 1 ? "s" : ""} · {timeAgo(group.receivedAt)}
           </span>
         </div>
@@ -422,25 +425,25 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
       ); })()}
 
       {/* Corps */}
-      <div style={{ padding: "8px 9px 7px" }}>
+      <div style={{ padding: "9px 11px 8px" }}>
         {/* Avatar + Nom + Sonnette sur la même ligne */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9 }}>
           <div style={{
-            width: 29, height: 29, borderRadius: "50%",
+            width: 33, height: 33, borderRadius: "50%",
             background: isNew ? accent.bandeau : accent.bg,
             border: `1.5px solid ${accent.border}`,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, color: isNew ? "#fff" : accent.avatar, fontWeight: 900, flexShrink: 0,
+            fontSize: 14, color: isNew ? "#fff" : accent.avatar, fontWeight: 900, flexShrink: 0,
           }}>{nom?.charAt(0)?.toUpperCase() || "?"}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 7, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 1 }}>Patient</div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
+            <div style={{ fontSize: 8, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 }}>Patient</div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nom}</div>
           </div>
           {/* Badge intérêts à droite du nom */}
           {interets.length > 0 && (
             <div style={{
-              fontSize: 7, fontWeight: 800, padding: "2px 5px", flexShrink: 0,
-              borderRadius: 13, background: "#fef3c7",
+              fontSize: 8, fontWeight: 800, padding: "2px 6px", flexShrink: 0,
+              borderRadius: 15, background: "#fef3c7",
               color: "#92400e", border: "1px solid #fde68a",
             }}>
               🎯 {interets.length}
@@ -450,20 +453,20 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
 
         {/* Intérêts offres du patient */}
         {interets.length > 0 && (
-          <div style={{ marginBottom: 7 }}>
+          <div style={{ marginBottom: 8 }}>
             {interets.map(int => (
               <div key={int.id} style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "5px 8px", marginBottom: 3,
-                background: "#fff8e1", borderRadius: 7,
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 9px", marginBottom: 4,
+                background: "#fff8e1", borderRadius: 8,
                 border: "1px solid #fde68a",
               }}>
-                <span style={{ fontSize: 12 }}>{int.offre_emoji || "🎁"}</span>
+                <span style={{ fontSize: 14 }}>{int.offre_emoji || "🎁"}</span>
                 <div>
-                  <div style={{ fontSize: 7, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <div style={{ fontSize: 8, color: "#92400e", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     Intéressé(e) par
                   </div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#78350f" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#78350f" }}>
                     {int.offre_titre}
                   </div>
                 </div>
@@ -473,17 +476,17 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
         )}
 
         {/* Liste des ordonnances du groupe — impression individuelle */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 7 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 8 }}>
           {group.ordonnances.map((o, idx) => {
             const ordImprime = o.status === "imprime";
             return (
             <div key={o.id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 5,
-              borderRadius: 5, padding: "5px 7px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6,
+              borderRadius: 6, padding: "5px 8px",
               background: ordImprime ? "#f0fdf4" : "#f8fafc",
               border: `1px solid ${ordImprime ? "#bbf7d0" : "#e2e8f0"}`,
             }}>
-              <div style={{ fontSize: 8, fontWeight: 600, flex: 1, minWidth: 0,
+              <div style={{ fontSize: 9, fontWeight: 600, flex: 1, minWidth: 0,
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 color: ordImprime ? "#15803d" : "#475569" }}>
                 {ordImprime ? "✓" : "📎"} Ordonnance {idx + 1}
@@ -493,26 +496,26 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
                   </span>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 3, alignItems: "center", flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
                 {o.attachments?.[0]?.dataUrl && (
                   <button onClick={() => onView(o)}
-                    style={{ padding: "3px 5px", border: "1px solid #c7d2fe", borderRadius: 4,
-                      background: "#f0f4ff", color: "#4338ca", fontSize: 7,
+                    style={{ padding: "3px 6px", border: "1px solid #c7d2fe", borderRadius: 5,
+                      background: "#f0f4ff", color: "#4338ca", fontSize: 8,
                       cursor: "pointer", fontFamily: "inherit" }}>
                     👁
                   </button>
                 )}
                 {!ordImprime ? (
                   <button onClick={() => onPrint(o)}
-                    style={{ padding: "3px 7px", border: "none", borderRadius: 4,
-                      background: accent.bandeau, color: "#fff", fontSize: 7,
+                    style={{ padding: "3px 8px", border: "none", borderRadius: 5,
+                      background: accent.bandeau, color: "#fff", fontSize: 8,
                       cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                     🖨️ Imprimer
                   </button>
                 ) : (
                   <button onClick={() => onReopen(o)} title="Remettre à traiter"
-                    style={{ padding: "3px 5px", border: "1px solid #e6a817", borderRadius: 4,
-                      background: "#fffbf0", color: "#92400e", fontSize: 7, fontWeight: 700,
+                    style={{ padding: "3px 6px", border: "1px solid #e6a817", borderRadius: 5,
+                      background: "#fffbf0", color: "#92400e", fontSize: 8, fontWeight: 700,
                       cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 2 }}>
                     ✓ ↩
                   </button>
@@ -527,25 +530,25 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
       {/* Footer fixe — sonnette toujours en bas (marginTop:"auto" nécessite
           que le conteneur soit display:flex/column, voir plus haut — c'était
           documenté comme l'intention ici mais jamais réellement appliqué). */}
-      <div style={{ marginTop: "auto", padding: "0 9px 9px", display: "flex", gap: 5 }}>
+      <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", gap: 6 }}>
         {onSonnette && sonnetteActive !== false && (
           <button onClick={onSonnette}
             title="Appeler le patient"
             style={{
-              padding: "8px 9px", border: "1.5px solid rgba(26,58,110,0.3)",
-              borderRadius: 6, background: "#f0f4ff", cursor: "pointer",
-              fontSize: 12, flexShrink: 0, fontFamily: "inherit",
+              padding: "9px 11px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 7, background: "#f0f4ff", cursor: "pointer",
+              fontSize: 14, flexShrink: 0, fontFamily: "inherit",
             }}>
             🔔
           </button>
         )}
         {/* Statut global */}
         <div style={{
-          flex: 1, padding: "8px", borderRadius: 6,
+          flex: 1, padding: "9px", borderRadius: 7,
           background: allImprime ? "#f0fdf4" : accent.bg,
           border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 800, fontSize: 9,
+          fontWeight: 800, fontSize: 10,
           color: allImprime ? "#15803d" : accent.avatar,
         }}>
           {allImprime
