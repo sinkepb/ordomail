@@ -660,13 +660,12 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
   const [r1, r2] = story.bg;
   // @fix 04/09/2026 — pour une offre "photo + prix" (mobile-offre), la photo
-  // EST le contenu (voir la mission "zéro design") : le fond dégradé dd/multiply
-  // ci-dessous (conçu pour les stories santé — image décorative derrière du
-  // texte) tintait le produit à 87% d'opacité, le rendant méconnaissable. Un
-  // voile uniforme bien plus léger garde la photo reconnaissable — pas de
-  // dégradé position-dépendant : le contenu (badge/prix/bouton) est CENTRÉ
-  // verticalement (justifyContent:"center" plus bas), pas ancré en bas, donc
-  // un voile qui ne s'assombrit qu'en bas de l'écran manquerait le texte.
+  // EST le produit : l'utiliser en fond plein écran (comme les stories santé,
+  // image décorative derrière du texte) la fait soit disparaître sous le
+  // tint couleur, soit — retour direct du titulaire — "remplir la story" de
+  // façon non désirée. Une offre avec photo n'utilise donc PAS story.image en
+  // fond : dégradé couleur uni comme une offre sans photo, la photo est
+  // affichée en <img> contenue dans le contenu (voir plus bas), pas en fond.
   const isOffrePhoto = story.type === "offre" && !!story.image;
 
   return (
@@ -675,12 +674,10 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       onTouchEnd={isProPlan ? handleTouchEnd : undefined}
       style={{
         minHeight: "100vh", width: "100%",
-        background: story.image
-          ? (isOffrePhoto
-              ? `linear-gradient(160deg, ${r1}40 0%, ${r2}40 100%), url(${story.image}) center/cover`
-              : `linear-gradient(160deg, ${r1}dd 0%, ${r2}dd 100%), url(${story.image}) center/cover`)
+        background: (story.image && !isOffrePhoto)
+          ? `linear-gradient(160deg, ${r1}dd 0%, ${r2}dd 100%), url(${story.image}) center/cover`
           : `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
-        backgroundBlendMode: story.image ? "multiply" : "normal",
+        backgroundBlendMode: (story.image && !isOffrePhoto) ? "multiply" : "normal",
         display: "flex", flexDirection: "column",
         position: "relative", overflow: "hidden",
         userSelect: "none",
@@ -747,7 +744,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       {/* Navigation tap : géré dans handleTouchEnd */}
 
       {/* Contenu story */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 28px", textAlign: "center", position: "relative", zIndex: 6 }}>
+      {/* overflowY:auto en filet de sécurité — une story avec photo produit
+          (ajoutée le 04/09/2026) peut dépasser la hauteur visible réelle sur
+          petit écran mobile (barre d'adresse visible, cf. le bug de
+          chevauchement déjà rencontré sur la story de clôture) ; sans ça le
+          contenu centré déborderait de ce conteneur flex:1 sans scroll et le
+          bouton "intéressé" serait coupé sous le pli au lieu d'être cliquable. */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 28px", textAlign: "center", position: "relative", zIndex: 6, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
         <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
         <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
@@ -809,6 +812,16 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 <div style={{ display:"inline-block", background:"rgba(255,255,255,0.25)", borderRadius:24, padding:"4px 16px", fontSize:18, fontWeight:900, color:"#fff", marginBottom:14, border:"2px solid rgba(255,255,255,0.4)" }}>
                   {story.badge}
                 </div>
+              )}
+              {/* Photo produit (offres mobile, 04/09/2026) — <img> contenue,
+                  PAS en fond plein écran (retour direct : "la photo ne doit
+                  pas remplir la story"). Un <img> réel plutôt qu'un
+                  background-image est aussi plus robuste : une URL cassée
+                  reste inspectable/gérable (onError) au lieu de simplement
+                  ne rien afficher silencieusement. */}
+              {story.image && (
+                <img src={story.image} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  style={{ width:"100%", maxWidth:280, height:160, objectFit:"cover", borderRadius:16, marginBottom:14, border:"2px solid rgba(255,255,255,0.3)", display:"block" }}/>
               )}
               <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280, marginBottom:20 }}>{story.text}</div>
               {story.prix != null && (
