@@ -806,6 +806,13 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                               🔔
                             </button>
                           )}
+                          {/* Créer un rappel — manquait en vue liste groupée (04/09/2026),
+                              déjà présent en vue grille (OrdoGroup). Un seul par patient. */}
+                          <button onClick={()=>setRappelDraft(splitNomPrenom(o.extracted?.nom||o.fromName))}
+                            style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",borderRadius:9,
+                              background:"#f0f4ff",color:"#1a3a6e",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                            ⏰ Rappel
+                          </button>
                         </div>
                           );
                         })()}
@@ -857,6 +864,28 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                                 👁
                               </button>
                             )}
+                            {/* Téléchargement direct — manquait en vue liste groupée
+                                (04/09/2026), déjà présent en vue grille (OrdoCard). */}
+                            {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
+                              <button onClick={async ()=>{
+                                  const a = ord.attachments[0];
+                                  const url = a.dataUrl || (a.path ? await getSignedUrl(a.path, 3600) : null);
+                                  if (!url) return;
+                                  const res = await fetch(url);
+                                  const blob = await res.blob();
+                                  const blobUrl = URL.createObjectURL(blob);
+                                  const link = document.createElement("a");
+                                  link.href = blobUrl; link.download = a.name || "ordonnance";
+                                  document.body.appendChild(link); link.click(); link.remove();
+                                  URL.revokeObjectURL(blobUrl);
+                                }}
+                                title="Télécharger le fichier"
+                                style={{padding:"4px 8px",border:"1px solid rgba(26,58,110,0.3)",borderRadius:6,
+                                  background:"#f0f4ff",color:"#1a3a6e",fontSize:11,
+                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                                ⬇️
+                              </button>
+                            )}
                             {!ordImprime ? (
                               <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
                                 style={{padding:"4px 10px",border:"none",borderRadius:6,
@@ -893,7 +922,8 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                 if (url) setViewerAtt({ ...a, dataUrl: url });
               }
             })();}}
-                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}/>;
+                    onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
+                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}/>;
                 })}
               </div>
             )}

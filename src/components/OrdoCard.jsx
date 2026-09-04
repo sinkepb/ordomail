@@ -351,13 +351,40 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, interets = [] }) {
+function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, onCreateRappel, interets = [] }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
   const accent  = getOrdoAccent(ordo.id);
   const hasFile = !!(ordo.attachments?.[0]?.dataUrl || ordo.attachments?.[0]?.path);
   const srcIcon = ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️";
+  const [downloading, setDownloading] = useState(false);
+
+  // Téléchargement direct du fichier — vue liste (04/09/2026), manquant ici
+  // alors que déjà présent sur la vue grille (OrdoCard), repéré par le
+  // titulaire pilote. Même logique fetch+blob (voir OrdoCard.handleDownload).
+  async function handleDownload() {
+    const att = ordo.attachments?.[0];
+    if (!att || downloading) return;
+    setDownloading(true);
+    try {
+      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      if (!url) return;
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.name || "ordonnance";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      console.error("[handleDownload]", e.message);
+    }
+    setDownloading(false);
+  }
 
   return (
     <div id={id} style={{
@@ -425,6 +452,23 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
             style={{ padding: "6px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
               borderRadius: 8, background: "#f0f4ff", cursor: "pointer", fontSize: 15 }}>
             🔔
+          </button>
+        )}
+        {/* Téléchargement direct + Créer un rappel — manquaient en vue liste
+            (04/09/2026), déjà présents en vue grille (OrdoCard/OrdoGroup). */}
+        {hasFile && (
+          <button onClick={handleDownload} disabled={downloading} title="Télécharger le fichier"
+            style={{ padding: "6px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 8, background: "#f0f4ff", cursor: downloading ? "default" : "pointer", fontSize: 15,
+              opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? "…" : "⬇️"}
+          </button>
+        )}
+        {onCreateRappel && (
+          <button onClick={() => onCreateRappel(ordo)}
+            style={{ padding: "6px 12px", border: "1.5px solid rgba(26,58,110,0.3)", borderRadius: 8,
+              background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            ⏰ Rappel
           </button>
         )}
         <button onClick={onPrint}
