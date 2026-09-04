@@ -646,7 +646,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
               remplacé par BottomNav tout en bas de l'écran), ce header reste
               affiché partout. */}
           {rappelsATraiter>0&&<div style={{background:"#dc2626",color:"#fff",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{rappelsATraiter} ⏰</div>}
-          {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
+          {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 📋</div>}
         </div>
       </header>
       <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} rappelsATraiter={rappelsATraiter} />
