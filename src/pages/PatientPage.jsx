@@ -958,8 +958,16 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           plus long qui va jusqu'en bas de l'écran et chevauchait ce bouton
           quand il était affiché dès la 1ère story (constaté en test le
           28/07/2026). À partir de la 2e story, l'espace en bas est toujours
-          libre. */}
-      {codePatient && !addSheetOpen && current > 0 && (
+          libre.
+          @fix 04/09/2026 — même chevauchement constaté sur la DERNIÈRE story
+          une fois le bouton avis Google ajouté à côté de "Terminer et
+          repartir de zéro" (bloc à 2 boutons, plus haut qu'avant) : ce bouton
+          flottant (position:absolute, bottom:96) passait dessus sur mobile
+          réel. Repli sur le même principe que le cas du 28/07 : masqué quand
+          ce bloc de fin de stories est visible plutôt que de calculer un
+          chevauchement en pixels, fragile d'un appareil à l'autre. */}
+      {codePatient && !addSheetOpen && current > 0
+        && !(current === allStories.length - 1 && (progress > 80 || !isProPlan)) && (
         <button
           onClick={(e) => { e.stopPropagation(); openAddSheet(); }}
           style={{
@@ -1096,23 +1104,27 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       {/* Starter/Standard : pas de minuteur (progress reste à 0), le bouton
           doit donc apparaître directement plutôt qu'attendre progress>80. */}
       {current === allStories.length - 1 && (progress > 80 || !isProPlan) && (
-        <div style={{ padding: "0 24px 32px", zIndex: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ padding: "0 20px 20px", zIndex: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Avis Google (04/09/2026) — fusionnée avec cette dernière story
-              plutôt que d'occuper sa propre carte au milieu du diaporama. */}
+              plutôt que d'occuper sa propre carte au milieu du diaporama.
+              @fix 04/09/2026 — bloc resserré (padding/gap réduits) : ajouter
+              ce 2e bouton ici a rendu le bas de page plus haut que prévu sur
+              mobile réel (100vh ne compte pas la barre d'adresse du
+              navigateur), le poussant hors de l'écran visible. */}
           {avisGoogleOffer && (
             <a href={avisGoogleOffer.lienUrl} target="_blank" rel="noopener noreferrer"
               onClick={() => logStoryEvent({ id: avisGoogleOffer.id, type: "offre" }, "offer_interest", { meta: { isOn: true } })}
               style={{
-                width: "100%", boxSizing: "border-box", padding: "14px 20px", border: "2px solid rgba(255,255,255,0.5)",
+                width: "100%", boxSizing: "border-box", padding: "11px 18px", border: "2px solid rgba(255,255,255,0.5)",
                 borderRadius: 14, cursor: "pointer", fontFamily: "inherit", background: "rgba(255,255,255,0.15)",
-                textDecoration: "none", color: "#fff", fontWeight: 800, fontSize: 15,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                textDecoration: "none", color: "#fff", fontWeight: 800, fontSize: 14,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>
               ⭐ {avisGoogleOffer.titre || "Laisser un avis Google"}
             </a>
           )}
           <button onClick={onRestart}
-            style={{ width: "100%", padding: "14px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+            style={{ width: "100%", padding: "11px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
             Terminer et repartir de zéro
           </button>
         </div>
