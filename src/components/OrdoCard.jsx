@@ -264,16 +264,16 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
             ⏰ Créer un rappel
           </button>
         )}
-        {/* flexWrap (04/09/2026) — filet de sécurité : avec Voir + sonnette +
-            téléchargement, 3 boutons icône fixes doivent maintenant cohabiter
-            avec Imprimer à largeur fixe 50% (demande explicite, ne doit
-            jamais rétrécir) sur une carte déjà réduite à 3/4 de sa taille
-            d'origine. Sans wrap, ce quatrième bouton (téléchargement, ajouté
-            après coup) pouvait faire déborder/écraser Voir. Voir est aussi
-            passé d'un bouton flex:1 texte à un bouton icône de taille fixe,
-            identique aux autres — sa largeur ne dépendait plus de rien
-            d'autre auparavant, ce qui le rendait imprévisible visuellement. */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {/* Voir/sonnette/téléchargement doivent tenir sur la MÊME ligne
+            qu'Imprimer, jamais passer à la ligne (demande explicite,
+            04/09/2026) — largeur carrée fixe et petite (26px) plutôt qu'un
+            padding dépendant du glyphe emoji, pour que les 3 icônes + leurs
+            espacements tiennent à coup sûr dans l'autre moitié de la ligne
+            une fois Imprimer posé à 50% (vérifié au plancher réel de la
+            grille, 225px de carte — voir Dashboard.jsx). flexWrap retiré :
+            le calcul est désormais garanti au lieu d'être un filet de
+            sécurité qui finissait par se déclencher. */}
+        <div style={{ display: "flex", gap: 6 }}>
           {/* Voir — affiché dès qu'un fichier existe (dataUrl EN DÉMO ou path
               EN PROD), pas seulement dataUrl : en prod le fichier n'a jamais
               de dataUrl (chargé à la demande via URL signée, voir
@@ -282,8 +282,9 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
               (incohérence "le bouton Voir n'apparaît pas systématiquement"). */}
           {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) ? (
             <button onClick={onView} title="Voir l'ordonnance" style={{
-              padding: "10px 8px", border: "1.5px solid #e0e0e0", borderRadius: 7,
-              background: "#fff", color: "#555", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
+              width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid #e0e0e0", borderRadius: 7,
+              background: "#fff", color: "#555", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center",
             }}>👁</button>
           ) : (
             <div style={{ display: "flex", gap: 4 }}>
@@ -302,8 +303,9 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
           {onSonnette && sonnetteActive !== false && (
             <button onClick={onSonnette} title="Appeler le patient"
               style={{
-                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
-                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 14,
+                width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 13,
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}>
               🔔
             </button>
@@ -312,9 +314,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
           {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
             <button onClick={handleDownload} disabled={downloading} title="Télécharger le fichier"
               style={{
-                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
-                borderRadius: 7, background: "#f0f4ff", cursor: downloading ? "default" : "pointer", fontSize: 14,
+                width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: downloading ? "default" : "pointer", fontSize: 13,
                 opacity: downloading ? 0.6 : 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}>
               {downloading ? "…" : "⬇️"}
             </button>
