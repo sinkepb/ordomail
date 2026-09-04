@@ -752,7 +752,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           bouton "intéressé" serait coupé sous le pli au lieu d'être cliquable. */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 28px", textAlign: "center", position: "relative", zIndex: 6, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
-        <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
+        {/* Icône masquée pour une offre avec photo (04/09/2026, retour direct)
+            — la photo produit prend déjà sa place, l'emoji redondant coûte de
+            la hauteur précieuse sur petit écran mobile (voir le filet
+            overflowY:auto ci-dessus, déjà nécessaire pour cette raison). */}
+        {!isOffrePhoto && (
+          <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
+        )}
         <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
 
 
@@ -821,7 +827,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                   ne rien afficher silencieusement. */}
               {story.image && (
                 <img src={story.image} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }}
-                  style={{ width:"100%", maxWidth:280, height:160, objectFit:"cover", borderRadius:16, marginBottom:14, border:"2px solid rgba(255,255,255,0.3)", display:"block" }}/>
+                  style={{ width:"100%", maxWidth:240, height:320, objectFit:"cover", borderRadius:16, marginBottom:14, border:"2px solid rgba(255,255,255,0.3)", display:"block", margin:"0 auto 14px" }}/>
               )}
               <div style={{ fontSize:15, color:"rgba(255,255,255,0.9)", lineHeight:1.7, maxWidth:280, marginBottom:20 }}>{story.text}</div>
               {story.prix != null && (
