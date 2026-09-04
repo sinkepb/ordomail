@@ -8,6 +8,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode } from "../_shared/upload-validation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -31,6 +32,13 @@ Deno.serve(async (req) => {
     }
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Limitation de débit (04/09/2026) — endpoint public anonyme, jusqu'ici
+    // sans aucune protection.
+    const allowed = await checkRateLimit(sb, "reserver-offre", getClientIp(req), 60, 5);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
+    }
 
     const { data: offre } = await sb.from("offres_stories").select("id, pharmacie_id, prix, epuise, actif").eq("id", offreId).maybeSingle();
     if (!offre || offre.pharmacie_id !== pharmacieId) {

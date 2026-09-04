@@ -8,6 +8,7 @@
 // ne doit distraire un préparateur pressé, debout au comptoir.
 import { useState, useEffect } from "react";
 import { fileToBase64 } from "../lib/utils.js";
+import { compressImageFile } from "../lib/imageCompress.js";
 
 async function callMobileOffre(token, action, params = {}) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -62,11 +63,14 @@ function MobileOffreCapture({ token }) {
     if (!photoFile || sending) return;
     setSending(true); setSendError("");
     try {
-      const fileBase64 = await fileToBase64(photoFile);
+      // Photo de smartphone récent = souvent 3-10 Mo non compressée ; pas
+      // besoin de cette résolution pour une story affichée en plein écran.
+      const compressed = await compressImageFile(photoFile);
+      const fileBase64 = await fileToBase64(compressed);
       const prixNum = prix ? Number(prix.replace(",", ".")) : null;
       await callMobileOffre(token, "create", {
-        fileName: photoFile.name || "photo.jpg",
-        fileType: photoFile.type || "image/jpeg",
+        fileName: compressed.name || "photo.jpg",
+        fileType: compressed.type || "image/jpeg",
         fileBase64,
         prix: prixNum,
       });

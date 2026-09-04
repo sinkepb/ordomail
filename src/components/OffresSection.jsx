@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData, subscribeToOffres } from "../supabase.js";
 import { fileToBase64 } from "../lib/utils.js";
+import { compressImageFile } from "../lib/imageCompress.js";
 import { QRCode } from "./QRCode.jsx";
 import { OffreTemplatesPanel } from "./OffreTemplatesPanel.jsx";
 import { OffreReservationsPanel } from "./OffreReservationsPanel.jsx";
@@ -83,8 +84,9 @@ function OffresSection({ pharmacie }) {
     setUploadingImg(true);
     setImgError("");
     try {
-      const fileBase64 = await fileToBase64(file);
-      const { url } = await callSecureData("offre_upload_image", { fileName: file.name, fileType: file.type, fileBase64 });
+      const compressed = await compressImageFile(file);
+      const fileBase64 = await fileToBase64(compressed);
+      const { url } = await callSecureData("offre_upload_image", { fileName: compressed.name, fileType: compressed.type, fileBase64 });
       setForm(f => ({ ...f, image_url: url }));
     } catch (e) {
       setImgError("Échec de l'envoi de l'image : " + e.message);

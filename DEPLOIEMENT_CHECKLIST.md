@@ -319,10 +319,11 @@ sécurité/qualité perçue et la valeur commerciale.
    sensibilité des données (ordonnances) justifie une revue indépendante au-delà de
    l'auto-audit déjà mené. Pas codable — prestataire externe à mandater, idéalement après
    la migration HDS (section 9) pour ne pas auditer une infra bientôt abandonnée.
-2. **DPO / registre des traitements (RGPD art. 30)** — désignation d'un DPO : toujours une
-   décision organisationnelle, hors périmètre technique. Brouillon de registre des
-   traitements déjà rédigé (`docs/registre-traitements.md` + version Word), 7 traitements
-   identifiés, champs `[À valider]` en attente du DPO.
+2. **DPO / registre des traitements (RGPD art. 30)** — DPO désigné le 04/09/2026 : Benjamin
+   SINKEP. Restent les formalités (notification CNIL si requise art. 37, publication des
+   coordonnées, lettre de mission) et la relecture/validation du brouillon de registre des
+   traitements (`docs/registre-traitements.md` + version Word), 7 traitements identifiés,
+   champs `[À valider]` en attente de sa validation.
 
 ### B. Qualité / fiabilité
 

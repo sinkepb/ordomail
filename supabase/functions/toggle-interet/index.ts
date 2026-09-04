@@ -19,6 +19,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode } from "../_shared/upload-validation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -55,6 +56,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // Limitation de débit (04/09/2026) — endpoint public anonyme, jusqu'ici
+    // sans aucune protection. Par IP : un même patient peut légitimement
+    // toggler plusieurs offres rapidement, mais 60 appels/5 min dépasse tout
+    // usage réel.
+    const allowed = await checkRateLimit(sb, "toggle-interet", getClientIp(req), 60, 5);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }),
+        { status: 429, headers: CORS });
+    }
 
     // Vérifier que la pharmacie existe (garde-fou léger — pas de qr_token exigé
     // ici : cet appel n'a lieu qu'après un dépôt d'ordonnance réussi, où le

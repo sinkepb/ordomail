@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
+import { compressImageFile } from "../lib/imageCompress.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
 
@@ -283,6 +284,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         return;
       }
 
+      // Compresser APRÈS l'OCR (ligne 270, sur le fichier original en pleine
+      // résolution) — jamais avant : ça dégraderait l'extraction du texte de
+      // l'ordonnance. PDF/HEIC ressortent inchangés (voir imageCompress.js).
+      const uploadFile = await compressImageFile(file);
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
       formData.append("pharmacie_id", pharmacie.id);
@@ -292,7 +298,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       formData.append("patient_cv",   "");
       formData.append("medecin",      "");
       formData.append("medicaments",  JSON.stringify([]));
-      formData.append("file",         file, file.name);
+      formData.append("file",         uploadFile, uploadFile.name);
       // Toujours le code déjà ouvert — jamais un nouveau, voir commentaire ci-dessus
       formData.append("session_code", codePatient);
 
@@ -1260,6 +1266,10 @@ function PatientPage({ pharmacie, onBack }) {
         return { ok: true, code_patient: sessionCode };
       }
 
+      // Compresser APRÈS l'OCR ci-dessus (sur item.file/base64 en pleine
+      // résolution) — jamais avant. PDF/HEIC ressortent inchangés.
+      const uploadFile = await compressImageFile(item.file);
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
       formData.append("pharmacie_id", pharmacie.id);
@@ -1271,7 +1281,7 @@ function PatientPage({ pharmacie, onBack }) {
       formData.append("patient_cv",   "");
       formData.append("medecin",      "");
       formData.append("medicaments",  JSON.stringify([]));
-      formData.append("file",         item.file, item.name);
+      formData.append("file",         uploadFile, uploadFile.name);
       formData.append("session_code",  sessionCode); // même code pour tous les fichiers
 
       const res = await fetch(`${supabaseUrl}/functions/v1/submit-ordonnance`, {

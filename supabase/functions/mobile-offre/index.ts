@@ -12,6 +12,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyToken } from "../_shared/jwt.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
 
 async function checkToken(bearer: string, jwtSecret: string): Promise<{ pharmacieId: string } | null> {
   const result = await verifyToken(bearer, jwtSecret);
@@ -61,6 +62,17 @@ Deno.serve(async (req) => {
       // (clé de service), donc rien d'autre ne bloquerait un plan Essentiel ici.
       if (!(await planHasFeature(supabase, ph.plan, "offresStories"))) {
         return new Response(JSON.stringify({ error: "Fonctionnalité non disponible sur ce plan" }), { status: 403, headers: CORS });
+      }
+
+      // Limitation de débit (04/09/2026) — par pharmacie plutôt que par IP :
+      // c'est le token (scoppé à UNE pharmacie) qui fait foi ici, plusieurs
+      // membres du personnel peuvent légitimement publier depuis des réseaux
+      // différents pendant une même session. 20 créations/15 min couvre
+      // largement une vraie tournée de publication tout en bloquant un abus
+      // (upload/stockage coûteux à chaque appel).
+      const rateOk = await checkRateLimit(supabase, "mobile-offre-create", auth.pharmacieId, 20, 15);
+      if (!rateOk) {
+        return new Response(JSON.stringify({ error: "Trop d'offres créées récemment — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
       }
 
       const { fileName, fileType, fileBase64, prix, titre } = params || {};

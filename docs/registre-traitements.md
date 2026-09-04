@@ -16,7 +16,7 @@
 | Forme juridique | **[À compléter]** |
 | Adresse du siège | **[À compléter]** |
 | Représentant légal | **[À compléter]** |
-| DPO | **[À désigner — voir échange précédent, probablement obligatoire art. 37 RGPD]** |
+| DPO | Benjamin SINKEP — désigné 04/09/2026. **[Formalités restantes : notification à la CNIL si obligatoire au regard de l'art. 37 RGPD, publication des coordonnées auprès des personnes concernées, lettre de mission actant les missions/moyens du DPO]** |
 | Contact données personnelles | **[À compléter]** (actuellement `contact@ordomail.fr` utilisé dans les documents imprimés — à confirmer comme adresse officielle RGPD) |
 
 **Co-responsabilité à clarifier avec le DPO** : pour chaque pharmacie

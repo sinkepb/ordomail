@@ -13,6 +13,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -32,6 +33,17 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // Limitation de débit (04/09/2026) — endpoint public anonyme, jusqu'ici
+    // sans aucune protection. Par IP plutôt que par token : un même sticker
+    // légitime est scanné par de nombreux patients différents (pas un abus),
+    // c'est la vitesse d'ÉNUMÉRATION depuis une même source qui doit être
+    // limitée. 30/5min laisse largement passer un usage réel même partagé
+    // (wifi de la pharmacie).
+    const allowed = await checkRateLimit(sb, "resolve-qr-code", getClientIp(req), 30, 5);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
+    }
 
     const { data: qr } = await sb
       .from("qr_codes")

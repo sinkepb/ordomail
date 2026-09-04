@@ -3,6 +3,7 @@
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 import { _listeners } from './realtime.js';
 import { maskId, fileToBase64 } from '../utils.js';
+import { compressImageFile } from '../imageCompress.js';
 
 export async function fetchOrdonnances(pharmacieId, days = 7) {
   if (IS_DEMO) {
@@ -75,9 +76,13 @@ export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
   // pouvait écrire un fichier arbitraire dans le dossier de N'IMPORTE QUELLE
   // pharmacie. secure-data vérifie maintenant que l'ordonnance appartient
   // bien à l'appelant avant d'écrire (même modèle que submit-ordonnance).
-  const fileBase64 = await fileToBase64(file);
+  // Compression avant upload (04/09/2026) — l'OCR (côté appelant, avant ce
+  // point) a déjà tourné sur le fichier original ; seul ce qui part vers le
+  // Storage doit être allégé. PDF/HEIC ressortent inchangés.
+  const uploadFile = await compressImageFile(file);
+  const fileBase64 = await fileToBase64(uploadFile);
   const { path, signedUrl } = await callSecureData('ordonnances_upload_file', {
-    ordoId, fileName: file.name, fileType: file.type, fileBase64,
+    ordoId, fileName: uploadFile.name, fileType: uploadFile.type, fileBase64,
   });
   return { dataUrl: signedUrl, path };
 }
