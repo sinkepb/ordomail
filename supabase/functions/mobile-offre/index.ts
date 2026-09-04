@@ -89,13 +89,16 @@ Deno.serve(async (req) => {
       if (upErr) throw new Error(upErr.message);
       const { data: pub } = supabase.storage.from("story-images").getPublicUrl(path);
 
+      // @fix 04/09/2026 — badge n'était PAS censé porter le prix : PatientPage.jsx/
+      // OffresSection.jsx affichent déjà `prix` dans leur propre ligne dédiée
+      // (voir plus bas) — le dupliquer dans badge affichait "15 €" deux fois sur
+      // la même offre. badge reste réservé à un libellé promo type "-20%".
       const { data: offre, error: insErr } = await supabase.from("offres_stories").insert({
         pharmacie_id: auth.pharmacieId,
         type: "promo",
         titre: (titre && String(titre).trim()) || "Offre comptoir",
         image_url: pub.publicUrl,
         prix: prixNum,
-        badge: prixNum != null ? `${prixNum} €` : null,
         actif: true,
         created_via: "mobile",
       }).select("id").single();

@@ -306,8 +306,11 @@ function OffresSection({ pharmacie }) {
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Aperçu story</div>
             <div style={{ width:120, height:200, borderRadius:16,
+              // @fix 04/09/2026 — aligné sur le même voile allégé que PatientPage.jsx
+              // (40 au lieu de cc) : l'aperçu doit refléter ce que le patient verra
+              // réellement, pas une image beaucoup plus tintée qu'en production.
               background: form.image_url
-                ? `linear-gradient(160deg,${form.couleur}cc,${form.couleur}cc), url(${form.image_url}) center/cover`
+                ? `linear-gradient(160deg,${form.couleur}40,${form.couleur}40), url(${form.image_url}) center/cover`
                 : `linear-gradient(160deg,${form.couleur},${form.couleur}99)`,
               backgroundBlendMode: form.image_url ? "multiply" : "normal",
               display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:10, textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.15)" }}>
@@ -344,8 +347,12 @@ function OffresSection({ pharmacie }) {
         return (
         <div key={offre.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:`1.5px solid ${offre.epuise?"#fecaca":offre.actif?"#e0e7ff":"#f1f5f9"}`, borderRadius:12, marginBottom:8, background:offre.epuise?"#fff5f5":offre.actif?"#f8faff":"#f8f9fa" }}>
           <div style={{ width:44, height:44, borderRadius:10,
+            // @fix 04/09/2026 — cc (80% opacité) + multiply rendait une photo
+            // produit (offres mobile) méconnaissable dans cette vignette ; 33
+            // (~20%) garde la photo reconnaissable tout en conservant un léger
+            // habillage couleur cohérent avec le reste de la carte.
             background: offre.image_url
-              ? `linear-gradient(135deg,${offre.couleur||"#1a3a6e"}cc,${offre.couleur||"#1a3a6e"}cc), url(${offre.image_url}) center/cover`
+              ? `linear-gradient(135deg,${offre.couleur||"#1a3a6e"}33,${offre.couleur||"#1a3a6e"}33), url(${offre.image_url}) center/cover`
               : `linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`,
             backgroundBlendMode: offre.image_url ? "multiply" : "normal",
             display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>

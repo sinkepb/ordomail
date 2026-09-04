@@ -669,6 +669,15 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   }
 
   const [r1, r2] = story.bg;
+  // @fix 04/09/2026 — pour une offre "photo + prix" (mobile-offre), la photo
+  // EST le contenu (voir la mission "zéro design") : le fond dégradé dd/multiply
+  // ci-dessous (conçu pour les stories santé — image décorative derrière du
+  // texte) tintait le produit à 87% d'opacité, le rendant méconnaissable. Un
+  // voile uniforme bien plus léger garde la photo reconnaissable — pas de
+  // dégradé position-dépendant : le contenu (badge/prix/bouton) est CENTRÉ
+  // verticalement (justifyContent:"center" plus bas), pas ancré en bas, donc
+  // un voile qui ne s'assombrit qu'en bas de l'écran manquerait le texte.
+  const isOffrePhoto = story.type === "offre" && !!story.image;
 
   return (
     <div
@@ -677,7 +686,9 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       style={{
         minHeight: "100vh", width: "100%",
         background: story.image
-          ? `linear-gradient(160deg, ${r1}dd 0%, ${r2}dd 100%), url(${story.image}) center/cover`
+          ? (isOffrePhoto
+              ? `linear-gradient(160deg, ${r1}40 0%, ${r2}40 100%), url(${story.image}) center/cover`
+              : `linear-gradient(160deg, ${r1}dd 0%, ${r2}dd 100%), url(${story.image}) center/cover`)
           : `linear-gradient(160deg, ${r1} 0%, ${r2} 100%)`,
         backgroundBlendMode: story.image ? "multiply" : "normal",
         display: "flex", flexDirection: "column",
