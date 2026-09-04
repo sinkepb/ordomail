@@ -11,7 +11,7 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
-import { RappelsSection } from "../components/RappelsSection.jsx";
+import { RappelsSection, RappelForm } from "../components/RappelsSection.jsx";
 import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
@@ -32,7 +32,26 @@ import {
   getSignedUrl,
   fetchInteretsDuJour,
   appellerPatient,
+  createRappel,
 } from "../supabase.js";
+
+// Découpe au mieux "NOM Prénom" (format des données extraites/démo, voir
+// App.jsx:makeOrdos) en {nom, prenom} pour pré-remplir la popup de création
+// de rappel depuis une carte d'ordonnance (04/09/2026) — le token tout en
+// MAJUSCULES est pris comme nom de famille (convention française courante
+// sur les ordonnances), le reste comme prénom. Meilleur effort volontaire :
+// en cas de doute, tout part dans "nom" et le pharmacien corrige à la main
+// plutôt que de deviner un prénom faux.
+function splitNomPrenom(fullName) {
+  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { nom: "", prenom: "" };
+  if (parts.length === 1) return { nom: parts[0], prenom: "" };
+  const nomParts = parts.filter(p => p === p.toUpperCase() && p !== p.toLowerCase());
+  if (nomParts.length > 0 && nomParts.length < parts.length) {
+    return { nom: nomParts.join(" "), prenom: parts.filter(p => !nomParts.includes(p)).join(" ") };
+  }
+  return { nom: parts[0], prenom: parts.slice(1).join(" ") };
+}
 
 function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOrdo }) {
   const [section, setSection] = useState("postes");
@@ -346,6 +365,8 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   const [loadingId, setLoadingId] = useState(null);
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
+  const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
+  const [rappelCreating, setRappelCreating] = useState(false);
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth]         = useState(() => {
@@ -719,6 +740,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
                       }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
+                      onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}
                       loadingId={loadingId}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
@@ -737,6 +759,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
+                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}
                     loadingId={loadingId}/>;
                 })}
               </div>
@@ -898,6 +921,10 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
+      {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom}
+        creating={rappelCreating} setCreating={setRappelCreating}
+        onCancel={()=>setRappelDraft(null)}
+        onCreated={async(payload)=>{await createRappel(pharmacieId,payload);setRappelDraft(null);}}/>}
 
       {/* Portail direct vers document.body (25/08/2026) — le CSS d'impression ci-dessous
           masque body>* (les enfants DIRECTS de <body>) puis force l'affichage de

@@ -31,9 +31,12 @@ function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
 }
 
-function RappelForm({ onCancel, onCreated, creating, setCreating }) {
-  const [nom, setNom] = useState("");
-  const [prenom, setPrenom] = useState("");
+// Exporté (04/09/2026) — réutilisé depuis Dashboard.jsx pour créer un rappel
+// directement depuis une carte d'ordonnance (nom/prénom pré-remplis à partir
+// du patient de l'ordonnance), pas seulement depuis l'onglet Rappels lui-même.
+function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "" }) {
+  const [nom, setNom] = useState(initialNom);
+  const [prenom, setPrenom] = useState(initialPrenom);
   const [telephone, setTelephone] = useState("");
   const [commentaire, setCommentaire] = useState("");
   const [consentement, setConsentement] = useState(false);
@@ -224,4 +227,4 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   );
 }
 
-export { RappelsSection };
+export { RappelsSection, RappelForm };

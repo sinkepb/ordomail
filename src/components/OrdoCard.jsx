@@ -84,7 +84,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, interets = [] }) {
+function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [] }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
@@ -248,14 +248,29 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
           (celle-ci est display:flex/column), quelle que soit la hauteur du
           contenu au-dessus (bandeau "intéressé(e)" présent ou non). */}
       <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {ordo.attachments[0]?.dataUrl ? (
-            <button onClick={onView} style={{
-              flex: 1, padding: "7px", border: "1.5px solid #e0e0e0", borderRadius: 7,
-              background: "#fff", color: "#555", fontWeight: 600, fontSize: 9, cursor: "pointer", fontFamily: "inherit",
-            }}>👁 Voir</button>
+        {/* flexWrap (04/09/2026) — filet de sécurité : avec Voir + sonnette +
+            téléchargement, 3 boutons icône fixes doivent maintenant cohabiter
+            avec Imprimer à largeur fixe 50% (demande explicite, ne doit
+            jamais rétrécir) sur une carte déjà réduite à 3/4 de sa taille
+            d'origine. Sans wrap, ce quatrième bouton (téléchargement, ajouté
+            après coup) pouvait faire déborder/écraser Voir. Voir est aussi
+            passé d'un bouton flex:1 texte à un bouton icône de taille fixe,
+            identique aux autres — sa largeur ne dépendait plus de rien
+            d'autre auparavant, ce qui le rendait imprévisible visuellement. */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {/* Voir — affiché dès qu'un fichier existe (dataUrl EN DÉMO ou path
+              EN PROD), pas seulement dataUrl : en prod le fichier n'a jamais
+              de dataUrl (chargé à la demande via URL signée, voir
+              AttachmentThumb plus haut), donc ce bouton ne s'affichait quasi
+              jamais en usage réel — repéré en direct par le titulaire pilote
+              (incohérence "le bouton Voir n'apparaît pas systématiquement"). */}
+          {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) ? (
+            <button onClick={onView} title="Voir l'ordonnance" style={{
+              padding: "10px 8px", border: "1.5px solid #e0e0e0", borderRadius: 7,
+              background: "#fff", color: "#555", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
+            }}>👁</button>
           ) : (
-            <div style={{ flex: 1, display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 4 }}>
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
@@ -286,6 +301,18 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
                 opacity: downloading ? 0.6 : 1,
               }}>
               {downloading ? "…" : "⬇️"}
+            </button>
+          )}
+          {/* Créer un rappel de renouvellement pour ce patient (04/09/2026) —
+              accessible ici (vue Ordonnances, vendeur ET titulaire), pas
+              seulement depuis l'onglet Rappels réservé au titulaire. */}
+          {onCreateRappel && (
+            <button onClick={() => onCreateRappel(ordo)} title="Créer un rappel de renouvellement"
+              style={{
+                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 14,
+              }}>
+              ⏰
             </button>
           )}
           {/* Imprimer occupe toujours la moitié de la largeur de la ligne
@@ -413,7 +440,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive }) {
+function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive, onCreateRappel }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -537,7 +564,10 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-                {o.attachments?.[0]?.dataUrl && (
+                {/* dataUrl OU path (04/09/2026, même correctif que OrdoCard) —
+                    en prod le fichier n'a jamais de dataUrl, seulement path
+                    (URL signée chargée à la demande). */}
+                {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && (
                   <button onClick={() => onView(o)}
                     style={{ padding: "3px 6px", border: "1px solid #c7d2fe", borderRadius: 5,
                       background: "#f0f4ff", color: "#4338ca", fontSize: 8,
@@ -580,6 +610,18 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
               fontSize: 14, flexShrink: 0, fontFamily: "inherit",
             }}>
             🔔
+          </button>
+        )}
+        {/* Créer un rappel de renouvellement pour ce patient (04/09/2026) —
+            un seul rappel par groupe/patient, pas par ordonnance individuelle. */}
+        {onCreateRappel && (
+          <button onClick={() => onCreateRappel(group)} title="Créer un rappel de renouvellement"
+            style={{
+              padding: "9px 11px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 7, background: "#f0f4ff", cursor: "pointer",
+              fontSize: 14, flexShrink: 0, fontFamily: "inherit",
+            }}>
+            ⏰
           </button>
         )}
         {/* Statut global */}
