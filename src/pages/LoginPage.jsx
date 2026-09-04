@@ -518,6 +518,11 @@ function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, Dashbo
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
   const [patientPharmacie, setPatientPharmacie] = useState(null);
+  // Pastilles "rappels"/"ordonnances" (05/09/2026) — déplacées ici, au même
+  // niveau que le badge "Admin", depuis le header du dashboard pharmacie
+  // (Dashboard.jsx) qui les affichait par ailleurs. Remontées par
+  // PharmacieDashboard via onBadges, seul endroit qui connaît ces compteurs.
+  const [badges, setBadges] = useState({ rappels: 0, ordonnances: 0 });
 
   if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
@@ -539,6 +544,8 @@ function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, Dashbo
         <div style={{background:"#1a3a6e",color:"#fff",height:44,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}><span>💊</span><span style={{fontWeight:800,fontSize:14}}>OrdoMail</span></div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {badges.rappels>0&&<span style={{fontSize:10,fontWeight:700,background:"#dc2626",color:"#fff",padding:"2px 8px",borderRadius:12,whiteSpace:"nowrap"}}>{badges.rappels} rappel{badges.rappels>1?"s":""}</span>}
+            {badges.ordonnances>0&&<span style={{fontSize:10,fontWeight:700,background:"#e6a817",color:"#1a1305",padding:"2px 8px",borderRadius:12,whiteSpace:"nowrap"}}>{badges.ordonnances} ordonnance{badges.ordonnances>1?"s":""}</span>}
             <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{session.pscUser?.prenom||session.posteNom} {session.pscUser?.nom||""}</span>
             {session.userRole==="admin"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.8)",padding:"2px 8px",borderRadius:12}}>👑 Admin</span>}
             {session.userRole==="vendeur"&&<span style={{fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.7)",padding:"2px 8px",borderRadius:12}}>🖥️ {session.posteNom||"Vendeur"}</span>}
@@ -546,7 +553,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, Dashbo
             <button onClick={handleLogout} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Déconnexion</button>
           </div>
         </div>
-        <DashboardComponent pharmacieId={session.pharmacieId} onPatientPage={ph=>setPatientPharmacie(ph)} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <DashboardComponent pharmacieId={session.pharmacieId} onPatientPage={ph=>setPatientPharmacie(ph)} onBadges={setBadges} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }

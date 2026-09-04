@@ -347,7 +347,7 @@ function BottomNav({ tab, canAdmin, setTab, rappelsATraiter = 0 }) {
   );
 }
 
-function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", userId = "demo" }) {
+function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "admin", userId = "demo" }) {
   const [pharmacie, setPharmacie] = useState(null);
   const [ordonnances, setOrdonnances] = useState([]);
   const [interetsDuJour, setInteretsDuJour] = useState([]); // intérêts offres du jour
@@ -385,6 +385,15 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
       fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
     });
   }, [pharmacieId]);
+
+  // Remonte les compteurs à AppLogin (05/09/2026) — les pastilles "rappels"/
+  // "ordonnances" ont été déplacées dans la barre du haut (LoginPage.jsx),
+  // au même niveau que le badge "Admin", donc rendues par un composant qui
+  // n'a pas accès à cet état local. onBadges est le setState d'AppLogin :
+  // référence stable, aucune boucle malgré sa présence en dépendance.
+  useEffect(() => {
+    onBadges?.({ rappels: rappelsATraiter, ordonnances: ordonnances.filter(o => o.status === "nouveau").length });
+  }, [rappelsATraiter, ordonnances, onBadges]);
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth]         = useState(() => {
@@ -541,7 +550,6 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
     return result;
   })();
 
-  const nouveaux = ordonnances.filter(o => o.status === "nouveau").length;
   const couleur = pharmacie?.couleur || "#1a3a6e";
   // Calendrier : jours avec ordonnances (recomputed)
   const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
@@ -637,16 +645,6 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
             {rappelsATraiter>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>}
           </button>
           {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          {/* Badge rappels à traiter — barre du haut, toujours visible quel
-              que soit l'onglet actif ou la taille d'écran (04/09/2026,
-              retour direct) : contrairement au badge posé sur l'onglet
-              "Rappels" lui-même (desktop-nav ci-dessus, masqué sur mobile —
-              remplacé par BottomNav tout en bas de l'écran), ce header reste
-              affiché partout. */}
-          {rappelsATraiter>0&&<div style={{background:"#dc2626",color:"#fff",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{rappelsATraiter} ⏰</div>}
-          {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 📋</div>}
         </div>
       </header>
       <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} rappelsATraiter={rappelsATraiter} />
