@@ -375,8 +375,9 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   );
   const [interets, setInterets]     = useState({});
   const [appel, setAppel]           = useState(null); // { offre_id: true/false }
-  const [commande, setCommande]     = useState({}); // { offreId: quantite } — "Ajouter à la commande" (Click & Collect, PAS un paiement)
-  const [commandeBusy, setCommandeBusy] = useState(null); // offreId en cours d'envoi
+  // Avis Google (04/09/2026) — plus une story à part : fusionnée avec la
+  // dernière story du diaporama ("Restez ici !"), voir son rendu plus bas.
+  const [avisGoogleOffer, setAvisGoogleOffer] = useState(null); // { id, titre, lienUrl } | null
 
   // Offres mobile (03/09/2026) — une offre publiée depuis le téléphone d'un
   // vendeur (ou marquée en rupture) doit apparaître/se mettre à jour ici sans
@@ -385,6 +386,13 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
   useEffect(() => {
     if (!isProPlan || isDemoMode || !pharmacie?.id) return;
     return subscribeToOffres(pharmacie.id, ({ eventType, new: row, old }) => {
+      // Avis Google : fusionnée avec la dernière story, jamais sa propre carte.
+      if ((row?.type === "avis_google") || (old?.type === "avis_google")) {
+        if (eventType === "DELETE") { setAvisGoogleOffer(null); return; }
+        if (row.actif && row.lien_url) setAvisGoogleOffer({ id: row.id, titre: row.titre, lienUrl: row.lien_url });
+        else setAvisGoogleOffer(null);
+        return;
+      }
       if (eventType === "INSERT") {
         if (!row.actif || row.epuise) return;
         const storyId = `offre-${row.id}`;
@@ -410,36 +418,6 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       }
     });
   }, [isProPlan, pharmacie?.id]);
-
-  // "Ajouter à la commande" — réservation Click & Collect, PAS un paiement (voir
-  // reserver-offre : aucun Stripe, l'encaissement se fait physiquement au TPE
-  // de la pharmacie). Même schéma d'appel que toggleInteret (clé anon, edge
-  // function service-role).
-  async function ajouterCommande(story) {
-    const offreId = story.offreId ?? story.id?.toString().replace('offre-', '');
-    if (!offreId || !codePatient || commandeBusy === offreId) return;
-    setCommandeBusy(offreId);
-    const prevQte = commande[offreId] || 0;
-    setCommande(prev => ({ ...prev, [offreId]: prevQte + 1 })); // optimiste
-    try {
-      if (isDemoMode) { setCommandeBusy(null); return; }
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const res = await fetch(`${supabaseUrl}/functions/v1/reserver-offre`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
-        body: JSON.stringify({ pharmacieId: pharmacie?.id, codePatient, offreId, action: 'ajouter' }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || `Erreur ${res.status}`);
-      setCommande(prev => ({ ...prev, [offreId]: body.quantite }));
-      logStoryEvent(story, 'offer_order_add', { meta: { quantite: body.quantite } });
-    } catch(e) {
-      console.error('[ajouterCommande]', e.message);
-      setCommande(prev => ({ ...prev, [offreId]: prevQte }));
-    }
-    setCommandeBusy(null);
-  }
 
   useEffect(() => {
     const sb = getSupabaseAnon();
@@ -557,8 +535,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           console.log("[PatientStories] offres actives:", offres.length);
 
           if (offres && offres.length > 0) {
-            const offreStories = offres
-              .filter(o => !o.date_fin || new Date(o.date_fin) >= new Date())
+            const eligible = offres.filter(o => !o.date_fin || new Date(o.date_fin) >= new Date());
+            // Avis Google (04/09/2026) — fusionnée avec la dernière story
+            // ("Restez ici !") plutôt que d'occuper sa propre carte au milieu
+            // du diaporama, voir le rendu de cette dernière story plus bas.
+            const avisGoogle = eligible.find(o => o.type === "avis_google" && o.lien_url);
+            if (avisGoogle) setAvisGoogleOffer({ titre: avisGoogle.titre, lienUrl: avisGoogle.lien_url, id: avisGoogle.id });
+            const offreStories = eligible
+              .filter(o => o.type !== "avis_google")
               .map(o => ({
                 id: `offre-${o.id}`,
                 offreId: o.id,
@@ -814,7 +798,6 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         {story.type === "offre" && (() => {
           const offreId = story.id?.toString().replace("offre-", "");
           const isOn    = !!interets[offreId];
-          const qte = commande[offreId] || 0;
           return (
             <div style={{ width:"100%", maxWidth:300 }}>
               {story.epuise && (
@@ -832,62 +815,23 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                 <div style={{ fontSize:26, fontWeight:900, color:"#fff", marginBottom:16 }}>{story.prix} €</div>
               )}
 
-              {/* "Ajouter à la commande" — réservation Click & Collect (pas un
-                  paiement, voir ajouterCommande) : uniquement pour les offres
-                  avec un prix, et jamais en rupture. */}
-              {story.prix != null && !story.epuise && codePatient && (
+              {/* Bouton toggle intérêt — avis_google n'atteint jamais cette
+                  story (filtrée en amont, fusionnée avec la dernière story,
+                  voir avisGoogleOffer), donc plus besoin de distinguer ce cas ici. */}
+              {codePatient && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); ajouterCommande(story); }}
-                  disabled={commandeBusy === offreId}
+                  onClick={(e) => { e.stopPropagation(); toggleInteret(story); }}
                   style={{
-                    width:"100%", boxSizing:"border-box", padding:"14px 20px", marginBottom:10,
-                    border:"none", borderRadius:16, cursor: commandeBusy===offreId ? "default" : "pointer", fontFamily:"inherit",
-                    background: qte>0 ? "#22c55e" : "#fff",
-                    color: qte>0 ? "#052e16" : "#1a1a1a", fontWeight:800, fontSize:16,
+                    width:"100%", padding:"14px 20px",
+                    border: isOn ? "2px solid #4ade80" : "2px solid rgba(255,255,255,0.5)",
+                    borderRadius:16, cursor:"pointer", fontFamily:"inherit",
+                    background: isOn ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.15)",
+                    color:"#fff", fontWeight:800, fontSize:16,
                     display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                    opacity: commandeBusy===offreId ? 0.7 : 1,
+                    transition:"all 0.2s",
                   }}>
-                  {qte>0 ? `🛒 Ajouté (${qte}) — encaissement au comptoir` : "🛒 Ajouter à la commande"}
+                  {isOn ? "✅ Je suis intéressé(e)" : "✋ Je suis intéressé(e)"}
                 </button>
-              )}
-
-              {story.offreType === "avis_google" ? (
-                // Offre "Avis Google" : ouvre directement le lien renseigné par le
-                // pharmacien, pas de toggle "intéressé" (n'a pas de sens ici).
-                story.lienUrl && (
-                  <a
-                    href={story.lienUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => { e.stopPropagation(); logStoryEvent(story, "offer_interest", { meta: { isOn: true } }); }}
-                    style={{
-                      width:"100%", boxSizing:"border-box", padding:"14px 20px",
-                      border:"2px solid rgba(255,255,255,0.5)",
-                      borderRadius:16, cursor:"pointer", fontFamily:"inherit",
-                      background:"rgba(255,255,255,0.15)", textDecoration:"none",
-                      color:"#fff", fontWeight:800, fontSize:16,
-                      display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                    }}>
-                    ⭐ Laisser un avis Google
-                  </a>
-                )
-              ) : (
-                /* Bouton toggle intérêt */
-                codePatient && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleInteret(story); }}
-                    style={{
-                      width:"100%", padding:"14px 20px",
-                      border: isOn ? "2px solid #4ade80" : "2px solid rgba(255,255,255,0.5)",
-                      borderRadius:16, cursor:"pointer", fontFamily:"inherit",
-                      background: isOn ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.15)",
-                      color:"#fff", fontWeight:800, fontSize:16,
-                      display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                      transition:"all 0.2s",
-                    }}>
-                    {isOn ? "✅ Je suis intéressé(e)" : "✋ Je suis intéressé(e)"}
-                  </button>
-                )
               )}
             </div>
           );
@@ -1152,7 +1096,21 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
       {/* Starter/Standard : pas de minuteur (progress reste à 0), le bouton
           doit donc apparaître directement plutôt qu'attendre progress>80. */}
       {current === allStories.length - 1 && (progress > 80 || !isProPlan) && (
-        <div style={{ padding: "0 24px 32px", zIndex: 10 }}>
+        <div style={{ padding: "0 24px 32px", zIndex: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Avis Google (04/09/2026) — fusionnée avec cette dernière story
+              plutôt que d'occuper sa propre carte au milieu du diaporama. */}
+          {avisGoogleOffer && (
+            <a href={avisGoogleOffer.lienUrl} target="_blank" rel="noopener noreferrer"
+              onClick={() => logStoryEvent({ id: avisGoogleOffer.id, type: "offre" }, "offer_interest", { meta: { isOn: true } })}
+              style={{
+                width: "100%", boxSizing: "border-box", padding: "14px 20px", border: "2px solid rgba(255,255,255,0.5)",
+                borderRadius: 14, cursor: "pointer", fontFamily: "inherit", background: "rgba(255,255,255,0.15)",
+                textDecoration: "none", color: "#fff", fontWeight: 800, fontSize: 15,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+              }}>
+              ⭐ {avisGoogleOffer.titre || "Laisser un avis Google"}
+            </a>
+          )}
           <button onClick={onRestart}
             style={{ width: "100%", padding: "14px", border: "none", borderRadius: 14, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
             Terminer et repartir de zéro
