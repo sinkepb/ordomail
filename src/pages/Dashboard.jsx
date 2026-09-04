@@ -62,7 +62,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
-  const [rappelsATraiter, setRappelsATraiter] = useState(0);
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   async function addPoste() {
@@ -111,7 +110,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
 
   const tabs = [["postes","🖥️","Postes"],
     ...(planInfo.offresStories ? [["offres","🎯","Offres"],["stories","📊","Stories"]] : []),
-    ["rappels","🔔","Rappels"],
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
@@ -121,9 +119,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           {tabs.map(([k,icon,label])=>(
             <button key={k} onClick={()=>setSection(k)} style={{padding:"6px 12px",border:`1.5px solid ${section===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:section===k?"#1a3a6e":"#fff",color:section===k?"#fff":"#64748b",fontWeight:section===k?700:500,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
               <span>{icon}</span><span className="hide-mobile">{label}</span>
-              {k==="rappels"&&rappelsATraiter>0&&(
-                <span style={{background:section==="rappels"?"#fff":"#dc2626",color:section==="rappels"?"#dc2626":"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>
-              )}
             </button>
           ))}
         </div>
@@ -277,11 +272,6 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           <StoriesSection pharmacie={pharmacie}/>
           </ErrorBoundary>
         )}
-        {section==="rappels"&&(
-          <ErrorBoundary compact label="Rappels">
-          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>
-          </ErrorBoundary>
-        )}
         {section==="compte"&&(
           <ErrorBoundary compact label="Compte">
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo}
@@ -331,9 +321,10 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   );
 }
 
-function BottomNav({ tab, canAdmin, setTab }) {
+function BottomNav({ tab, canAdmin, setTab, rappelsATraiter = 0 }) {
   const items = [
     { id: "ordonnances", icon: "📋", label: "Ordo", always: true },
+    { id: "rappels",     icon: "🔔", label: "Rappels", always: true, badge: rappelsATraiter },
     { id: "parametres",  icon: "⚙️", label: "Paramètres", adminOnly: true },
   ].filter(it => !it.adminOnly || canAdmin);
   const active = tab;
@@ -343,9 +334,10 @@ function BottomNav({ tab, canAdmin, setTab }) {
         const isActive = active === it.id;
         return (
           <button key={it.id} onClick={() => setTab(it.id)}
-            style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, border:"none", background:"none", cursor:"pointer", fontFamily:"inherit", borderTop: isActive?"2px solid #1a3a6e":"2px solid transparent" }}>
+            style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, border:"none", background:"none", cursor:"pointer", fontFamily:"inherit", borderTop: isActive?"2px solid #1a3a6e":"2px solid transparent", position:"relative" }}>
             <span style={{ fontSize:20 }}>{it.icon}</span>
             <span style={{ fontSize:9, fontWeight:isActive?800:500, color:isActive?"#1a3a6e":"#94a3b8" }}>{it.label}</span>
+            {it.badge>0&&<span style={{ position:"absolute", top:4, right:"28%", background:"#dc2626", color:"#fff", borderRadius:999, padding:"1px 5px", fontSize:9, fontWeight:800, lineHeight:1.4 }}>{it.badge}</span>}
           </button>
         );
       })}
@@ -367,6 +359,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
   const [printModal, setPrintModal] = useState(null);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
+  const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth]         = useState(() => {
@@ -614,13 +607,25 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, userRole = "admin", us
         </div>
         <div style={{display:"flex",gap:2,flexShrink:0}} className="desktop-nav">
           <button onClick={()=>setTab("ordonnances")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="ordonnances"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="ordonnances"?700:400,fontSize:12,fontFamily:"inherit"}}>📋 Ordonnances</button>
+          <button onClick={()=>setTab("rappels")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="rappels"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="rappels"?700:400,fontSize:12,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+            🔔 Rappels
+            {rappelsATraiter>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>}
+          </button>
           {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {nouveaux>0&&<div style={{background:"#e6a817",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{nouveaux} 🔔</div>}
         </div>
       </header>
-      <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} />
+      <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} rappelsATraiter={rappelsATraiter} />
+
+      {tab==="rappels"&&(
+        <ErrorBoundary compact label="Rappels">
+        <div style={{flex:1,overflow:"auto",padding:16,paddingBottom:76}}>
+          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>
+        </div>
+        </ErrorBoundary>
+      )}
 
       {tab==="ordonnances"&&(
         <ErrorBoundary compact label="Ordonnances">

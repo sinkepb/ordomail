@@ -248,6 +248,22 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
           (celle-ci est display:flex/column), quelle que soit la hauteur du
           contenu au-dessus (bandeau "intéressé(e)" présent ou non). */}
       <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
+        {/* Créer un rappel — seule sur sa ligne, au-dessus des autres boutons
+            (retour direct du titulaire pilote, 04/09/2026) : un bouton texte
+            explicite plutôt qu'une icône noyée parmi Voir/sonnette/
+            téléchargement, accessible ici (vue Ordonnances, vendeur ET
+            titulaire) et pas seulement depuis l'onglet Rappels réservé au
+            titulaire. */}
+        {onCreateRappel && (
+          <button onClick={() => onCreateRappel(ordo)} style={{
+            width: "100%", boxSizing: "border-box", padding: "9px", border: "1.5px solid rgba(26,58,110,0.3)",
+            borderRadius: 7, background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 11,
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>
+            ⏰ Créer un rappel
+          </button>
+        )}
         {/* flexWrap (04/09/2026) — filet de sécurité : avec Voir + sonnette +
             téléchargement, 3 boutons icône fixes doivent maintenant cohabiter
             avec Imprimer à largeur fixe 50% (demande explicite, ne doit
@@ -301,18 +317,6 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
                 opacity: downloading ? 0.6 : 1,
               }}>
               {downloading ? "…" : "⬇️"}
-            </button>
-          )}
-          {/* Créer un rappel de renouvellement pour ce patient (04/09/2026) —
-              accessible ici (vue Ordonnances, vendeur ET titulaire), pas
-              seulement depuis l'onglet Rappels réservé au titulaire. */}
-          {onCreateRappel && (
-            <button onClick={() => onCreateRappel(ordo)} title="Créer un rappel de renouvellement"
-              style={{
-                padding: "10px 8px", border: "1.5px solid rgba(26,58,110,0.3)",
-                borderRadius: 7, background: "#f0f4ff", cursor: "pointer", fontSize: 14,
-              }}>
-              ⏰
             </button>
           )}
           {/* Imprimer occupe toujours la moitié de la largeur de la ligne
@@ -600,42 +604,45 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
       {/* Footer fixe — sonnette toujours en bas (marginTop:"auto" nécessite
           que le conteneur soit display:flex/column, voir plus haut — c'était
           documenté comme l'intention ici mais jamais réellement appliqué). */}
-      <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", gap: 6 }}>
-        {onSonnette && sonnetteActive !== false && (
-          <button onClick={onSonnette}
-            title="Appeler le patient"
-            style={{
-              padding: "9px 11px", border: "1.5px solid rgba(26,58,110,0.3)",
-              borderRadius: 7, background: "#f0f4ff", cursor: "pointer",
-              fontSize: 14, flexShrink: 0, fontFamily: "inherit",
-            }}>
-            🔔
-          </button>
-        )}
-        {/* Créer un rappel de renouvellement pour ce patient (04/09/2026) —
-            un seul rappel par groupe/patient, pas par ordonnance individuelle. */}
+      <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
+        {/* Créer un rappel — seule sur sa ligne, au-dessus des autres boutons
+            (retour direct du titulaire pilote, 04/09/2026), un seul rappel
+            par groupe/patient plutôt que par ordonnance individuelle. */}
         {onCreateRappel && (
-          <button onClick={() => onCreateRappel(group)} title="Créer un rappel de renouvellement"
-            style={{
-              padding: "9px 11px", border: "1.5px solid rgba(26,58,110,0.3)",
-              borderRadius: 7, background: "#f0f4ff", cursor: "pointer",
-              fontSize: 14, flexShrink: 0, fontFamily: "inherit",
-            }}>
-            ⏰
+          <button onClick={() => onCreateRappel(group)} style={{
+            width: "100%", boxSizing: "border-box", padding: "9px", border: "1.5px solid rgba(26,58,110,0.3)",
+            borderRadius: 7, background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 11,
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>
+            ⏰ Créer un rappel
           </button>
         )}
-        {/* Statut global */}
-        <div style={{
-          flex: 1, padding: "9px", borderRadius: 7,
-          background: allImprime ? "#f0fdf4" : accent.bg,
-          border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 800, fontSize: 10,
-          color: allImprime ? "#15803d" : accent.avatar,
-        }}>
-          {allImprime
-            ? "✓ Toutes imprimées"
-            : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
+        <div style={{ display: "flex", gap: 6 }}>
+          {onSonnette && sonnetteActive !== false && (
+            <button onClick={onSonnette}
+              title="Appeler le patient"
+              style={{
+                padding: "9px 11px", border: "1.5px solid rgba(26,58,110,0.3)",
+                borderRadius: 7, background: "#f0f4ff", cursor: "pointer",
+                fontSize: 14, flexShrink: 0, fontFamily: "inherit",
+              }}>
+              🔔
+            </button>
+          )}
+          {/* Statut global */}
+          <div style={{
+            flex: 1, padding: "9px", borderRadius: 7,
+            background: allImprime ? "#f0fdf4" : accent.bg,
+            border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 800, fontSize: 10,
+            color: allImprime ? "#15803d" : accent.avatar,
+          }}>
+            {allImprime
+              ? "✓ Toutes imprimées"
+              : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
+          </div>
         </div>
       </div>
     </div>
