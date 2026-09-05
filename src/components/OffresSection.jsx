@@ -4,9 +4,19 @@ import { useState, useEffect } from "react";
 import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData, subscribeToOffres } from "../supabase.js";
 import { fileToBase64 } from "../lib/utils.js";
 import { compressImageFile } from "../lib/imageCompress.js";
+import { pdfAllPagesAsImages } from "../lib/ocr.js";
 import { QRCode } from "./QRCode.jsx";
 import { OffreTemplatesPanel } from "./OffreTemplatesPanel.jsx";
 import { OffreReservationsPanel } from "./OffreReservationsPanel.jsx";
+
+// Catalogue PDF groupement (05/09/2026) — une page choisie devient une story
+// "catalogue" : juste une image plein écran, pas de titre/prix/badge (le
+// contenu de la page se suffit à lui-même, contrairement à une offre saisie
+// à la main). data:URL → base64 brut, même convention que fileToBase64
+// (secure-data:offre_upload_image attend du base64 sans préfixe).
+function dataUrlToBase64(dataUrl) {
+  return dataUrl.split(",")[1] || "";
+}
 
 function formatDuree(ms) {
   if (!ms) return "—";
@@ -37,6 +47,12 @@ function OffresSection({ pharmacie }) {
   const [mobileQRLoading, setMobileQRLoading] = useState(false);
   const [mobileQRError, setMobileQRError]     = useState("");
   const [epuiseBusyId, setEpuiseBusyId]       = useState(null);
+  // Catalogue PDF groupement (05/09/2026)
+  const [pdfPages, setPdfPages]         = useState(null);   // [dataUrl, ...] | null
+  const [pdfSelected, setPdfSelected]   = useState(() => new Set());
+  const [pdfProcessing, setPdfProcessing] = useState(false);
+  const [pdfPublishing, setPdfPublishing] = useState(null);  // {done, total} | null
+  const [pdfError, setPdfError]         = useState("");
   const sb = getSupabaseClient();
 
   // Offres mobile (03/09/2026) — une offre publiée depuis le téléphone (ou une
@@ -92,6 +108,68 @@ function OffresSection({ pharmacie }) {
       setImgError("Échec de l'envoi de l'image : " + e.message);
     }
     setUploadingImg(false);
+  }
+
+  // Catalogue PDF groupement (05/09/2026) — rend chaque page en image côté
+  // client (pdfAllPagesAsImages, déjà utilisé pour l'impression) puis laisse
+  // le pharmacien choisir lesquelles publier, plutôt qu'une extraction
+  // automatisée (LLM écarté : coût, fiabilité sur une mise en page en grille).
+  async function handleCataloguePdf(file) {
+    if (!file || isDemoMode) return;
+    setPdfError(""); setPdfPages(null); setPdfProcessing(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const images = await pdfAllPagesAsImages(base64);
+      if (!images || images.length === 0) {
+        setPdfError("Impossible de lire ce PDF (fichier corrompu, protégé ou vide).");
+      } else {
+        setPdfPages(images);
+        setPdfSelected(new Set(images.map((_, i) => i))); // tout coché par défaut
+      }
+    } catch (e) {
+      setPdfError("Échec de la lecture du PDF : " + e.message);
+    }
+    setPdfProcessing(false);
+  }
+
+  function togglePdfPage(i) {
+    setPdfSelected(prev => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  async function publishCataloguePages() {
+    const indices = [...pdfSelected].sort((a, b) => a - b);
+    if (indices.length === 0 || !pdfPages) return;
+    setPdfPublishing({ done: 0, total: indices.length });
+    const created = [];
+    for (const i of indices) {
+      try {
+        const { url } = await callSecureData("offre_upload_image", {
+          fileName: `catalogue-page-${i + 1}.jpg`, fileType: "image/jpeg",
+          fileBase64: dataUrlToBase64(pdfPages[i]),
+        });
+        const payload = { type: "catalogue", titre: null, image_url: url, actif: true, pharmacie_id: pharmacie.id, created_via: "pdf" };
+        const { data } = await sb.from("offres_stories").insert(payload).select().single();
+        if (data) created.push(data);
+      } catch (e) {
+        console.error("[publishCataloguePages] page", i + 1, e.message);
+      }
+      setPdfPublishing(p => ({ done: p.done + 1, total: p.total }));
+    }
+    // Dédup contre subscribeToOffres (04/09/2026) : le realtime peut avoir déjà
+    // fusionné une ou plusieurs de ces lignes avant que cette réponse locale
+    // n'arrive — repéré en test (publication de 2 pages → 3 lignes affichées,
+    // une dupliquée). Même garde-fou que le handler INSERT de subscribeToOffres.
+    if (created.length) setOffres(prev => {
+      const existingIds = new Set(prev.map(o => o.id));
+      return [...created.filter(o => !existingIds.has(o.id)), ...prev];
+    });
+    setPdfPublishing(null);
+    setPdfPages(null);
+    setPdfSelected(new Set());
   }
 
   const TYPES = [
@@ -171,11 +249,16 @@ function OffresSection({ pharmacie }) {
           <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>Affichées dans les stories de vos patients en attente</div>
         </div>
         {tab==="mes-offres" && (
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             <button onClick={()=>{ setMobileQR(null); setMobileQRError(""); genererLienMobile(); }}
               style={{ padding:"8px 14px", border:"1.5px solid #1a3a6e", borderRadius:10, background:"#fff", color:"#1a3a6e", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               📱 Créer depuis mobile
             </button>
+            <label style={{ padding:"8px 14px", border:"1.5px solid #1a3a6e", borderRadius:10, background:"#fff", color:"#1a3a6e", fontWeight:700, fontSize:13, cursor:pdfProcessing?"wait":"pointer", fontFamily:"inherit" }}>
+              {pdfProcessing ? "…" : "📄 Créer depuis un PDF"}
+              <input type="file" accept="application/pdf" style={{ display:"none" }} disabled={pdfProcessing}
+                onChange={e=>{ const f=e.target.files?.[0]; if(f) handleCataloguePdf(f); e.target.value=""; }}/>
+            </label>
             <button onClick={()=>setShowForm(true)}
               style={{ padding:"8px 16px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               + Nouvelle offre
@@ -216,6 +299,55 @@ function OffresSection({ pharmacie }) {
         </div>
       )}
       {mobileQRError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:14 }}>⚠️ {mobileQRError}</div>}
+      {pdfError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:14 }}>⚠️ {pdfError}</div>}
+
+      {/* Sélection des pages du catalogue PDF à publier en story (05/09/2026) */}
+      {pdfPages && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(15,23,47,0.6)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+          onClick={()=>{ if(!pdfPublishing) { setPdfPages(null); setPdfSelected(new Set()); } }}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{ background:"#fff", borderRadius:16, padding:22, width:"100%", maxWidth:560, maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 12px 40px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontWeight:800, fontSize:15, marginBottom:4 }}>📄 Choisissez les pages à publier</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:14 }}>
+              {pdfPages.length} page{pdfPages.length>1?"s":""} détectée{pdfPages.length>1?"s":""} — chaque page cochée devient une story image plein écran.
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <button onClick={()=>setPdfSelected(new Set(pdfPages.map((_,i)=>i)))}
+                style={{ padding:"5px 12px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#fff", color:"#1a3a6e", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                Tout cocher
+              </button>
+              <button onClick={()=>setPdfSelected(new Set())}
+                style={{ padding:"5px 12px", border:"1.5px solid #e0e7ff", borderRadius:8, background:"#fff", color:"#64748b", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                Tout décocher
+              </button>
+            </div>
+            <div style={{ flex:1, overflow:"auto", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:10, marginBottom:16 }}>
+              {pdfPages.map((src, i) => {
+                const checked = pdfSelected.has(i);
+                return (
+                  <label key={i} style={{ position:"relative", cursor:"pointer", border:`2.5px solid ${checked?"#1a3a6e":"#e0e7ff"}`, borderRadius:10, overflow:"hidden", opacity:checked?1:0.55 }}>
+                    <img src={src} alt={`Page ${i+1}`} style={{ width:"100%", height:140, objectFit:"cover", display:"block" }}/>
+                    <input type="checkbox" checked={checked} onChange={()=>togglePdfPage(i)} style={{ position:"absolute", top:6, right:6, width:18, height:18 }}/>
+                    <div style={{ position:"absolute", bottom:0, left:0, right:0, background:"rgba(15,23,47,0.7)", color:"#fff", fontSize:10, fontWeight:700, textAlign:"center", padding:"2px 0" }}>
+                      Page {i+1}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={()=>{ setPdfPages(null); setPdfSelected(new Set()); }} disabled={!!pdfPublishing}
+                style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:pdfPublishing?"default":"pointer", fontFamily:"inherit" }}>
+                Annuler
+              </button>
+              <button onClick={publishCataloguePages} disabled={pdfSelected.size===0||!!pdfPublishing}
+                style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:(pdfSelected.size===0||pdfPublishing)?"default":"pointer", fontFamily:"inherit", opacity:pdfSelected.size===0?0.6:1 }}>
+                {pdfPublishing ? `Publication… ${pdfPublishing.done}/${pdfPublishing.total}` : `✅ Publier ${pdfSelected.size} page${pdfSelected.size>1?"s":""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tab==="modeles" && <OffreTemplatesPanel onChanged={()=>{}}/>}
       {tab==="commandes" && <OffreReservationsPanel/>}
@@ -358,14 +490,14 @@ function OffresSection({ pharmacie }) {
               : `linear-gradient(135deg,${offre.couleur||"#1a3a6e"},${offre.couleur||"#1a3a6e"}88)`,
             backgroundBlendMode: offre.image_url ? "multiply" : "normal",
             display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
-            {offre.emoji||"🎁"}
+            {offre.emoji || (offre.type==="catalogue" ? "📄" : "🎁")}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:700, fontSize:14, color:offre.actif?"#1a1a1a":"#94a3b8", display:"flex", alignItems:"center", gap:6 }}>
-              {offre.titre}
+              {offre.titre || (offre.type==="catalogue" ? "Page de catalogue" : "")}
               {offre.badge && <span style={{ fontSize:10, background:"#fef3c7", color:"#92400e", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>{offre.badge}</span>}
-              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":offre.type==="avis_google"?"#fef9c3":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":offre.type==="avis_google"?"#92400e":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
-                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":offre.type==="avis_google"?"Avis Google":"Fidélité"}
+              <span style={{ fontSize:10, background:offre.type==="promo"?"#fee2e2":offre.type==="service"?"#dbeafe":offre.type==="avis_google"?"#fef9c3":offre.type==="catalogue"?"#e0e7ff":"#dcfce7", color:offre.type==="promo"?"#dc2626":offre.type==="service"?"#1e40af":offre.type==="avis_google"?"#92400e":offre.type==="catalogue"?"#1a3a6e":"#15803d", borderRadius:20, padding:"1px 7px", fontWeight:700 }}>
+                {offre.type==="promo"?"Promotion":offre.type==="service"?"Service":offre.type==="avis_google"?"Avis Google":offre.type==="catalogue"?"Catalogue":"Fidélité"}
               </span>
               {offre.epuise && <span style={{ fontSize:10, background:"#fee2e2", color:"#dc2626", borderRadius:20, padding:"1px 7px", fontWeight:800 }}>🚫 Rupture</span>}
               {offre.created_via==="mobile" && <span title="Créée depuis mobile" style={{ fontSize:10 }}>📱</span>}
@@ -394,11 +526,13 @@ function OffresSection({ pharmacie }) {
                 fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
               {offre.actif?"⏸ Pause":"▶ Activer"}
             </button>
-            <button onClick={()=>openEdit(offre)}
-              style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8,
-                background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-              ✏️
-            </button>
+            {offre.type!=="catalogue" && (
+              <button onClick={()=>openEdit(offre)}
+                style={{ padding:"5px 9px", border:"1.5px solid #e0e7ff", borderRadius:8,
+                  background:"#f8faff", color:"#1a3a6e", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                ✏️
+              </button>
+            )}
             <button onClick={()=>deleteOffre(offre.id)}
               style={{ padding:"5px 9px", border:"1.5px solid #fee2e2", borderRadius:8,
                 background:"#fff5f5", color:"#dc2626", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>

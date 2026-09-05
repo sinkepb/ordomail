@@ -96,6 +96,84 @@ function buildEmailAvecCode(baseEmail, code) {
   return `${local}-${code}@${domain}`;
 }
 
+// Image zoomable — pincer pour zoomer, glisser pour déplacer une fois zoomé,
+// double-tap pour basculer zoom (05/09/2026, page de catalogue groupement).
+// stopPropagation dès qu'un geste concerne l'image (2 doigts, ou 1 doigt une
+// fois zoomé) pour ne pas déclencher le swipe/tap de navigation entre stories
+// du conteneur parent (handleTouchStart/handleTouchEnd de PatientStories) —
+// un tap simple à l'échelle 1 continue lui de remonter normalement, pour
+// garder "toucher pour continuer" fonctionnel sur l'image comme ailleurs.
+function ZoomableImage({ src }) {
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [interacting, setInteracting] = useState(false); // désactive la transition CSS pendant le geste
+  const pinchRef = useRef(null); // {startDist, startScale} | null
+  const panRef = useRef(null);   // {startX, startY, startTranslate} | null
+  const lastTapRef = useRef(0);
+
+  function dist(touches) {
+    const [a, b] = touches;
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  function handleTouchStart(e) {
+    if (e.touches.length === 2) {
+      e.stopPropagation();
+      pinchRef.current = { startDist: dist(e.touches), startScale: scale };
+      setInteracting(true);
+      return;
+    }
+    if (e.touches.length === 1) {
+      if (scale > 1) {
+        e.stopPropagation();
+        panRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startTranslate: translate };
+        setInteracting(true);
+      }
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        e.stopPropagation();
+        if (scale > 1) { setScale(1); setTranslate({ x: 0, y: 0 }); }
+        else setScale(2.5);
+      }
+      lastTapRef.current = now;
+    }
+  }
+  function handleTouchMove(e) {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.stopPropagation();
+      const next = Math.min(4, Math.max(1, pinchRef.current.startScale * (dist(e.touches) / pinchRef.current.startDist)));
+      setScale(next);
+    } else if (e.touches.length === 1 && panRef.current) {
+      e.stopPropagation();
+      const dx = e.touches[0].clientX - panRef.current.startX;
+      const dy = e.touches[0].clientY - panRef.current.startY;
+      setTranslate({ x: panRef.current.startTranslate.x + dx, y: panRef.current.startTranslate.y + dy });
+    }
+  }
+  function handleTouchEnd(e) {
+    if (pinchRef.current) {
+      e.stopPropagation();
+      pinchRef.current = null;
+      if (scale < 1.05) { setScale(1); setTranslate({ x: 0, y: 0 }); }
+    }
+    if (panRef.current) { e.stopPropagation(); panRef.current = null; }
+    setInteracting(false);
+  }
+
+  return (
+    <div style={{ width: "100%", maxHeight: "68vh", overflow: "hidden", borderRadius: 14, touchAction: "none" }}
+      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+      <img src={src} alt="" draggable={false} onDragStart={e => e.preventDefault()}
+        style={{
+          width: "100%", display: "block", borderRadius: 14,
+          transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+          transformOrigin: "center center",
+          transition: interacting ? "none" : "transform 0.2s ease-out",
+        }}/>
+    </div>
+  );
+}
+
 function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = false }) {
   const [current, setCurrent] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -759,7 +837,11 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
         {!isOffrePhoto && (
           <div style={{ fontSize: 72, marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>{story.emoji}</div>
         )}
-        <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
+        {/* story.title est vide pour une page de catalogue (pas de titre saisi,
+            voir OffresSection.jsx:offre_upload_image) — éviter la ligne vide. */}
+        {story.title && (
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 16, lineHeight: 1.2 }}>{story.title}</div>
+        )}
 
 
 
@@ -805,6 +887,20 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
 
         {/* Story offre pharmacie */}
         {story.type === "offre" && (() => {
+          // Page de catalogue groupement (05/09/2026) — juste l'image de la
+          // page, en plein écran et zoomable : le contenu visuel (prix,
+          // produits) se suffit à lui-même, pas de titre/badge/prix/bouton
+          // "intéressé" comme pour une offre saisie à la main.
+          if (story.offreType === "catalogue") {
+            return (
+              <div style={{ width: "100%", maxWidth: 340 }}>
+                <ZoomableImage src={story.image} />
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 10 }}>
+                  Pincez pour zoomer · touchez pour continuer
+                </div>
+              </div>
+            );
+          }
           const offreId = story.id?.toString().replace("offre-", "");
           const isOn    = !!interets[offreId];
           return (
