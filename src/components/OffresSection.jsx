@@ -151,7 +151,11 @@ function OffresSection({ pharmacie }) {
           fileName: `catalogue-page-${i + 1}.jpg`, fileType: "image/jpeg",
           fileBase64: dataUrlToBase64(pdfPages[i]),
         });
-        const payload = { type: "catalogue", titre: null, image_url: url, actif: true, pharmacie_id: pharmacie.id, created_via: "pdf" };
+        // titre: "" et non null — colonne NOT NULL en production (nullable
+        // seulement sur preview, divergence de schema decouverte en testant
+        // ce module) ; une chaine vide reste falsy partout cote JS (mêmes
+        // garde-fous "story.title &&" / "offre.titre ||" qu'un null).
+        const payload = { type: "catalogue", titre: "", image_url: url, actif: true, pharmacie_id: pharmacie.id, created_via: "pdf" };
         const { data } = await sb.from("offres_stories").insert(payload).select().single();
         if (data) created.push(data);
       } catch (e) {
