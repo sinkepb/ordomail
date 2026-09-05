@@ -437,6 +437,16 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
+      // Fonctionnalité réservée au plan Performance (05/09/2026, chantier
+      // tarification) — jusqu'ici disponible sans restriction sur tous les
+      // plans. Contrôle explicite ici (même schéma que offre_template_toggle
+      // ci-dessus) : la table rappels_ordonnance n'est accessible en écriture
+      // que via cette fonction (clé de service), aucune policy RLS ne peut
+      // donc porter cette restriction côté client.
+      const { data: ph } = await sb.from("pharmacies").select("plan").eq("id", pharmacieId).maybeSingle();
+      if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
+        return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
+      }
       const { nom, prenom, telephone, commentaire, consentement, dateRappel } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });

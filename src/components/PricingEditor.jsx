@@ -39,7 +39,7 @@ function PricingEditor({ adminToken } = {}) {
             id: p.id, label: p.label, icon: p.icon, color: p.color,
             price: p.price, priceAnnual: p.price_annual,
             maxPostes: p.max_postes, maxOrdos: p.max_ordos,
-            offresStories: !!p.feature_offres_stories, sonnette: !!p.feature_sonnette,
+            offresStories: !!p.feature_offres_stories, sonnette: !!p.feature_sonnette, rappels: !!p.feature_rappels,
           })));
         }
         // Si la table est vide (première utilisation), on garde les valeurs par défaut
@@ -123,6 +123,10 @@ function PricingEditor({ adminToken } = {}) {
               <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#e2e8f0",cursor:"pointer"}}>
                 <input type="checkbox" checked={plan.sonnette} onChange={e=>update(plan.id,"sonnette",e.target.checked)}/>
                 Sonnette patient
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#e2e8f0",cursor:"pointer"}}>
+                <input type="checkbox" checked={plan.rappels} onChange={e=>update(plan.id,"rappels",e.target.checked)}/>
+                Rappels de renouvellement
               </label>
             </div>
           </div>

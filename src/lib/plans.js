@@ -11,9 +11,9 @@ import { PLANS } from "./utils.js";
 // 2 mois offerts — 39×10=390 etc.), aligné sur les Price Stripe
 // price_{plan}_annual réellement créés (interval=year, montant exact).
 export const PLAN_LIMITS = {
-  starter:  { id:"starter",  maxPostes: 3,   maxOrdos: 200,   label:"Essentiel",   price:39, priceAnnual:390, icon:"🌱", color:"#0369a1", offresStories: false },
-  standard: { id:"standard", maxPostes: 10,  maxOrdos: 1000,  label:"Fluidité",    price:59, priceAnnual:590, icon:"⭐", color:"#1a3a6e", offresStories: true },
-  pro:      { id:"pro",      maxPostes: 999, maxOrdos: 99999, label:"Performance", price:89, priceAnnual:890, icon:"🏥", color:"#4c1d95", offresStories: true },
+  starter:  { id:"starter",  maxPostes: 3,   maxOrdos: 200,   label:"Essentiel",   price:39, priceAnnual:390, icon:"🌱", color:"#0369a1", offresStories: false, rappels: false },
+  standard: { id:"standard", maxPostes: 10,  maxOrdos: 1000,  label:"Fluidité",    price:59, priceAnnual:590, icon:"⭐", color:"#1a3a6e", offresStories: true,  rappels: false },
+  pro:      { id:"pro",      maxPostes: 999, maxOrdos: 99999, label:"Performance", price:89, priceAnnual:890, icon:"🏥", color:"#4c1d95", offresStories: true,  rappels: true  },
 };
 
 // Palier Premium retiré (19/08/2026) — aucun tarif Stripe n'a jamais existé
@@ -93,6 +93,7 @@ export async function loadPlanLimits() {
         // réel. sonnette est un nouveau champ, même mécanisme.
         offresStories: !!p.feature_offres_stories,
         sonnette: !!p.feature_sonnette,
+        rappels: !!p.feature_rappels,
       };
       const landing = PLANS.find(l => l.id === p.id);
       if (landing) {
@@ -136,7 +137,7 @@ export function getPrevPlan(currentPlan) {
 // permettre de prévisualiser CE QUI SERA PERDU avant confirmation — pas
 // seulement le nombre de postes désactivés. featuresLost liste les
 // fonctionnalités du plan actuel absentes du plan visé.
-const FEATURE_LABELS = { offresStories: "Offres & Stories", sonnette: "Sonnette" };
+const FEATURE_LABELS = { offresStories: "Offres & Stories", sonnette: "Sonnette", rappels: "Rappels de renouvellement" };
 
 export function computeImpact(pharmacie, postes, newPlanId) {
   const curr   = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;

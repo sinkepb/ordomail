@@ -2,7 +2,7 @@
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { PLAN_LIMITS } from "../lib/plans.js";
+import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
@@ -323,12 +323,12 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   );
 }
 
-function BottomNav({ tab, canAdmin, setTab, rappelsATraiter = 0 }) {
+function BottomNav({ tab, canAdmin, canRappels, setTab, rappelsATraiter = 0 }) {
   const items = [
     { id: "ordonnances", icon: "📋", label: "Ordo", always: true },
-    { id: "rappels",     icon: "🔔", label: "Rappels", always: true, badge: rappelsATraiter },
+    { id: "rappels",     icon: "🔔", label: "Rappels", featureGated: true, badge: rappelsATraiter },
     { id: "parametres",  icon: "⚙️", label: "Paramètres", adminOnly: true },
-  ].filter(it => !it.adminOnly || canAdmin);
+  ].filter(it => (!it.adminOnly || canAdmin) && (!it.featureGated || canRappels));
   const active = tab;
   return (
     <nav style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:200, background:"#fff", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"space-around", alignItems:"stretch", height:60 }} className="bottom-nav">
@@ -408,6 +408,10 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
                 || "";
 
   const canAdmin = userRole !== "vendeur";
+  // Rappels de renouvellement reserves au plan Performance (05/09/2026,
+  // chantier tarification) — meme convention que offresStories (ParametresTab) :
+  // onglet masque plutot qu'affiche avec un message d'erreur a la creation.
+  const canRappels = hasFeature(pharmacie?.plan, "rappels");
 
   // Chargement initial + Realtime
   // ─── OCR automatique dès réception ──────────────────────────────────────────
@@ -640,16 +644,16 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
         </div>
         <div style={{display:"flex",gap:2,flexShrink:0}} className="desktop-nav">
           <button onClick={()=>setTab("ordonnances")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="ordonnances"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="ordonnances"?700:400,fontSize:12,fontFamily:"inherit"}}>📋 Ordonnances</button>
-          <button onClick={()=>setTab("rappels")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="rappels"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="rappels"?700:400,fontSize:12,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+          {canRappels&&<button onClick={()=>setTab("rappels")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="rappels"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="rappels"?700:400,fontSize:12,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
             🔔 Rappels
             {rappelsATraiter>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>}
-          </button>
+          </button>}
           {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
         </div>
       </header>
-      <BottomNav tab={tab} canAdmin={canAdmin} setTab={setTab} rappelsATraiter={rappelsATraiter} />
+      <BottomNav tab={tab} canAdmin={canAdmin} canRappels={canRappels} setTab={setTab} rappelsATraiter={rappelsATraiter} />
 
-      {tab==="rappels"&&(
+      {tab==="rappels"&&canRappels&&(
         <ErrorBoundary compact label="Rappels">
         <div style={{flex:1,overflow:"auto",padding:16,paddingBottom:76}}>
           <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>

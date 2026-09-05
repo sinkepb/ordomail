@@ -8,6 +8,7 @@
 const FEATURE_COLUMNS: Record<string, string> = {
   offresStories: "feature_offres_stories",
   sonnette: "feature_sonnette",
+  rappels: "feature_rappels",
 };
 
 export async function getPlanLimit(sb: any, plan: string, limit: "maxPostes"): Promise<number> {

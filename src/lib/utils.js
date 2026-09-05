@@ -187,6 +187,9 @@ const PLANS = [
       "Sonnette patient : appel + vibration + affichage \"C'est votre tour !\" quand la commande est prête",
       "Vue carte des ordonnances avec filtrage avancé",
       "Stories santé et promotions de la pharmacie affichées aux patients",
+      "Création d'offres depuis un catalogue PDF fournisseur : sélection des pages, publiées en stories plein écran zoomables",
+      "Création d'offres depuis le téléphone : lien magique à scanner, prise de photo produit sans connexion",
+      "Modèles d'offres prêts à l'emploi, et réservations de produits (encaissement au comptoir)",
       "Module Avis Google — lien direct vers la page d'avis de la pharmacie",
       "Statistiques de consultation des contenus",
       "Support prioritaire",
@@ -198,6 +201,7 @@ const PLANS = [
     positioning: "Pour les pharmacies souhaitant utiliser pleinement OrdoMail comme outil de fluidification et de communication auprès des patients.",
     includesPrev: "Fluidité",
     features: [
+      "Rappels de renouvellement d'ordonnance : cycle de relance automatique, réponse du patient en un clic, suivi en temps réel sans ressaisie",
       "Postes vendeurs illimités",
       "Plusieurs QR Codes par pharmacie, dédiés à différentes zones ou usages",
       "Personnalisation avancée des contenus affichés aux patients",

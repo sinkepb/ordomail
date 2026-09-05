@@ -153,6 +153,7 @@ Deno.serve(async (req) => {
         max_ordos: Number(p.maxOrdos) || 0,
         feature_offres_stories: !!p.offresStories,
         feature_sonnette: !!p.sonnette,
+        feature_rappels: !!p.rappels,
         sort_order: i,
         updated_at: new Date().toISOString(),
       }));
