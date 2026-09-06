@@ -2,6 +2,7 @@
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
 import { PLAN_LIMITS } from "../lib/plans.js";
+import { ACCENT_PRESETS } from "../lib/utils.js";
 import { openInvoicePDF } from "../lib/print.jsx";
 import { Btn, Input } from "./ui.jsx";
 import { PlanSwitcherModal } from "./UpgradeModal.jsx";
@@ -9,6 +10,7 @@ import { isDemoMode, getSupabaseClient, fetchFactures, fetchAbonnement } from ".
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   nom, onNomChange, adresse, onAdresseChange, couleur, onCouleurChange,
+  accentUnique, onAccentUniqueChange,
   titulaireNom, onTitulaireNomChange }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
   const [pwdLoading,setPwdLoading]=useState(false);
@@ -200,6 +202,33 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
               <input type="color" value={couleur} onChange={e=>onCouleurChange(e.target.value)} style={{width:40,height:40,border:"none",cursor:"pointer",borderRadius:8}}/>
               <span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:couleur}}>{couleur}</span>
               <div style={{width:32,height:32,borderRadius:8,background:couleur}}/>
+            </div>
+          </div>
+          {/* Mode unicouleur (04/09/2026, retour direct) — par défaut chaque
+              ordonnance reçoit une teinte différente (repérage visuel rapide
+              au comptoir) ; certains titulaires trouvent ce "foisonnement"
+              trop chargé et préfèrent une seule couleur pour toutes leurs
+              cartes. Liste courte et validée plutôt qu'un color-picker libre :
+              ces teintes doivent rester lisibles en bandeau + avatar. */}
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Style des cartes ordonnances</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              <button type="button" onClick={()=>onAccentUniqueChange("")}
+                style={{display:"flex",alignItems:"center",gap:7,padding:"6px 12px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,
+                  border:`1.5px solid ${!accentUnique?"#1a3a6e":"#e0e7ff"}`,background:!accentUnique?"#f0f4ff":"#fff",color:!accentUnique?"#1a3a6e":"#64748b"}}>
+                🌈 Couleurs variées
+              </button>
+              {Object.entries(ACCENT_PRESETS).map(([key,p])=>(
+                <button type="button" key={key} onClick={()=>onAccentUniqueChange(key)}
+                  style={{display:"flex",alignItems:"center",gap:7,padding:"6px 12px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,
+                    border:`1.5px solid ${accentUnique===key?p.swatch:"#e0e7ff"}`,background:accentUnique===key?p.bg:"#fff",color:accentUnique===key?p.bandeau:"#64748b"}}>
+                  <span style={{width:14,height:14,borderRadius:"50%",background:p.swatch,display:"inline-block"}}/>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>
+              {accentUnique ? "Toutes vos cartes ordonnance utiliseront cette même couleur." : "Chaque ordonnance reçoit automatiquement une couleur différente pour un repérage rapide."}
             </div>
           </div>
           <div style={{background:"#f0f7ff",borderRadius:10,padding:"10px 14px",border:"1px solid #dbeafe",fontSize:13}}>

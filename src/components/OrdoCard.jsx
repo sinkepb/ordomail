@@ -84,13 +84,13 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [] }) {
+function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
   const uploadRef = useRef();
   const isLoading = loadingId === ordo.id;
-  const accent = getOrdoAccent(ordo.id); // couleur unique par ordonnance
+  const accent = getOrdoAccent(ordo.id, accentUnique); // couleur unique par ordonnance, ou figée (mode unicouleur)
   const [downloading, setDownloading] = useState(false);
 
   // Téléchargement direct du fichier (04/09/2026, retour pharmacien pilote) —
@@ -351,11 +351,11 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, onCreateRappel, interets = [] }) {
+function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
-  const accent  = getOrdoAccent(ordo.id);
+  const accent  = getOrdoAccent(ordo.id, accentUnique);
   const hasFile = !!(ordo.attachments?.[0]?.dataUrl || ordo.attachments?.[0]?.path);
   const srcIcon = ordo.source === "email" ? "✉️" : ordo.source === "qrcode" ? "📱" : "⬇️";
   const [downloading, setDownloading] = useState(false);
@@ -492,12 +492,12 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive, onCreateRappel }) {
+function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
   const nom    = group.extracted?.nom || group.fromName || "Patient";
-  const accent = getOrdoAccent(group.id);
+  const accent = getOrdoAccent(group.id, accentUnique);
   const count  = group.ordonnances.length;
 
   return (

@@ -61,6 +61,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [nom, setNom] = useState(pharmacie.nom||"");
   const [adresse, setAdresse] = useState(pharmacie.adresse||"");
   const [couleur, setCouleur] = useState(pharmacie.couleur||"#1a3a6e");
+  const [accentUnique, setAccentUnique] = useState(pharmacie.accent_unique||"");
   const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
@@ -100,7 +101,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
     const pinChanges = {};
     postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
     const tasks = [
-      onSave({nom,adresse,couleur}),
+      onSave({nom,adresse,couleur,accent_unique:accentUnique||null}),
       savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
     ];
     if (titulaireNom.trim() && titulaireNom.trim() !== (pharmacie.titulaireNom||"")) {
@@ -279,6 +280,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo}
             nom={nom} onNomChange={setNom} adresse={adresse} onAdresseChange={setAdresse}
             couleur={couleur} onCouleurChange={setCouleur}
+            accentUnique={accentUnique} onAccentUniqueChange={setAccentUnique}
             titulaireNom={titulaireNom} onTitulaireNomChange={setTitulaireNom}
             onUpgrade={async (newPlan, billing)=>{
             // Ne PAS avaler l'erreur ici : PlanSwitcher (UpgradeModal.jsx) attend que
@@ -762,10 +764,10 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
             ):viewMode==="grid"?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,225px),1fr))",gap:9}}>
                 {groupedOrdos.map(o=>{
-                  const accent=getOrdoAccent(o.id);
+                  const accent=getOrdoAccent(o.id, pharmacie?.accent_unique);
                   if (o._isGroup && o.ordonnances.length > 1) {
                     return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)} id={`ordo-${o.ordonnances?.[0]?.id||o.id}`}
-                      group={o} couleur={couleur}
+                      group={o} couleur={couleur} accentUnique={pharmacie?.accent_unique}
                       interets={o.interets || []}
                       sonnetteActive={pharmacie?.sonnette_active !== false}
                       onSonnette={() => appellerPatient(pharmacieId, o.code_patient)}
@@ -782,7 +784,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
                       onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}
                       loadingId={loadingId}/>;
                   }
-                  return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                  return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
@@ -805,7 +807,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {groupedOrdos.map(o=>{
-                  const accent=getOrdoAccent(o.id);
+                  const accent=getOrdoAccent(o.id, pharmacie?.accent_unique);
                   if (o._isGroup && o.ordonnances.length > 1) {
                     return (
                       <div key={o.code_patient+'-list-'+toDateKey(o.receivedAt)} style={{
@@ -942,7 +944,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
                       </div>
                     );
                   }
-                  return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent}
+                  return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}

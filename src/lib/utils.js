@@ -111,7 +111,24 @@ export const ORDO_ACCENTS = [
   { bg:"#e0f7fa", border:"#80deea", bandeau:"#00695c", avatar:"#004d40" },
 ];
 
-export function getOrdoAccent(id) {
+// Mode "interface unicouleur" (05/09/2026, retour direct : "certains
+// n'aiment pas le foisonnement de couleur") — une pharmacie peut figer
+// l'accent de TOUTES ses cartes ordonnance sur une seule teinte au lieu de
+// la rotation ORDO_ACCENTS ci-dessus (purement décorative, sans lien avec le
+// statut). Liste volontairement courte et validée (couleurs testées pour
+// leur lisibilité en bandeau + avatar), pas un color-picker libre comme
+// pharmacie.couleur (l'en-tête, un usage très différent).
+export const ACCENT_PRESETS = {
+  ardoise:  { label:"Ardoise",  swatch:"#475569", bg:"#f1f5f9", border:"#cbd5e1", bandeau:"#334155", avatar:"#1e293b" },
+  marine:   { label:"Marine",   swatch:"#1a3a6e", bg:"#e3f2fd", border:"#90caf9", bandeau:"#1a3a6e", avatar:"#0f2347" },
+  foret:    { label:"Forêt",    swatch:"#2e7d32", bg:"#e8f5e9", border:"#a5d6a7", bandeau:"#2e7d32", avatar:"#1b5e20" },
+  bordeaux: { label:"Bordeaux", swatch:"#9f1239", bg:"#fce4ec", border:"#f48fb1", bandeau:"#9f1239", avatar:"#6b0f28" },
+  prune:    { label:"Prune",    swatch:"#6a1b9a", bg:"#f3e5f5", border:"#ce93d8", bandeau:"#6a1b9a", avatar:"#4a148c" },
+  ambre:    { label:"Ambre",    swatch:"#b45309", bg:"#fff8e1", border:"#ffe082", bandeau:"#b45309", avatar:"#8a3d05" },
+};
+
+export function getOrdoAccent(id, accentUnique) {
+  if (accentUnique && ACCENT_PRESETS[accentUnique]) return ACCENT_PRESETS[accentUnique];
   if (!id) return ORDO_ACCENTS[0];
   const hash = [...String(id)].reduce((a,c)=>a+c.charCodeAt(0),0);
   return ORDO_ACCENTS[hash % ORDO_ACCENTS.length];

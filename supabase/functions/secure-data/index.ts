@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
       // (les écrans postes/PIN sont réservés au titulaire, qui utilise fetchPharmacie normal).
       const { data, error } = await sb
         .from("pharmacies")
-        .select("id, nom, couleur, plan, plan_status, sonnette_active, code_vendeur, email_reception")
+        .select("id, nom, couleur, accent_unique, plan, plan_status, sonnette_active, code_vendeur, email_reception")
         .eq("id", pharmacieId)
         .maybeSingle();
       if (error) throw new Error(error.message);
