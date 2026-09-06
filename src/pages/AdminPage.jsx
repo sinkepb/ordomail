@@ -13,6 +13,7 @@ import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
+import { RappelsMetricsAdmin } from "../components/RappelsMetricsAdmin.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
 
@@ -316,7 +317,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -407,6 +408,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           <KitCommandesAdmin adminToken={adminToken}/>
         ) : tab === "qrcodes" ? (
           <QrCodesAdmin adminToken={adminToken}/>
+        ) : tab === "rappels" ? (
+          <RappelsMetricsAdmin adminToken={adminToken}/>
         ) : tab === "monitoring" ? (
           <MonitoringPanel adminToken={adminToken}/>
         ) : tab === "rgpd" ? (

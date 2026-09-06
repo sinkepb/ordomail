@@ -628,6 +628,91 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    // ── Métriques Rappels & SMS (05/09/2026) ─────────────────────────────────
+    // Le SMS réel est encore mocké (voir _shared/rappelLogic.ts), mais son coût
+    // par envoi est incontrôlé une fois activé — ce panneau donne à l'opérateur
+    // une visibilité sur le volume avant qu'il ne devienne un coût réel : total
+    // réseau, tendance, et le détail par pharmacie pour repérer une consommation
+    // anormale AVANT la facture, pas après. rappels_evenements n'a pas de
+    // pharmacie_id direct (seulement rappel_id) — jointure faite ici en mémoire
+    // plutôt qu'une vue SQL, volume actuel du produit ne le justifie pas encore.
+    if (resource === "admin_rappels_metrics") {
+      const now = Date.now();
+      const jourStart = new Date(now); jourStart.setHours(0, 0, 0, 0);
+      const since7   = new Date(now - 7   * 86400000).toISOString();
+      const since30  = new Date(now - 30  * 86400000).toISOString();
+      const since90  = new Date(now - 90  * 86400000).toISOString();
+
+      const [{ data: pharmacies }, { data: rappels }, { data: evenements }] = await Promise.all([
+        sb.from("pharmacies").select("id, nom, plan, couleur"),
+        sb.from("rappels_ordonnance").select("id, pharmacie_id, statut"),
+        sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").gte("created_at", since90),
+      ]);
+
+      const pharmaById = new Map((pharmacies || []).map(p => [p.id, p]));
+      const rappelToPharma = new Map((rappels || []).map(r => [r.id, r.pharmacie_id]));
+
+      // Un "envoi SMS" = événement sms_envoye déclenché par le cycle automatique
+      // (cron, meta.mocked true/false) — le test manuel "Envoyer (test)" passe
+      // par email (meta.canal === "email_test") et n'a jamais représenté un coût
+      // SMS réel : exclu explicitement, sinon un titulaire qui teste beaucoup la
+      // fonctionnalité fausserait complètement l'exposition au coût.
+      const isSmsReel = (e: any) => e.type === "sms_envoye" && e.meta?.canal !== "email_test";
+
+      const parPharmacie = new Map<string, any>();
+      function bucket(pharmacieId: string) {
+        if (!parPharmacie.has(pharmacieId)) {
+          const ph = pharmaById.get(pharmacieId);
+          parPharmacie.set(pharmacieId, {
+            pharmacieId, nom: ph?.nom || "(pharmacie supprimée)", plan: ph?.plan || "-", couleur: ph?.couleur || "#334155",
+            rappelsActifs: 0, sms7j: 0, sms30j: 0, sms90j: 0, dernierEnvoi: null as string | null,
+          });
+        }
+        return parPharmacie.get(pharmacieId);
+      }
+
+      for (const r of rappels || []) {
+        if (r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter") {
+          bucket(r.pharmacie_id).rappelsActifs++;
+        }
+      }
+
+      let sms7j = 0, sms30j = 0, sms90j = 0, echecs90j = 0, reponses90j = 0, smsJour = 0;
+      for (const e of evenements || []) {
+        const pharmacieId = rappelToPharma.get(e.rappel_id);
+        if (e.type === "sms_echec") echecs90j++;
+        if (e.type === "reponse_patient") reponses90j++;
+        if (!isSmsReel(e)) continue;
+        sms90j++;
+        if (e.created_at >= since30) sms30j++;
+        if (e.created_at >= since7) sms7j++;
+        if (new Date(e.created_at) >= jourStart) smsJour++;
+        if (pharmacieId) {
+          const b = bucket(pharmacieId);
+          b.sms90j++;
+          if (e.created_at >= since30) b.sms30j++;
+          if (e.created_at >= since7) b.sms7j++;
+          if (!b.dernierEnvoi || e.created_at > b.dernierEnvoi) b.dernierEnvoi = e.created_at;
+        }
+      }
+
+      const tauxReponse = sms90j > 0 ? Math.round((reponses90j / sms90j) * 100) : 0;
+
+      return new Response(JSON.stringify({
+        data: {
+          global: {
+            rappelsActifs: (rappels || []).filter(r => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter").length,
+            rappelsTotal: (rappels || []).length,
+            smsJour, sms7j, sms30j, sms90j,
+            echecs90j, reponses90j, tauxReponse,
+          },
+          parPharmacie: Array.from(parPharmacie.values())
+            .filter(p => p.rappelsActifs > 0 || p.sms90j > 0)
+            .sort((a, b) => b.sms30j - a.sms30j),
+        },
+      }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 
