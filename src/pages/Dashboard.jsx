@@ -440,7 +440,13 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [tab, setTab] = useState("ordonnances");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
-  const [viewMode, setViewMode] = useState("grid");
+  const [viewMode, setViewModeState] = useState(() => {
+    try { return localStorage.getItem("ordomail_view_mode") === "list" ? "list" : "grid"; } catch { return "grid"; }
+  });
+  function setViewMode(mode) {
+    setViewModeState(mode);
+    try { localStorage.setItem("ordomail_view_mode", mode); } catch { /* stockage indisponible, tant pis */ }
+  }
   const [loadingId, setLoadingId] = useState(null);
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
