@@ -314,8 +314,10 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 function RappelsSection({ pharmacie, onCountATraiter }) {
   const [rappels, setRappels] = useState([]);
   const [loading, setLoading] = useState(true);
-  // "à traiter" par défaut (04/09/2026, retour direct) — c'est ce qui demande
-  // une action du pharmacien, ça ne doit pas être noyé derrière "Tous".
+  // Filtre par défaut décidé une fois les rappels chargés (voir l'effet de
+  // fetch ci-dessous) : "à traiter" s'il y en a — c'est ce qui demande une
+  // action du pharmacien, ça ne doit pas être noyé derrière "Tous" — sinon
+  // "en attente" plutôt qu'un onglet vide (06/09/2026, retour direct).
   const [filtre, setFiltre] = useState("a_traiter");
   const [showForm, setShowForm] = useState(false);
   const [editingRappel, setEditingRappel] = useState(null);
@@ -330,7 +332,12 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   useEffect(() => {
     if (!pharmacie?.id) return;
     setLoading(true);
-    fetchRappels(pharmacie.id).then(data => { setRappels(data || []); setLoading(false); });
+    fetchRappels(pharmacie.id).then(data => {
+      const list = data || [];
+      setRappels(list);
+      setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter" : "en_attente");
+      setLoading(false);
+    });
   }, [pharmacie?.id]);
 
   // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
