@@ -35,7 +35,14 @@ import {
   createRappel,
   fetchRappels,
   subscribeToRappels,
+  callSecureData,
 } from "../supabase.js";
+
+// PIN unique (06/09/2026) — un poste vendeur signale sa présence toutes les
+// 60s tant que le dashboard reste ouvert (voir vendeur_heartbeat côté
+// secure-data). Sans lien avec le mode PIN de la pharmacie côté client :
+// no-op silencieux côté serveur en mode multi-PIN, pas besoin de le savoir ici.
+const VENDEUR_HEARTBEAT_MS = 60_000;
 
 // Découpe au mieux "NOM Prénom" (format des données extraites/démo, voir
 // App.jsx:makeOrdos) en {nom, prenom} pour pré-remplir la popup de création
@@ -65,6 +72,15 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
   const [postes, setPostes] = useState(pharmacie.postes||[]);
   const [saved, setSaved] = useState(false);
+  // PIN unique (06/09/2026) — voir la migration 20260906_pin_unique.sql pour
+  // le pourquoi (le pharmacien contrôle déjà l'accès via son propre logiciel,
+  // pas besoin d'un PIN distinct par poste). pinUnique* : état purement local
+  // au formulaire, jamais préchargé avec le vrai PIN (jamais renvoyé en clair
+  // par le serveur — même logique que le PIN par poste ci-dessous).
+  const [pinMode, setPinMode] = useState(pharmacie.pin_mode || "multi");
+  const [pinUnique, setPinUnique] = useState("");
+  const [pinUniqueSaved, setPinUniqueSaved] = useState(false);
+  const [pinUniqueError, setPinUniqueError] = useState("");
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   async function addPoste() {
@@ -101,7 +117,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
     const pinChanges = {};
     postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
     const tasks = [
-      onSave({nom,adresse,couleur,accent_unique:accentUnique||null}),
+      onSave({nom,adresse,couleur,accent_unique:accentUnique||null,pin_mode:pinMode}),
       savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
     ];
     if (titulaireNom.trim() && titulaireNom.trim() !== (pharmacie.titulaireNom||"")) {
@@ -144,6 +160,71 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
               </div>
               <div style={{fontSize:40}}>🔑</div>
             </div>
+            {/* PIN unique (06/09/2026) — bascule optionnelle, "multi" reste le
+                défaut historique. En "unique", plus de postes nommés : la
+                limite du plan s'applique au nombre de connexions simultanées
+                (voir vendeur_sessions, verify-pin), toujours réellement
+                bloquante, pas juste indicative. */}
+            <div style={{display:"flex",gap:8,marginBottom:16}}>
+              <button type="button" onClick={()=>setPinMode("multi")}
+                style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,textAlign:"left",
+                  border:`1.5px solid ${pinMode==="multi"?"#1a3a6e":"#e0e7ff"}`,background:pinMode==="multi"?"#f0f4ff":"#fff",color:pinMode==="multi"?"#1a3a6e":"#64748b"}}>
+                🖥️ Un PIN par poste
+                <div style={{fontWeight:400,fontSize:11,color:"#94a3b8",marginTop:2}}>Chaque poste a son propre code</div>
+              </button>
+              <button type="button" onClick={()=>setPinMode("unique")}
+                style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,textAlign:"left",
+                  border:`1.5px solid ${pinMode==="unique"?"#1a3a6e":"#e0e7ff"}`,background:pinMode==="unique"?"#f0f4ff":"#fff",color:pinMode==="unique"?"#1a3a6e":"#64748b"}}>
+                🔐 PIN unique
+                <div style={{fontWeight:400,fontSize:11,color:"#94a3b8",marginTop:2}}>Un seul code pour tous les postes</div>
+              </button>
+            </div>
+
+            {pinMode==="unique"&&(
+              <div style={{background:"#f8faff",borderRadius:10,padding:"14px",marginBottom:16,border:"1px solid #e0e7ff"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>PIN unique de la pharmacie</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <input type="password" maxLength={4} value={pinUnique} placeholder="••••"
+                    onChange={e=>{ setPinUnique(e.target.value.replace(/[^0-9]/g,"").slice(0,4)); setPinUniqueSaved(false); setPinUniqueError(""); }}
+                    style={{width:80,border:`1.5px solid ${pinUniqueSaved?"#15803d":"#c7d2fe"}`,borderRadius:6,padding:"4px 10px",fontSize:16,fontFamily:"monospace",textAlign:"center",outline:"none"}}/>
+                  <button type="button" disabled={pinUnique.length!==4}
+                    onClick={async ()=>{
+                      try {
+                        if (isDemoMode) {
+                          const db = window._ordomailDB || window.__ordomailDB;
+                          const ph = db?.pharmacies?.find(p=>p.id===pharmacie.id);
+                          if (ph) ph.pin_unique = pinUnique;
+                        } else {
+                          const sb = getSupabaseClient();
+                          const { data: { session } } = await sb.auth.getSession();
+                          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                          const res = await fetch(`${supabaseUrl}/functions/v1/update-pin`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${session?.access_token||""}` },
+                            body: JSON.stringify({ pharmacieId: pharmacie.id, pin: pinUnique }),
+                          });
+                          const body = await res.json().catch(()=>({}));
+                          if (!res.ok) throw new Error(body?.error || "Échec de l'enregistrement");
+                        }
+                        setPinUniqueSaved(true);
+                      } catch(err) { setPinUniqueError(err.message); }
+                    }}
+                    style={{padding:"6px 14px",border:"none",borderRadius:6,background:pinUnique.length===4?"#1a3a6e":"#cbd5e1",color:"#fff",fontWeight:700,fontSize:12,cursor:pinUnique.length===4?"pointer":"default",fontFamily:"inherit"}}>
+                    {pinUniqueSaved?"✅ Enregistré":"Enregistrer"}
+                  </button>
+                  <span style={{fontSize:11,color:pharmacie.pin_unique_hash?"#15803d":"#f59e0b",fontWeight:600}}>
+                    {pinUniqueSaved ? "" : pharmacie.pin_unique_hash ? "✅ Déjà configuré — entrez un nouveau code pour le changer" : "⚠️ PIN non configuré"}
+                  </span>
+                </div>
+                {pinUniqueError && <div style={{fontSize:12,color:"#dc2626",marginTop:6}}>{pinUniqueError}</div>}
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>
+                  Valable sur n'importe quel poste, jusqu'à {planInfo.maxPostes===999?"un nombre illimité de":planInfo.maxPostes} connexion{planInfo.maxPostes>1?"s":""} simultanée{planInfo.maxPostes>1?"s":""} selon votre abonnement.
+                </div>
+              </div>
+            )}
+
+            {pinMode==="multi"&&<>
             {postes.map((poste,i)=>(
               <div key={poste.id} style={{background:"#f8faff",borderRadius:10,padding:"12px 14px",marginBottom:8,border:"1px solid #e0e7ff"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -245,6 +326,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
               </div>
             ))}
             <Btn variant="ghost" small onClick={addPoste} style={{width:"100%",justifyContent:"center",borderStyle:"dashed",marginTop:4}}>+ Ajouter un poste</Btn>
+            </>}
             <div style={{marginTop:16,background:"#f0f7ff",borderRadius:12,padding:"14px 16px",border:"1px solid #dbeafe"}}>
               <div style={{fontWeight:700,fontSize:13,color:"#1a3a6e",marginBottom:8}}>Qui accède à quoi ?</div>
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -252,7 +334,12 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
                   <span style={{fontWeight:700,color:"#1a3a6e"}}>👑 Titulaire (PSC)</span>
                   <span style={{color:"#15803d",fontWeight:600}}>Accès complet</span>
                 </div>
-                {postes.filter(p=>p.actif).map(p=>(
+                {pinMode==="unique" ? (
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 10px",background:"#fff",borderRadius:8}}>
+                    <span style={{fontWeight:600,color:"#475569"}}>🔐 PIN unique · jusqu'à {planInfo.maxPostes===999?"illimité":planInfo.maxPostes} connexion{planInfo.maxPostes>1?"s":""}</span>
+                    <span style={{color:"#0369a1",fontWeight:600}}>Ordonnances + Impression</span>
+                  </div>
+                ) : postes.filter(p=>p.actif).map(p=>(
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 10px",background:"#fff",borderRadius:8}}>
                     <span style={{fontWeight:600,color:"#475569"}}>🖥️ {p.nom} · PIN {p.pin?"•".repeat(p.pin.length):p.pin_hash?"••••":"—"}</span>
                     <span style={{color:"#0369a1",fontWeight:600}}>Ordonnances + Impression</span>
@@ -375,6 +462,17 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
     if (!pharmacieId) return;
     fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
   }, [pharmacieId]);
+
+  // PIN unique (06/09/2026) — signale la présence de ce poste tant que le
+  // dashboard reste ouvert, pour que verify-pin sache la place libérée si
+  // l'onglet est fermé sans clic sur "Déconnexion" (voir SESSION_STALE_MINUTES).
+  // isDemoMode : callSecureData échouerait silencieusement de toute façon
+  // (pas de backend), autant l'éviter explicitement.
+  useEffect(() => {
+    if (userRole !== "vendeur" || isDemoMode) return;
+    const iv = setInterval(() => { callSecureData("vendeur_heartbeat", {}).catch(() => {}); }, VENDEUR_HEARTBEAT_MS);
+    return () => clearInterval(iv);
+  }, [userRole]);
 
   // Temps réel (04/09/2026, retour direct) — le patient répond depuis sa
   // propre session (resolve-rappel), jamais celle du pharmacien : sans ça, le

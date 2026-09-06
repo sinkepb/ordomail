@@ -1,6 +1,6 @@
 // ─── Authentification (titulaire, vendeur PIN, Pro Santé Connect) ────────────
 // Extrait de src/supabase.js (27/07/2026) — voir src/supabase.js.
-import { IS_DEMO, getSupabase, getDB, setVendeurToken, clearVendeurToken } from './client.js';
+import { IS_DEMO, getSupabase, getDB, setVendeurToken, clearVendeurToken, getVendeurToken, callSecureData } from './client.js';
 import { maskId } from '../utils.js';
 
 // ─── Helper interne : récupérer la pharmacie liée à un user ──────────────────
@@ -76,6 +76,12 @@ export async function authSignInPIN(pin, pharmacieId) {
       ? db.pharmacies.filter(p => p.id === pharmacieId)
       : db.pharmacies;
     for (const ph of pharmacies) {
+      if (ph.pin_mode === 'unique') {
+        if (ph.pin_unique && ph.pin_unique === pin) {
+          return { pharmacie: ph, poste: { id: 'demo-unique', nom: null }, userRole: 'vendeur', userId: 'demo-unique', posteNom: null };
+        }
+        continue;
+      }
       const poste = (ph.postes || []).find(p => p.pin === pin && p.actif);
       if (poste) return { pharmacie: ph, poste, userRole: 'vendeur', userId: poste.id, posteNom: poste.nom };
     }
@@ -123,6 +129,14 @@ export async function authSignInPSC() {
 }
 
 export async function authSignOut() {
+  // PIN unique (06/09/2026) — libère immédiatement la place plutôt que
+  // d'attendre l'expiration du heartbeat (quelques minutes, voir verify-pin).
+  // No-op silencieux en mode multi-PIN ou hors session vendeur (voir
+  // vendeur_release_session, secure-data). Avant de clearVendeurToken() :
+  // callSecureData a besoin du jeton vendeur encore en mémoire pour s'authentifier.
+  if (!IS_DEMO && getVendeurToken()) {
+    await callSecureData('vendeur_release_session', {}).catch(() => {});
+  }
   clearVendeurToken();
   if (!IS_DEMO) {
     const sb = getSupabase();

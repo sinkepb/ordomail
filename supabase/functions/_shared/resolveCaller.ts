@@ -14,7 +14,12 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyToken } from "./jwt.ts";
 
-export type Caller = { pharmacieId: string | null; isAdmin: boolean };
+// vendeurSub (06/09/2026, PIN unique) : le "sub" brut du jeton vendeur — id du
+// poste (pharmacie_postes) en mode multi-PIN, id de la ligne vendeur_sessions
+// en mode PIN unique. Exposé ici (plutôt que redécodé ailleurs) pour rester
+// la seule source de vérité sur le contenu du jeton — voir vendeur_heartbeat/
+// vendeur_release_session (secure-data), seuls consommateurs pour l'instant.
+export type Caller = { pharmacieId: string | null; isAdmin: boolean; vendeurSub: string | null };
 
 /** Identifie l'appelant à partir de l'en-tête Authorization. Ne lève jamais —
  * renvoie { pharmacieId: null, isAdmin: false } si rien n'est reconnu ; c'est
@@ -26,10 +31,10 @@ export async function resolveCaller(
 ): Promise<Caller> {
   const internal = bearer ? await verifyToken(bearer, jwtSecret) : { valid: false as const, error: "" };
   if (internal.valid && internal.payload.role === "vendeur") {
-    return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false };
+    return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false, vendeurSub: String(internal.payload.sub || "") || null };
   }
   if (internal.valid && internal.payload.role === "admin") {
-    return { pharmacieId: null, isAdmin: true };
+    return { pharmacieId: null, isAdmin: true, vendeurSub: null };
   }
   if (bearer) {
     // Ni jeton vendeur ni jeton admin — tenter une session Supabase Auth (titulaire)
@@ -40,8 +45,8 @@ export async function resolveCaller(
         .select("pharmacie_id")
         .eq("id", userData.user.id)
         .maybeSingle();
-      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false };
+      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false, vendeurSub: null };
     }
   }
-  return { pharmacieId: null, isAdmin: false };
+  return { pharmacieId: null, isAdmin: false, vendeurSub: null };
 }

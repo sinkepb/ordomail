@@ -32,9 +32,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { posteId, pin } = await req.json();
+    const { posteId, pharmacieId, pin } = await req.json();
 
-    if (!posteId || !pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+    if (!posteId && !pharmacieId) {
+      return new Response(
+        JSON.stringify({ error: "posteId ou pharmacieId requis" }),
+        { status: 400, headers: CORS },
+      );
+    }
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
       return new Response(
         JSON.stringify({ error: "PIN invalide — 4 chiffres requis" }),
         { status: 400, headers: CORS },
@@ -52,6 +58,27 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: "Session invalide ou expirée" }),
         { status: 401, headers: CORS },
       );
+    }
+
+    // 1b. PIN unique (06/09/2026) — pharmacieId fourni au lieu de posteId :
+    // pas de poste à retrouver, juste vérifier que l'appelant est bien
+    // titulaire (admin) de CETTE pharmacie avant d'écrire pin_unique_hash.
+    if (pharmacieId) {
+      const { data: link, error: linkErr } = await sb
+        .from("pharmacie_users")
+        .select("pharmacie_id, role")
+        .eq("id", userData.user.id)
+        .maybeSingle();
+      if (linkErr || !link || link.pharmacie_id !== pharmacieId || link.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Vous n'êtes pas autorisé à modifier cette pharmacie" }),
+          { status: 403, headers: CORS },
+        );
+      }
+      const pinHash = bcrypt.hashSync(pin);
+      const { error: updErr } = await sb.from("pharmacies").update({ pin_unique_hash: pinHash }).eq("id", pharmacieId);
+      if (updErr) throw new Error(updErr.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
     // 2. Retrouver le poste et sa pharmacie

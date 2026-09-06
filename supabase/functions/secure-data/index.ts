@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    const { pharmacieId } = await resolveCaller(bearer, jwtSecret, sb);
+    const { pharmacieId, vendeurSub } = await resolveCaller(bearer, jwtSecret, sb);
 
     if (!pharmacieId) {
       return new Response(JSON.stringify({ error: "Authentification requise" }),
@@ -60,6 +60,27 @@ Deno.serve(async (req) => {
     }
 
     // ── Router par ressource ─────────────────────────────────────────────────
+    // PIN unique (06/09/2026) — heartbeat + libération de session. Appelés
+    // pour TOUT vendeur connecté, pas seulement en mode PIN unique : sans
+    // ligne vendeur_sessions correspondante (mode multi-PIN, sub = id de
+    // poste), l'update/delete ne touche simplement aucune ligne — no-op
+    // silencieux plutôt que de faire porter au frontend la connaissance du
+    // mode de la pharmacie juste pour savoir s'il doit appeler ceci.
+    if (resource === "vendeur_heartbeat") {
+      if (vendeurSub) {
+        await sb.from("vendeur_sessions").update({ last_seen_at: new Date().toISOString() })
+          .eq("id", vendeurSub).eq("pharmacie_id", pharmacieId);
+      }
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    if (resource === "vendeur_release_session") {
+      if (vendeurSub) {
+        await sb.from("vendeur_sessions").delete().eq("id", vendeurSub).eq("pharmacie_id", pharmacieId);
+      }
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
     if (resource === "ordonnances") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
