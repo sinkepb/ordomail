@@ -128,7 +128,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   }
 
   const tabs = [["postes","🖥️","Postes"],
-    ...(planInfo.offresStories ? [["offres","🎯","Offres"]] : []),
+    ...(planInfo.offresStories ? [["stories","📊","Stories"]] : []),
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
   return (
@@ -352,9 +352,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           </ErrorBoundary>
         )}
 
-        {section==="offres"&&planInfo.offresStories&&(
-          <ErrorBoundary compact label="Offres">
-          <OffresSection pharmacie={pharmacie}/>
+        {section==="stories"&&planInfo.offresStories&&(
+          <ErrorBoundary compact label="Stories">
+          <StoriesSection pharmacie={pharmacie}/>
           </ErrorBoundary>
         )}
         {section==="compte"&&(
@@ -407,11 +407,11 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   );
 }
 
-function BottomNav({ tab, canAdmin, canRappels, canStories, setTab, rappelsATraiter = 0 }) {
+function BottomNav({ tab, canAdmin, canRappels, canOffres, setTab, rappelsATraiter = 0 }) {
   const items = [
     { id: "ordonnances", icon: "📋", label: "Ordo", always: true },
     { id: "rappels",     icon: "🔔", label: "Rappels", feature: canRappels, badge: rappelsATraiter },
-    { id: "stories",     icon: "📊", label: "Stories", feature: canStories },
+    { id: "offres",      icon: "🎯", label: "Offres", feature: canOffres },
     { id: "parametres",  icon: "⚙️", label: "Paramètres", adminOnly: true },
   ].filter(it => (!it.adminOnly || canAdmin) && (it.always || it.feature));
   const active = tab;
@@ -508,7 +508,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   // chantier tarification) — meme convention que offresStories (ParametresTab) :
   // onglet masque plutot qu'affiche avec un message d'erreur a la creation.
   const canRappels = hasFeature(pharmacie?.plan, "rappels");
-  const canStories = hasFeature(pharmacie?.plan, "offresStories");
+  const canOffres = hasFeature(pharmacie?.plan, "offresStories");
 
   // Chargement initial + Realtime
   // ─── OCR automatique dès réception ──────────────────────────────────────────
@@ -745,11 +745,11 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
             🔔 Rappels
             {rappelsATraiter>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{rappelsATraiter}</span>}
           </button>}
-          {canStories&&<button onClick={()=>setTab("stories")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="stories"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="stories"?700:400,fontSize:12,fontFamily:"inherit"}}>📊 Stories</button>}
+          {canOffres&&<button onClick={()=>setTab("offres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="offres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="offres"?700:400,fontSize:12,fontFamily:"inherit"}}>🎯 Offres</button>}
           {canAdmin&&<button onClick={()=>setTab("parametres")} style={{padding:"5px 12px",border:"none",borderRadius:7,cursor:"pointer",background:tab==="parametres"?"rgba(255,255,255,0.25)":"transparent",color:"#fff",fontWeight:tab==="parametres"?700:400,fontSize:12,fontFamily:"inherit"}}>⚙️ Paramètres</button>}
         </div>
       </header>
-      <BottomNav tab={tab} canAdmin={canAdmin} canRappels={canRappels} canStories={canStories} setTab={setTab} rappelsATraiter={rappelsATraiter} />
+      <BottomNav tab={tab} canAdmin={canAdmin} canRappels={canRappels} canOffres={canOffres} setTab={setTab} rappelsATraiter={rappelsATraiter} />
 
       {tab==="rappels"&&canRappels&&(
         <ErrorBoundary compact label="Rappels">
@@ -759,10 +759,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         </ErrorBoundary>
       )}
 
-      {tab==="stories"&&canStories&&(
-        <ErrorBoundary compact label="Stories">
+      {tab==="offres"&&canOffres&&(
+        <ErrorBoundary compact label="Offres">
         <div style={{flex:1,overflow:"auto",padding:16,paddingBottom:76}}>
-          <StoriesSection pharmacie={pharmacie}/>
+          <OffresSection pharmacie={pharmacie}/>
         </div>
         </ErrorBoundary>
       )}
