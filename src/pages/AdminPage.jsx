@@ -283,7 +283,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["stories","📱 Stories"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
