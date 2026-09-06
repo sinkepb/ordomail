@@ -51,6 +51,19 @@ function sanitizeSender(name: string): string {
   return trimmed.length >= 3 ? trimmed : "OrdoMail";
 }
 
+// Les numéros patients sont saisis et stockés en format national français
+// ("0612345678", voir normalizeTel() côté RappelsSection.jsx — jamais
+// converti en international) alors que l'API OVH exige l'E.164 ("+33...").
+// Convertit ici, au point d'appel unique, plutôt que de faire porter ce
+// détail de format à chaque appelant de sendSms().
+function toE164France(raw: string): string {
+  const digits = (raw || "").replace(/[^\d+]/g, "");
+  if (digits.startsWith("+")) return digits;
+  if (digits.startsWith("00")) return "+" + digits.slice(2);
+  if (digits.startsWith("0") && digits.length === 10) return "+33" + digits.slice(1);
+  return digits; // format déjà inconnu — laissé tel quel, OVH renverra une erreur explicite plutôt qu'un envoi silencieusement raté
+}
+
 export async function sendSms(to: string, message: string, senderName: string): Promise<SendSmsResult> {
   const appKey      = Deno.env.get("OVH_APP_KEY");
   const appSecret   = Deno.env.get("OVH_APP_SECRET");
@@ -66,7 +79,7 @@ export async function sendSms(to: string, message: string, senderName: string): 
   const url = `${endpoint}/sms/${serviceName}/jobs`;
   const body = JSON.stringify({
     message,
-    receivers: [to],
+    receivers: [toE164France(to)],
     sender: sanitizeSender(senderName),
     senderForResponse: false,
     // SMS de service (rappel de renouvellement), pas une campagne marketing —

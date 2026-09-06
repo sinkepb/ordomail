@@ -4,11 +4,6 @@
 import { useState, useEffect } from "react";
 import { fetchRappels, createRappel, traiterRappel, terminerRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
 
-// Adresse de test mémorisée localement (04/09/2026) — pure commodité pour ne
-// pas la retaper à chaque envoi de test ; jamais partagée, jamais envoyée
-// nulle part sauf dans l'appel d'envoi lui-même que l'utilisateur déclenche.
-const TEST_EMAIL_KEY = "ordomail_rappel_test_email";
-
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
@@ -159,41 +154,32 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   );
 }
 
-// Popup minimale pour l'envoi de test (04/09/2026) — une seule adresse email,
-// mémorisée localement pour ne pas la retaper à chaque test.
+// Confirmation avant envoi manuel du SMS (06/09/2026) — envoyait auparavant
+// le lien par email à une adresse de test tant que le SMS réel n'était pas
+// branché (voir _shared/sms.ts) ; envoie désormais un vrai SMS, au tarif
+// réel, directement au patient. Simple confirmation plutôt qu'un formulaire
+// email : il n'y a plus rien à saisir, juste à confirmer la dépense.
 function EnvoyerTestModal({ rappel, onCancel, onSend, sending, error }) {
-  const [email, setEmail] = useState(() => { try { return localStorage.getItem(TEST_EMAIL_KEY) || ""; } catch { return ""; } });
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!email.trim()) return;
-    try { localStorage.setItem(TEST_EMAIL_KEY, email.trim()); } catch { /* stockage indisponible, tant pis */ }
-    onSend(email.trim());
-  }
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
-      <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()}
+      <div onClick={e => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>📧 Envoyer un test</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>📱 Envoyer le SMS maintenant</div>
         <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
-          Le SMS réel n'est pas encore branché — ce test envoie le lien du rappel de <strong>{rappel.patient_prenom}</strong> par email pour vérifier la page de réponse patient et le workflow.
+          Envoie immédiatement le lien de rappel par SMS à <strong>{rappel.patient_prenom}</strong> ({rappel.patient_telephone}), sans attendre la prochaine relance automatique. Consomme un crédit SMS réel.
         </div>
-        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Adresse email de test</label>
-        <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.fr" autoFocus
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
         {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={sending}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
             Annuler
           </button>
-          <button type="submit" disabled={sending}
+          <button type="button" onClick={onSend} disabled={sending}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: sending ? "default" : "pointer", fontFamily: "inherit", opacity: sending ? 0.7 : 1 }}>
             {sending ? "Envoi…" : "Envoyer"}
           </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
@@ -378,10 +364,10 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setEditingRappel(null);
   }
 
-  async function handleEnvoyer(email) {
+  async function handleEnvoyer() {
     setSending(true); setSendError("");
     try {
-      await envoyerTestRappel(sendModalRappel.id, email);
+      await envoyerTestRappel(sendModalRappel.id);
       setRappels(prev => prev.map(r => r.id === sendModalRappel.id ? { ...r, statut: "sms_envoye" } : r));
       setSendModalRappel(null);
     } catch (e) {
@@ -481,14 +467,14 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                 style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                 ✏️ Modifier
               </button>
-              {/* Envoi de test (04/09/2026) — en attendant le vrai prestataire SMS,
-                  déclenche l'envoi du lien par email pour tester le workflow.
-                  Masqué une fois le patient déjà répondu ou le rappel terminé
-                  (voir secure-data:rappels_envoyer_test, même contrainte). */}
+              {/* Envoi manuel du SMS (06/09/2026) — déclenche l'envoi réel
+                  sans attendre le prochain passage du cron. Masqué une fois
+                  le patient déjà répondu ou le rappel terminé (voir
+                  secure-data:rappels_envoyer_test, même contrainte). */}
               {(r.statut === "en_attente" || r.statut === "sms_envoye") && (
                 <button onClick={() => { setSendError(""); setSendModalRappel(r); }} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
-                  📧 Envoyer (test)
+                  📱 Envoyer le SMS
                 </button>
               )}
               {r.statut === "a_traiter" && (

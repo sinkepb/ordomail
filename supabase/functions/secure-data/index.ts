@@ -28,7 +28,7 @@ import { validateFile } from "../_shared/upload-validation.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
-import { sendTransactionalEmail } from "../_shared/email.ts";
+import { sendSms } from "../_shared/sms.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
 
@@ -640,15 +640,25 @@ Deno.serve(async (req) => {
     // bout en bout sans attendre J+21 ni le scan cron. Même effet de bord
     // que le cron réel (rotation du token, passage à "sms_envoye") — voir
     // _shared/rappelLogic.ts pour le pendant SMS/production.
+    // Déclenchement manuel du SMS (06/09/2026) — envoyait auparavant le lien
+    // par email à une adresse de test, le temps que le SMS réel n'existe pas
+    // (voir _shared/sms.ts). Le SMS étant désormais réellement branché
+    // (OVHcloud SMS), ce bouton envoie maintenant le vrai SMS au patient,
+    // sans attendre le prochain passage du cron — utile pour relancer un
+    // patient sans repasser par le cycle J+21 complet. Reste appelé
+    // "rappels_envoyer_test" côté ressource pour limiter le diff, mais
+    // n'a plus rien d'un test : c'est un envoi réel, au tarif SMS réel.
     if (resource === "rappels_envoyer_test") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, email } = params || {};
-      if (!rappelId || !email?.trim()) {
-        return new Response(JSON.stringify({ error: "rappelId et email requis" }), { status: 400, headers: CORS });
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, patient_prenom, statut").eq("id", rappelId).maybeSingle();
+      const { data: rappel } = await sb.from("rappels_ordonnance")
+        .select("id, pharmacie_id, patient_prenom, patient_telephone, statut, pharmacies(nom)")
+        .eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
@@ -658,14 +668,11 @@ Deno.serve(async (req) => {
       const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
-      // Même texte que le vrai SMS (buildRappelMessage, _shared/rappelLogic.ts)
-      // — retour direct : le test doit reproduire le message réel pour
-      // vérifier fidèlement le parcours patient, pas une description du test.
-      const text = buildRappelMessage(rappel.patient_prenom, lien);
-      const html = `<p>${text.split("\n")[0]}</p><p><a href="${lien}">${lien}</a></p>`;
-      const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, text);
+      const message = buildRappelMessage(rappel.patient_prenom, lien);
+      const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
+      const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
       if (!result.success) {
-        return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
+        return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi du SMS" }), { status: 502, headers: CORS });
       }
       await sb.from("rappels_ordonnance").update({
         statut: "sms_envoye",
@@ -673,8 +680,8 @@ Deno.serve(async (req) => {
         date_dernier_sms_envoye: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { canal: "email_test", to: email.trim() } });
-      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked: result.mocked, manuel: true } });
+      return new Response(JSON.stringify({ data: { success: true, mocked: result.mocked } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),

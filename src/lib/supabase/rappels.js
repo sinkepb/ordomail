@@ -54,10 +54,11 @@ export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappe
   return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
 }
 
-// Envoi de test par email (04/09/2026) — en attendant un vrai prestataire
-// SMS (voir supabase/functions/_shared/sms.ts, mock), déclenche l'envoi
-// immédiat du lien de rappel par email pour tester le parcours patient.
-export async function envoyerTestRappel(rappelId, email) {
+// Déclenchement manuel du SMS (06/09/2026) — envoyait auparavant le lien par
+// email à une adresse de test (SMS pas encore branché, voir
+// supabase/functions/_shared/sms.ts) ; envoie désormais le vrai SMS au
+// patient, sans attendre le prochain passage du cron.
+export async function envoyerTestRappel(rappelId) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_envoyer_test', { rappelId, email });
+  return await callSecureData('rappels_envoyer_test', { rappelId });
 }
