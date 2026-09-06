@@ -3,17 +3,6 @@
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 
 // ─── Intérêts patients pour les offres ───────────────────────────────────────
-export async function fetchInteretsParCode(pharmacieId, codePatient) {
-  if (IS_DEMO) return [];
-  const today = new Date().toISOString().split("T")[0];
-  try {
-    return await callSecureData('offre_interets', { codePatient, dateJour: today }) || [];
-  } catch(e) {
-    console.error('[fetchInteretsParCode]', e.message);
-    return [];
-  }
-}
-
 // Charger tous les intérêts du jour pour une pharmacie (pour le dashboard)
 export async function fetchInteretsDuJour(pharmacieId) {
   if (IS_DEMO) {

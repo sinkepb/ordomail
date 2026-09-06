@@ -1,10 +1,8 @@
 import { useState, useEffect } from "react";
 import { PLAN_LIMITS, PLAN_ORDER } from "../lib/plans.js";
-import { generateInvoiceHTML } from "../lib/print.jsx";
 import { StoriesContentAdmin } from "../components/StoriesContentAdmin.jsx";
 import { ClientDetail } from "../components/ClientDetail.jsx";
 import { ContratEditor } from "../components/ContratEditor.jsx";
-import { HistoriqueSparkline } from "../components/HistoriqueSparkline.jsx";
 import { PricingEditor } from "../components/PricingEditor.jsx";
 import { PromotionsAdmin } from "../components/PromotionsAdmin.jsx";
 import { KitCommandesAdmin } from "../components/KitCommandesAdmin.jsx";
@@ -42,39 +40,7 @@ function villeFromAdresse(adresse) {
 // donc un refresh de la page backoffice pouvait être détourné vers
 // "finish-subscription" par l'effet de restauration de session pharmacie.
 
-function openInvoicePDF(invoice, pharmacie, plan) {
-  const html = generateInvoiceHTML({ invoice, pharmacie, plan });
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, "_blank");
-  if (win) win.focus();
-  // Révoquer après 60s
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
 import { isDemoMode } from "../supabase.js";
-
-console.log("✅ MODULE CHARGÉ: pages/AdminPage.jsx");
-
-const MOCK_INVOICES = [
-  { id:"INV-2025-006", subId:"sub1", date:"15/06/2025", amount:19,  desc:"Starter — Juin 2025" },
-  { id:"INV-2025-005", subId:"sub2", date:"01/06/2025", amount:39,  desc:"Standard — Juin 2025" },
-  { id:"INV-2025-004", subId:"sub3", date:"15/05/2025", amount:189, desc:"Pro Annuel — Q2 2025" },
-  { id:"INV-2025-003", subId:"sub1", date:"15/05/2025", amount:19,  desc:"Starter — Mai 2025" },
-  { id:"INV-2025-002", subId:"sub7", date:"20/05/2025", amount:39,  desc:"Standard — Mai 2025" },
-];
-
-const MOCK_SUBSCRIPTIONS = [
-  { id:"sub1", pharmacie:"Pharmacie Centrale",    email:"contact@pharmaciecentrale.fr", plan:"starter",  billing:"monthly", status:"active",    mrr:19,  renewal:"15/07/2025", subId:"sub1" },
-  { id:"sub2", pharmacie:"Pharmacie du Soleil",   email:"pharma@soleil.fr",             plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"01/08/2025", subId:"sub2" },
-  { id:"sub3", pharmacie:"Pharmacie Lafayette",   email:"contact@lafayette.fr",         plan:"pro",      billing:"annual",  status:"active",    mrr:63,  renewal:"15/09/2025", subId:"sub3" },
-  { id:"sub4", pharmacie:"Pharmacie des Arts",    email:"info@pharmaarts.fr",           plan:"starter",  billing:"monthly", status:"trialing",  mrr:0,   renewal:"30/07/2025", subId:"sub4" },
-  { id:"sub5", pharmacie:"Pharmacie Saint-Michel",email:"saintmichel@pharma.fr",        plan:"standard", billing:"annual",  status:"past_due",  mrr:31,  renewal:"01/07/2025", subId:"sub5" },
-  { id:"sub6", pharmacie:"Pharmacie Beaubourg",   email:"contact@beaubourg.fr",         plan:"starter",  billing:"monthly", status:"canceled",  mrr:0,   renewal:"—",          subId:"sub6" },
-  { id:"sub7", pharmacie:"Pharmacie de la Gare",  email:"gare@pharma.fr",              plan:"standard", billing:"monthly", status:"active",    mrr:39,  renewal:"20/07/2025", subId:"sub7" },
-  { id:"sub8", pharmacie:"Pharmacie Marais",      email:"marais@pharma.fr",             plan:"pro",      billing:"monthly", status:"trialing",  mrr:0,   renewal:"10/08/2025", subId:"sub8" },
-];
-
 
 // Identifiant démo (mode VITE_DEMO_MODE=true uniquement — voir authenticate() ci-dessous).
 // ⚠️ Ne JAMAIS utiliser DB.admin comme repli d'authentification hors mode démo strict :
@@ -338,7 +304,7 @@ function AdminDashboardLive({ adminToken } = {}) {
         {!loading && tab === "clients" ? (
           selected ? (
             /* ── Détail client ── */
-            <ClientDetail client={selected} plans={PLANS} onClose={()=>setSelected(null)} onRefresh={loadClients}/>
+            <ClientDetail client={selected} plans={PLANS} onClose={()=>setSelected(null)}/>
           ) : (
             /* ── Liste clients ── */
             <div>
@@ -469,101 +435,11 @@ function AdminDashboardLive({ adminToken } = {}) {
   );
 }
 
-function BillingAdmin() {
-  const [tab,setTab]=useState("dashboard");
-  const [filterStatus,setFilterStatus]=useState("all");
-  const activeCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").length;
-  const trialCount=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="trialing").length;
-  const mrr=MOCK_SUBSCRIPTIONS.filter(s=>s.status==="active").reduce((s,sub)=>s+sub.mrr,0);
-
-  return (
-    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-      <div style={{display:"flex",gap:6,marginBottom:24,flexWrap:"wrap"}}>
-        {[["dashboard","📊 Dashboard"],["subscriptions","📋 Abonnements"],["invoices","🧾 Factures"],["pricing","🏷️ Pricing"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:tab===k?700:500,background:tab===k?"#3b82f6":"#1e293b",color:tab===k?"#fff":"#64748b"}}>{l}</button>
-        ))}
-      </div>
-
-      {tab==="dashboard"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:14,marginBottom:24}}>
-            {[["MRR",`${mrr} €`,"#3b82f6"],["ARR",`${mrr*12} €`,"#10b981"],["Clients actifs",activeCount,"#6366f1"],["En essai",trialCount,"#f59e0b"]].map(([l,v,color])=>(
-              <div key={l} style={{background:"#1e293b",borderRadius:12,padding:20,border:`1px solid #334155`}}>
-                <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{l}</div>
-                <div style={{fontWeight:900,fontSize:26,color}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-            <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>Derniers abonnements</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-              <tbody>{MOCK_SUBSCRIPTIONS.slice(0,5).map(s=>(
-                <tr key={s.id} style={{borderBottom:"1px solid #1e293b"}}>
-                  <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:11,fontWeight:700,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
-                  <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":"#dc2626"}}>{s.status}</span></td>
-                  <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab==="subscriptions"&&(
-        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-            {[["all","Tous"],["active","Actifs"],["trialing","Essai"],["past_due","Impayés"],["canceled","Annulés"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setFilterStatus(k)} style={{padding:"5px 12px",border:`1px solid ${filterStatus===k?"#3b82f6":"#334155"}`,borderRadius:7,background:filterStatus===k?"#3b82f6":"transparent",color:filterStatus===k?"#fff":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
-            ))}
-          </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["Pharmacie","Plan","Facturation","MRR","Statut","Renouvellement"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{MOCK_SUBSCRIPTIONS.filter(s=>filterStatus==="all"||s.status===filterStatus).map(s=>(
-              <tr key={s.id} style={{borderBottom:"1px solid #0f172a"}}>
-                <td style={{padding:"9px 10px",color:"#e2e8f0",fontWeight:600}}>{s.pharmacie}</td>
-                <td style={{padding:"9px 10px"}}><span style={{fontSize:11,background:"#334155",color:"#94a3b8",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{PLAN_LIMITS[s.plan]?.icon} {PLAN_LIMITS[s.plan]?.label}</span></td>
-                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12,textTransform:"capitalize"}}>{s.billing}</td>
-                <td style={{padding:"9px 10px",fontWeight:700,color:"#10b981"}}>{s.mrr} €</td>
-                <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="active"?"#dcfce7":s.status==="trialing"?"#dbeafe":s.status==="past_due"?"#fef9c3":"#fee2e2",color:s.status==="active"?"#166534":s.status==="trialing"?"#1d4ed8":s.status==="past_due"?"#92400e":"#dc2626"}}>{s.status}</span></td>
-                <td style={{padding:"9px 10px",color:"#64748b",fontSize:12}}>{s.renewal}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab==="invoices"&&(
-        <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
-          <div style={{fontWeight:700,fontSize:14,color:"#fff",marginBottom:14}}>🧾 Factures</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"1px solid #334155"}}>{["N°","Date","Description","Montant","Statut",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{MOCK_INVOICES.map(inv=>{
-              const sub=MOCK_SUBSCRIPTIONS.find(s=>s.id===inv.subId);
-              return (
-                <tr key={inv.id} style={{borderBottom:"1px solid #0f172a"}}>
-                  <td style={{padding:"9px 10px",fontFamily:"monospace",fontSize:11,color:"#64748b"}}>{inv.id}</td>
-                  <td style={{padding:"9px 10px",color:"#94a3b8"}}>{inv.date}</td>
-                  <td style={{padding:"9px 10px",color:"#e2e8f0"}}>{inv.desc}</td>
-                  <td style={{padding:"9px 10px",fontWeight:800,color:"#fff"}}>{inv.amount} €</td>
-                  <td style={{padding:"9px 10px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#dcfce7",color:"#166534"}}>✓ Payée</span></td>
-                  <td style={{padding:"9px 10px",textAlign:"right"}}>
-                    <button onClick={()=>openInvoicePDF({...inv,desc:inv.desc},{nom:sub?.pharmacie,email:sub?.email},sub?.plan||"starter")} style={{fontSize:12,color:"#3b82f6",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>📄 PDF</button>
-                  </td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab==="pricing"&&<PricingEditor/>}
-    </div>
-  );
-}
-
-export { AdminDashboardLive, ClientDetail, StoriesContentAdmin,
-  HistoriqueSparkline, ContratEditor, BillingAdmin, BillingModule, PricingEditor, BackofficeAdmin };
+// Seuls BillingModule et BackofficeAdmin sont importés depuis l'extérieur
+// (App.jsx, via import() dynamique) — AdminDashboardLive (défini ici) est déjà
+// l'export par défaut, et ClientDetail/StoriesContentAdmin/ContratEditor/
+// PricingEditor sont chacun déjà importés directement depuis leur propre
+// fichier là où ils servent : les réexporter ici n'avait plus aucun
+// consommateur.
+export { BillingModule, BackofficeAdmin };
 export default AdminDashboardLive;

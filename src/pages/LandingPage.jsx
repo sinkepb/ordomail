@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from "react";
 
 import { C, useFadeIn, PLANS } from "../lib/utils.js";
 
-console.log("✅ MODULE CHARGÉ: pages/LandingPage.jsx");
-
 const DEMO_ORDOS = [
   { nom: "MARTIN Pierre",    cv: "1 75 04 75 118 042 18", medecin: "Dr Bernard",  source: "email",  status: "nouveau",  mins: 3  },
   { nom: "DUBOIS Sophie",    cv: "2 82 11 75 063 014 22", medecin: "Dr Leclerc", source: "qrcode", status: "nouveau",  mins: 11 },

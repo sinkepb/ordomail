@@ -7,8 +7,6 @@ import { compressImageFile } from "../lib/imageCompress.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
 
-console.log("✅ MODULE CHARGÉ: pages/PatientPage.jsx");
-
 const HEALTH_STORIES = [
   {
     id: 1,

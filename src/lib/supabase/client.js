@@ -145,14 +145,6 @@ export async function getCurrentSession() {
   return session;
 }
 
-// ─── Écouter les changements de session ──────────────────────────────────────
-export function onAuthStateChange(callback) {
-  if (IS_DEMO) return () => {};
-  const sb = getSupabase();
-  const { data: { subscription } } = sb.auth.onAuthStateChange(callback);
-  return () => subscription.unsubscribe();
-}
-
 // ─── Intention de paiement en attente (19/08/2026) ────────────────────────────
 // Ce projet Supabase exige la confirmation d'email : signUp() ne renvoie aucune
 // session tant que le lien reçu par email n'est pas cliqué, donc

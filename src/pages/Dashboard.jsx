@@ -354,7 +354,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
 
         {section==="offres"&&planInfo.offresStories&&(
           <ErrorBoundary compact label="Offres">
-          <OffresSection pharmacie={pharmacie} planInfo={planInfo}/>
+          <OffresSection pharmacie={pharmacie}/>
           </ErrorBoundary>
         )}
         {section==="stories"&&planInfo.offresStories&&(
@@ -436,7 +436,7 @@ function BottomNav({ tab, canAdmin, canRappels, setTab, rappelsATraiter = 0 }) {
   );
 }
 
-function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "admin", userId = "demo" }) {
+function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId = "demo" }) {
   const [pharmacie, setPharmacie] = useState(null);
   const [ordonnances, setOrdonnances] = useState([]);
   const [interetsDuJour, setInteretsDuJour] = useState([]); // intérêts offres du jour
@@ -862,10 +862,9 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
             ):viewMode==="grid"?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,225px),1fr))",gap:9}}>
                 {groupedOrdos.map(o=>{
-                  const accent=getOrdoAccent(o.id, pharmacie?.accent_unique);
                   if (o._isGroup && o.ordonnances.length > 1) {
                     return <OrdoGroup key={o.code_patient+'-'+toDateKey(o.receivedAt)} id={`ordo-${o.ordonnances?.[0]?.id||o.id}`}
-                      group={o} couleur={couleur} accentUnique={pharmacie?.accent_unique}
+                      group={o} accentUnique={pharmacie?.accent_unique}
                       interets={o.interets || []}
                       sonnetteActive={pharmacie?.sonnette_active !== false}
                       onSonnette={() => appellerPatient(pharmacieId, o.code_patient)}
@@ -878,11 +877,9 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
                         if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
                       }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
-                      onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
-                      onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}
-                      loadingId={loadingId}/>;
+                      onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}/>;
                   }
-                  return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent} accentUnique={pharmacie?.accent_unique}
+                  return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
@@ -1042,7 +1039,7 @@ function PharmacieDashboard({ pharmacieId, onPatientPage, onBadges, userRole = "
                       </div>
                     );
                   }
-                  return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} couleur={couleur} accent={accent} accentUnique={pharmacie?.accent_unique}
+                  return <OrdoRow key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}

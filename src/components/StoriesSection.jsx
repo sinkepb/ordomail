@@ -4,15 +4,10 @@
 // choisir individuellement lesquelles diffuser dans sa salle d'attente.
 import { useState, useEffect } from "react";
 import { isDemoMode, fetchPharmacieStories, fetchStoryMetrics, updatePharmacieStorySelection } from "../supabase.js";
+import { formatDuree } from "../lib/utils.js";
 
 const TYPE_LABELS = { info: "Info", conseil: "Conseil", quiz: "Quiz" };
 const TYPE_COLORS = { info: "#065f46", conseil: "#1a3a6e", quiz: "#4c1d95" };
-
-function formatDuree(ms) {
-  if (!ms) return "—";
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.round(s / 60)}min`;
-}
 
 function aggregate(events, storyId) {
   const key = `content-${storyId}`;

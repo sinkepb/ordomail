@@ -4,7 +4,7 @@ import { IS_DEMO, getSupabase, getDB } from './client.js';
 
 // Pub/sub interne (mode démo) — exporté pour que ordonnances.js (addOrdonnance)
 // puisse notifier les mêmes abonnés avec le payload d'origine (l'ordonnance
-// ajoutée), un usage distinct de notifyPharmacy() qui notifie avec la pharmacie.
+// ajoutée) plutôt qu'un simple refetch de la pharmacie.
 export const _listeners = {};
 
 export function subscribeToPharmacy(pharmacieId, callback) {
@@ -32,11 +32,6 @@ export function subscribeToPharmacy(pharmacieId, callback) {
   return () => sb.removeChannel(channel);
 }
 
-export function notifyPharmacy(pharmacieId) {
-  const db = getDB();
-  const ph = db.pharmacies.find(p => p.id === pharmacieId);
-  if (ph) (_listeners[pharmacieId] || []).forEach(fn => fn(ph));
-}
 
 // Offres mobile (03/09/2026) — la publication d'une offre depuis le mobile
 // doit apparaître instantanément côté PC (OffresSection.jsx) ET côté écran

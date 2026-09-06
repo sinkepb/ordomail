@@ -174,7 +174,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
 
   if (view==="checkout") return (
     <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <PersistentNav onBack={onBack} currentPage="checkout" secure/>
+      <PersistentNav onBack={onBack} secure/>
       <div style={{maxWidth:840,margin:"0 auto",padding:"24px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:18}}>
         <div style={{background:"#fff",borderRadius:16,padding:28,boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
           {step==="details"&&(
@@ -436,7 +436,7 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
 
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <PersistentNav onBack={onBack} currentPage="pricing"/>
+      <PersistentNav onBack={onBack}/>
       <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
         <div style={{textAlign:"center",marginBottom:36}}>
           <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>{resumePharmacieId ? "Finalisez votre abonnement" : "Choisissez votre plan"}</h1>

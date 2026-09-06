@@ -1,26 +1,3 @@
-function CVBadge({ numero, color = "#15623a" }) {
-  if (!numero) return <span style={{ color: "#bbb", fontSize: 12, fontStyle: "italic" }}>Non extrait</span>;
-  // Formater le numéro en groupes lisibles : X XX XX XX XXX XXX XX
-  const fmt = (n) => n.replace(/\s/g,"").replace(/(.{1})(.{2})(.{2})(.{2})(.{3})(.{3})(.{2})/, "$1 $2 $3 $4 $5 $6 $7").trim();
-  const formatted = fmt(numero) || numero;
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      background: `${color}14`, border: `1.5px solid ${color}44`,
-      borderRadius: 8, padding: "5px 10px",
-      minWidth: 0, overflow: "hidden",
-    }}>
-      <span style={{ fontSize: 14, flexShrink: 0 }}>💳</span>
-      <span style={{
-        fontFamily: "monospace", fontSize: 12, fontWeight: 700,
-        color: color, letterSpacing: 0.5,
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        minWidth: 0,
-      }}>{formatted}</span>
-    </div>
-  );
-}
-
 function Btn({ children, onClick, disabled, variant="primary", small, style={} }) {
   const base = { display:"inline-flex", alignItems:"center", gap:6, fontFamily:"inherit",
     fontWeight:700, cursor:disabled?"not-allowed":"pointer", borderRadius:9, border:"none",
@@ -49,4 +26,4 @@ function Input({ label, value, onChange, type="text", placeholder="", icon="" })
 }
 
 
-export { CVBadge, Btn, Input };
+export { Btn, Input };

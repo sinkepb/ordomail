@@ -2,7 +2,7 @@
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState, useEffect } from "react";
 import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData, subscribeToOffres } from "../supabase.js";
-import { fileToBase64 } from "../lib/utils.js";
+import { fileToBase64, formatDuree } from "../lib/utils.js";
 import { compressImageFile } from "../lib/imageCompress.js";
 import { pdfAllPagesAsImages } from "../lib/ocr.js";
 import { QRCode } from "./QRCode.jsx";
@@ -16,12 +16,6 @@ import { OffreReservationsPanel } from "./OffreReservationsPanel.jsx";
 // (secure-data:offre_upload_image attend du base64 sans préfixe).
 function dataUrlToBase64(dataUrl) {
   return dataUrl.split(",")[1] || "";
-}
-
-function formatDuree(ms) {
-  if (!ms) return "—";
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.round(s / 60)}min`;
 }
 
 function aggregateOffre(events, offreId) {

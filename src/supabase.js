@@ -17,15 +17,11 @@
 
 export {
   IS_DEMO as isDemoMode,
-  getSupabase as supabase,
   getSupabaseClient,
   getSupabaseAnon,
   getSignedUrl,
   getCurrentSession,
-  onAuthStateChange,
   registerDB,
-  setVendeurToken,
-  clearVendeurToken,
   setPendingCheckout,
   getPendingCheckout,
   clearPendingCheckout,
@@ -57,7 +53,6 @@ export {
 
 export {
   subscribeToPharmacy,
-  notifyPharmacy,
   subscribeToOffres,
   subscribeToRappels,
 } from './lib/supabase/realtime.js';
@@ -80,7 +75,6 @@ export {
 } from './lib/supabase/metriques.js';
 
 export {
-  fetchInteretsParCode,
   fetchInteretsDuJour,
   fetchStoryMetrics,
   fetchPharmacieStories,

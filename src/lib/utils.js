@@ -53,6 +53,12 @@ export function maskCode(code) {
 }
 
 // ─── Utilitaires temporels ────────────────────────────────────────────────────
+export function formatDuree(ms) {
+  if (!ms) return "—";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.round(s / 60)}min`;
+}
+
 export function timeAgo(date) {
   if (!date) return "";
   const d = date instanceof Date ? date : new Date(date);

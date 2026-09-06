@@ -4,8 +4,6 @@ import { authSignInEmail, authSignInPIN, authSignInPSC, authSignOut,
   getSupabaseClient, isDemoMode, addAuditLog } from "../supabase.js";
 import { Btn, Input } from "../components/ui.jsx";
 
-console.log("✅ MODULE CHARGÉ: pages/LoginPage.jsx");
-
 // Pro Santé Connect masqué le temps que la convention ANS soit finalisée
 // (27/08/2026) — remettre à true pour réafficher le bloc titulaire/PSC.
 const PSC_LOGIN_ENABLED = false;
@@ -513,18 +511,15 @@ function LoginPage({ onLogin, onBack, onGoToPricing, onNeedsSubscription }) {
   );
 }
 
-function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, DashboardComponent, PatientComponent }) {
+function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, DashboardComponent }) {
   // Récupérer la session restaurée depuis le refresh
   const restoredSession = window.__ordomailSession || null;
   const [session, setSession] = useState(restoredSession);
-  const [patientPharmacie, setPatientPharmacie] = useState(null);
   // Pastilles "rappels"/"ordonnances" (05/09/2026) — déplacées ici, au même
   // niveau que le badge "Admin", depuis le header du dashboard pharmacie
   // (Dashboard.jsx) qui les affichait par ailleurs. Remontées par
   // PharmacieDashboard via onBadges, seul endroit qui connaît ces compteurs.
   const [badges, setBadges] = useState({ rappels: 0, ordonnances: 0 });
-
-  if (patientPharmacie) return <PatientComponent pharmacie={patientPharmacie} onBack={()=>setPatientPharmacie(null)}/>;
 
   // Journal d'activité (07/08/2026) : login/logout n'étaient jamais tracés malgré
   // leurs libellés déjà prévus dans LogsPanel.jsx (actionLabel.login/logout) —
@@ -552,7 +547,7 @@ function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, Dashbo
             <button onClick={handleLogout} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.6)",padding:"3px 10px",borderRadius:6,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>⏻ Déconnexion</button>
           </div>
         </div>
-        <DashboardComponent pharmacieId={session.pharmacieId} onPatientPage={ph=>setPatientPharmacie(ph)} onBadges={setBadges} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
+        <DashboardComponent pharmacieId={session.pharmacieId} onBadges={setBadges} userRole={session.userRole||"admin"} userId={session.userId||"demo"}/>
       </div>
     );
   }

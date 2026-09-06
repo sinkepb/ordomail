@@ -420,19 +420,15 @@ async function generatePosterHTML({ url, pharmacieName }) {
 </html>`;
 }
 
-async function openPosterPDF({ url, pharmacieName }) {
-  const html = await generatePosterHTML({ url, pharmacieName });
-  openPosterPDFFromHTML(html);
-}
-
 // Ouvre un HTML d'affiche déjà généré, sans aucun await avant window.open() —
-// séparé de openPosterPDF (25/08/2026) : quand l'appelant a déjà le HTML sous
-// la main (ex. l'aperçu du backoffice, généré pour l'iframe de prévisualisation),
-// appeler openPosterPDF re-générait tout (import "qrcode", nouvel appel QR.toString)
-// entre le clic et window.open() — assez de délai pour que certains navigateurs
+// séparée de generatePosterHTML (25/08/2026) : un appelant qui régénère le
+// HTML (import "qrcode", nouvel appel QR.toString) entre le clic et
+// window.open() introduit assez de délai pour que certains navigateurs
 // (Safari surtout, Chrome parfois) perdent l'activation utilisateur du clic et
 // bloquent silencieusement la popup, sans erreur visible : le bouton semblait ne
-// rien faire. window.open() doit rester dans le même tick que le clic.
+// rien faire. window.open() doit rester dans le même tick que le clic — d'où
+// cette fonction distincte, pour un appelant qui a déjà le HTML sous la main
+// (ex. l'aperçu du backoffice, généré pour l'iframe de prévisualisation).
 function openPosterPDFFromHTML(html) {
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const dlUrl = URL.createObjectURL(blob);
@@ -444,4 +440,4 @@ function openPosterPDFFromHTML(html) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, openPosterPDF, openPosterPDFFromHTML };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, openPosterPDFFromHTML };

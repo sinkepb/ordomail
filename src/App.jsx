@@ -403,7 +403,6 @@ function AppInner() {
           onGoToPricing={()=>setRoute("pricing")}
           onNeedsSubscription={(pharmacieId)=>{ setResumeSubscription({pharmacieId}); setRoute("finish-subscription"); }}
           DashboardComponent={PharmacieDashboard}
-          PatientComponent={PatientPage}
         />}
     </Suspense>
     </>

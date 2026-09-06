@@ -49,8 +49,6 @@ function PlanSwitcherModal({ pharmacie, postes, onConfirm, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 
-// ─── Section Offres Stories (Premium) — dead code, dupliqué de
-// components/OffresSection.jsx extrait en phase 2, plus importé nulle part ───
 function PlanSwitcher({ pharmacie, postes, onConfirm, onClose }) {
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [selected, setSelected] = useState(null);
