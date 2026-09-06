@@ -19,17 +19,20 @@ export interface RappelScanResult {
 }
 
 // Construit le lien court (voir shortToken.ts) et le message patient — une
-// seule source de vérité pour le texte, réutilisée par le cron (SMS mock) ET
-// par l'envoi de test manuel (email, voir secure-data:rappels_envoyer_test)
-// pour que tester par email reflète fidèlement ce qu'un vrai SMS dirait.
-// Le nom de la pharmacie n'apparaît pas dans le corps : l'identité expéditrice
-// (nom de l'expéditeur SMS) porte déjà cette information en production.
+// seule source de vérité pour le texte, réutilisée par le cron ET l'envoi
+// manuel (secure-data:rappels_envoyer_test).
+// Le nom de la pharmacie apparaît désormais DANS le corps (06/09/2026) —
+// l'expéditeur SMS est un nom unique pour toute la plateforme ("OrdoMail",
+// voir PLATFORM_SENDER dans sms.ts : un expéditeur alphanumérique par
+// pharmacie exigerait un enregistrement ET une modération OVH par
+// pharmacie, intenable pour un SaaS), donc ce n'est plus lui qui identifie
+// la pharmacie pour le patient.
 export function buildRappelLien(appUrl: string, token: string): string {
   return `${appUrl}/?r=${token}`;
 }
 
-export function buildRappelMessage(prenom: string, lien: string): string {
-  return `Bonjour ${prenom}, votre renouvellement d'ordonnance est prévu prochainement. Cliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
+export function buildRappelMessage(prenom: string, lien: string, pharmacieNom: string): string {
+  return `Bonjour ${prenom}, ${pharmacieNom} vous informe que votre renouvellement d'ordonnance est prévu prochainement. Cliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
 }
 
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
@@ -47,7 +50,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
       const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, lien);
+      const message = buildRappelMessage(rappel.patient_prenom, lien, pharmacieNom);
 
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 

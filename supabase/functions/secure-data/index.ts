@@ -668,8 +668,8 @@ Deno.serve(async (req) => {
       const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, lien);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
+      const message = buildRappelMessage(rappel.patient_prenom, lien, pharmacieNom);
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
       if (!result.success) {
         return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi du SMS" }), { status: 502, headers: CORS });

@@ -31,25 +31,17 @@ async function sha1Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Expéditeur alphanumérique OVH : 3 à 11 caractères, lettres/chiffres/espaces
-// uniquement (pas d'accents ni de ponctuation) — sinon l'envoi est rejeté.
-// Le nom de la pharmacie ("Pharmacie de la Grâce") ne rentre presque jamais
-// tel quel : on le nettoie et tronque automatiquement plutôt que de faire
-// échouer l'envoi ou d'exiger une saisie manuelle supplémentaire.
-// ̀-ͯ : bloc Unicode des marques diacritiques combinantes — une
-// fois le nom passé en forme NFD (ex. "é" -> "e" + accent combinant séparé),
-// les retirer isole les lettres de base sans dépendre d'une table par langue.
-const COMBINING_DIACRITICS = /[̀-ͯ]/g;
-
-function sanitizeSender(name: string): string {
-  const ascii = (name || "")
-    .normalize("NFD")
-    .replace(COMBINING_DIACRITICS, "")
-    .replace(/[^a-zA-Z0-9 ]/g, "") // tout le reste (ponctuation, etc.)
-    .trim();
-  const trimmed = ascii.slice(0, 11);
-  return trimmed.length >= 3 ? trimmed : "OrdoMail";
-}
+// Expéditeur unique pour toute la plateforme (06/09/2026) — un nom
+// d'expéditeur alphanumérique par pharmacie a été tenté d'abord (le nom de
+// la pharmacie elle-même), mais OVH exige un enregistrement ET une
+// modération manuelle PAR expéditeur distinct ("Sms sender <nom> does not
+// exists. Please create it first", confirmé en direct) : intenable pour un
+// SaaS où chaque nouvelle pharmacie doit pouvoir envoyer des rappels dès son
+// inscription. Un seul expéditeur, enregistré et validé une fois pour
+// toutes, débloque toutes les pharmacies d'un coup — le nom de la pharmacie
+// reste identifiable pour le patient via le corps du message lui-même (voir
+// buildRappelMessage, _shared/rappelLogic.ts) plutôt que via l'expéditeur.
+const PLATFORM_SENDER = "OrdoMail";
 
 // Les numéros patients sont saisis et stockés en format national français
 // ("0612345678", voir normalizeTel() côté RappelsSection.jsx — jamais
@@ -64,14 +56,17 @@ function toE164France(raw: string): string {
   return digits; // format déjà inconnu — laissé tel quel, OVH renverra une erreur explicite plutôt qu'un envoi silencieusement raté
 }
 
-export async function sendSms(to: string, message: string, senderName: string): Promise<SendSmsResult> {
+// pharmacieNom : n'influence plus l'expéditeur SMS (voir PLATFORM_SENDER
+// ci-dessus) — gardé pour le log en mode mock, où voir quelle pharmacie est
+// à l'origine de l'envoi reste utile pour le débogage.
+export async function sendSms(to: string, message: string, pharmacieNom: string): Promise<SendSmsResult> {
   const appKey      = Deno.env.get("OVH_APP_KEY");
   const appSecret   = Deno.env.get("OVH_APP_SECRET");
   const consumerKey = Deno.env.get("OVH_CONSUMER_KEY");
   const serviceName = Deno.env.get("OVH_SMS_SERVICE_NAME");
 
   if (!appKey || !appSecret || !consumerKey || !serviceName) {
-    console.log(`[sms:mock] de="${senderName}" à="${to}" message="${message}"`);
+    console.log(`[sms:mock] pharmacie="${pharmacieNom}" à="${to}" message="${message}"`);
     return { success: true, mocked: true };
   }
 
@@ -80,7 +75,7 @@ export async function sendSms(to: string, message: string, senderName: string): 
   const body = JSON.stringify({
     message,
     receivers: [toE164France(to)],
-    sender: sanitizeSender(senderName),
+    sender: PLATFORM_SENDER,
     senderForResponse: false,
     // SMS de service (rappel de renouvellement), pas une campagne marketing —
     // la clause STOP obligatoire ne s'applique qu'aux SMS commerciaux, et
