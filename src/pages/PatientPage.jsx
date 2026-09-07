@@ -618,7 +618,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           console.log("[PatientStories] offres actives:", offres.length);
 
           if (offres && offres.length > 0) {
-            const eligible = offres.filter(o => !o.date_fin || new Date(o.date_fin) >= new Date());
+            // date_debut (07/09/2026) — désormais saisie obligatoirement à la
+            // création (voir OffresSection.jsx), mais les offres créées avant
+            // cette date n'en ont pas : !o.date_debut reste donc traité comme
+            // "pas de borne de début", même logique que date_fin ci-dessous.
+            const eligible = offres.filter(o =>
+              (!o.date_debut || new Date(o.date_debut) <= new Date()) &&
+              (!o.date_fin || new Date(o.date_fin) >= new Date())
+            );
             // Avis Google (04/09/2026) — fusionnée avec la dernière story
             // ("Restez ici !") plutôt que d'occuper sa propre carte au milieu
             // du diaporama, voir le rendu de cette dernière story plus bas.

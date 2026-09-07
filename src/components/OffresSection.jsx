@@ -32,7 +32,7 @@ function OffresSection({ pharmacie }) {
   const [events, setEvents]       = useState([]);
   const [showForm, setShowForm]   = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"", prix:"" });
+  const [form, setForm]           = useState({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_debut:"", date_fin:"", image_url:"", lien_url:"", prix:"" });
   const [saving, setSaving]       = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgError, setImgError]   = useState("");
@@ -197,13 +197,15 @@ function OffresSection({ pharmacie }) {
     setEditingId(offre.id);
     setForm({ type:offre.type, titre:offre.titre, description:offre.description||"",
       emoji:offre.emoji||"🎁", badge:offre.badge||"", couleur:offre.couleur||"#1a3a6e",
-      actif:offre.actif, date_fin:offre.date_fin||"", image_url:offre.image_url||"",
+      actif:offre.actif, date_debut:offre.date_debut||"", date_fin:offre.date_fin||"", image_url:offre.image_url||"",
       lien_url:offre.lien_url||"", prix:offre.prix!=null?String(offre.prix):"" });
     setShowForm(true);
   }
 
   async function saveOffre() {
     if (!form.titre.trim()) return;
+    if (!form.date_debut || !form.date_fin) return;
+    if (form.date_fin < form.date_debut) return;
     if (form.type === "avis_google" && !form.lien_url.trim()) return;
     setSaving(true);
     const payload = { ...form, prix: form.prix!==""?Number(form.prix):null, pharmacie_id: pharmacie.id };
@@ -222,7 +224,7 @@ function OffresSection({ pharmacie }) {
         setOffres(prev => [{ ...payload, id: `o${Date.now()}`, created_at: new Date().toISOString() }, ...prev]);
       }
     }
-    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_fin:"", image_url:"", lien_url:"", prix:"" });
+    setForm({ type:"promo", titre:"", description:"", emoji:"🎁", badge:"", couleur:"#1a3a6e", actif:true, date_debut:"", date_fin:"", image_url:"", lien_url:"", prix:"" });
     setEditingId(null);
     setShowForm(false);
     setSaving(false);
@@ -428,16 +430,34 @@ function OffresSection({ pharmacie }) {
           </div>
           {imgError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:10 }}>⚠️ {imgError}</div>}
 
-          {/* Badge + couleur + date fin */}
-          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+          {/* Badge + couleur */}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
             <input value={form.badge} onChange={e=>setForm(f=>({...f,badge:e.target.value}))}
               placeholder='Badge (ex: "-20%")'
               style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
             <input type="color" value={form.couleur} onChange={e=>setForm(f=>({...f,couleur:e.target.value}))}
               style={{ width:44, height:38, border:"1.5px solid #e0e7ff", borderRadius:8, cursor:"pointer", padding:2 }}/>
-            <input type="date" value={form.date_fin} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
-              style={{ flex:1, border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit" }}/>
           </div>
+
+          {/* Date de début / fin d'affichage — obligatoires pour tous les
+              types d'offre (07/09/2026, retour direct) : détermine la
+              fenêtre pendant laquelle l'offre est visible par les patients
+              (voir PatientPage.jsx). */}
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de début *</label>
+              <input type="date" value={form.date_debut} onChange={e=>setForm(f=>({...f,date_debut:e.target.value}))}
+                style={{ width:"100%", border:`1.5px solid ${!form.date_debut?"#fecaca":"#e0e7ff"}`, borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de fin *</label>
+              <input type="date" value={form.date_fin} min={form.date_debut || undefined} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
+                style={{ width:"100%", border:`1.5px solid ${!form.date_fin||form.date_fin<form.date_debut?"#fecaca":"#e0e7ff"}`, borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+            </div>
+          </div>
+          {form.date_debut && form.date_fin && form.date_fin < form.date_debut && (
+            <div style={{ fontSize:12, color:"#dc2626", marginTop:-8, marginBottom:14 }}>La date de fin doit être postérieure à la date de début.</div>
+          )}
 
           {/* Prix (optionnel) — affiche le bouton "Ajouter à la commande" côté patient */}
           <div style={{ marginBottom:14 }}>
@@ -471,7 +491,7 @@ function OffresSection({ pharmacie }) {
               style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               Annuler
             </button>
-            <button onClick={saveOffre} disabled={!form.titre.trim()||saving||(form.type==="avis_google"&&!form.lien_url.trim())}
+            <button onClick={saveOffre} disabled={!form.titre.trim()||!form.date_debut||!form.date_fin||form.date_fin<form.date_debut||saving||(form.type==="avis_google"&&!form.lien_url.trim())}
               style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               {saving ? "Enregistrement…" : editingId ? "✅ Enregistrer" : "✅ Publier l'offre"}
             </button>
@@ -515,7 +535,11 @@ function OffresSection({ pharmacie }) {
             </div>
             {offre.description && <div style={{ fontSize:12, color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{offre.description}</div>}
             {offre.prix!=null && <div style={{ fontSize:12, color:"#1a3a6e", fontWeight:700, marginTop:2 }}>{offre.prix} € · réservable</div>}
-            {offre.date_fin && <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>Jusqu'au {new Date(offre.date_fin).toLocaleDateString("fr-FR")}</div>}
+            {(offre.date_debut || offre.date_fin) && (
+              <div style={{ fontSize:11, color:"#f59e0b", marginTop:2 }}>
+                📅 {offre.date_debut ? new Date(offre.date_debut).toLocaleDateString("fr-FR") : "…"} → {offre.date_fin ? new Date(offre.date_fin).toLocaleDateString("fr-FR") : "…"}
+              </div>
+            )}
             <div style={{ fontSize:11, color:"#64748b", marginTop:4, display:"flex", gap:12, flexWrap:"wrap" }}>
               <span>👁️ {stats.vues} vue{stats.vues>1?"s":""}</span>
               <span>⏱️ {formatDuree(stats.dureeMoyenne)} en moyenne</span>

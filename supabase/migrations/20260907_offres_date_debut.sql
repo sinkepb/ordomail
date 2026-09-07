@@ -1,0 +1,11 @@
+-- OrdoMail — Date de début d'affichage pour les offres pharmacie (07/09/2026).
+--
+-- offres_stories avait déjà date_fin (utilisée pour masquer une offre expirée
+-- côté patient, voir PatientPage.jsx) mais pas de date de début symétrique.
+-- Retour direct : les deux dates doivent désormais être saisies à la création
+-- d'une offre, quel que soit son type (promo/service/fidélité/avis Google) —
+-- validation faite côté formulaire (OffresSection.jsx), pas de contrainte
+-- NOT NULL ici pour ne pas invalider les offres déjà créées sans date, ni les
+-- offres "catalogue" (import PDF/mobile), qui restent créées par un chemin
+-- séparé sans ce formulaire.
+ALTER TABLE offres_stories ADD COLUMN IF NOT EXISTS date_debut DATE;
