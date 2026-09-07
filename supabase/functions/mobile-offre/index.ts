@@ -75,13 +75,27 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Trop d'offres créées récemment — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
       }
 
-      const { fileName, fileType, fileBase64, prix, titre } = params || {};
+      const { fileName, fileType, fileBase64, prix, titre, dateDebut, dateFin } = params || {};
       if (!fileName || !fileType || !fileBase64) {
         return new Response(JSON.stringify({ error: "Photo requise" }), { status: 400, headers: CORS });
       }
       const prixNum = prix != null && prix !== "" ? Number(prix) : null;
       if (prixNum != null && (!Number.isFinite(prixNum) || prixNum < 0)) {
         return new Response(JSON.stringify({ error: "Prix invalide" }), { status: 400, headers: CORS });
+      }
+      // Date de début/fin d'affichage devenue obligatoire pour toute offre
+      // (07/09/2026), y compris celles créées depuis ce chemin mobile — le
+      // client (MobileOffreCapture.jsx) les pré-remplit à aujourd'hui →
+      // +30 jours, mais on revalide ici comme pour le prix : ce chemin ne
+      // passe jamais par le formulaire desktop qui fait la même vérification.
+      if (!dateDebut || !dateFin) {
+        return new Response(JSON.stringify({ error: "Date de début et de fin requises" }), { status: 400, headers: CORS });
+      }
+      if (Number.isNaN(new Date(dateDebut).getTime()) || Number.isNaN(new Date(dateFin).getTime())) {
+        return new Response(JSON.stringify({ error: "Date invalide" }), { status: 400, headers: CORS });
+      }
+      if (dateFin < dateDebut) {
+        return new Response(JSON.stringify({ error: "La date de fin doit être postérieure à la date de début" }), { status: 400, headers: CORS });
       }
 
       let bytes: Uint8Array;
@@ -113,6 +127,8 @@ Deno.serve(async (req) => {
         prix: prixNum,
         actif: true,
         created_via: "mobile",
+        date_debut: dateDebut,
+        date_fin: dateFin,
       }).select("id").single();
       if (insErr) throw new Error(insErr.message);
 

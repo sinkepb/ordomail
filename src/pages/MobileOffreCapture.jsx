@@ -25,12 +25,31 @@ async function callMobileOffre(token, action, params = {}) {
 
 const KEYPAD_KEYS = ["1","2","3","4","5","6","7","8","9",",","0","⌫"];
 
+// Date de début/fin d'affichage devenue obligatoire pour toute offre
+// (07/09/2026, y compris celles créées ici) — pré-remplie à aujourd'hui →
+// +30 jours pour ne pas ajouter d'étape au geste "photo + prix + Diffuser"
+// dans le cas courant ; les deux champs restent modifiables juste avant
+// diffusion pour qui veut une fenêtre différente.
+function toDateInputValue(date) {
+  return date.toISOString().slice(0, 10);
+}
+function defaultDateDebut() {
+  return toDateInputValue(new Date());
+}
+function defaultDateFin() {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return toDateInputValue(d);
+}
+
 function MobileOffreCapture({ token }) {
   const [status, setStatus] = useState("checking"); // checking | ready | forbidden | invalid
   const [pharmacieNom, setPharmacieNom] = useState("");
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [prix, setPrix] = useState("");
+  const [dateDebut, setDateDebut] = useState(defaultDateDebut);
+  const [dateFin, setDateFin] = useState(defaultDateFin);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [published, setPublished] = useState(false);
@@ -60,7 +79,7 @@ function MobileOffreCapture({ token }) {
   }
 
   async function handleDiffuser() {
-    if (!photoFile || sending) return;
+    if (!photoFile || sending || !dateDebut || !dateFin || dateFin < dateDebut) return;
     setSending(true); setSendError("");
     try {
       // Photo de smartphone récent = souvent 3-10 Mo non compressée ; pas
@@ -73,6 +92,8 @@ function MobileOffreCapture({ token }) {
         fileType: compressed.type || "image/jpeg",
         fileBase64,
         prix: prixNum,
+        dateDebut,
+        dateFin,
       });
       setPublished(true);
     } catch (e) {
@@ -83,6 +104,7 @@ function MobileOffreCapture({ token }) {
 
   function resetForNext() {
     setPhotoFile(null); setPhotoPreview(null); setPrix(""); setPublished(false); setSendError("");
+    setDateDebut(defaultDateDebut()); setDateFin(defaultDateFin());
   }
 
   const shellStyle = { minHeight: "100vh", background: "#0f172a", color: "#fff", display: "flex", flexDirection: "column", fontFamily: "'Inter',system-ui,sans-serif" };
@@ -170,15 +192,28 @@ function MobileOffreCapture({ token }) {
         ))}
       </div>
 
+      {/* Affichage — pré-rempli à aujourd'hui → +30 jours (07/09/2026,
+          devenu obligatoire), un seul champ compact pour ne pas alourdir le
+          geste photo + prix + Diffuser dans le cas courant. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "0 20px 16px", fontSize: 12, color: "#94a3b8" }}>
+        <span>Affichage du</span>
+        <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)}
+          style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "6px 8px", color: "#fff", fontFamily: "inherit", fontSize: 12 }} />
+        <span>au</span>
+        <input type="date" value={dateFin} min={dateDebut || undefined} onChange={e => setDateFin(e.target.value)}
+          style={{ background: "#1e293b", border: `1px solid ${!dateFin || dateFin < dateDebut ? "#dc2626" : "#334155"}`, borderRadius: 8, padding: "6px 8px", color: "#fff", fontFamily: "inherit", fontSize: 12 }} />
+      </div>
+
       {sendError && <div style={{ margin: "0 20px 12px", padding: "10px 14px", background: "#450a0a", color: "#fca5a5", borderRadius: 10, fontSize: 13, textAlign: "center" }}>{sendError}</div>}
 
       {/* Diffuser */}
       <div style={{ padding: "0 20px 28px" }}>
-        <button onClick={handleDiffuser} disabled={!photoFile || sending}
+        <button onClick={handleDiffuser} disabled={!photoFile || sending || !dateDebut || !dateFin || dateFin < dateDebut}
           style={{
             width: "100%", padding: "18px", border: "none", borderRadius: 16, fontWeight: 900, fontSize: 18, fontFamily: "inherit",
-            background: !photoFile ? "#334155" : "#22c55e", color: !photoFile ? "#64748b" : "#052e16",
-            cursor: !photoFile || sending ? "default" : "pointer",
+            background: (!photoFile || !dateDebut || !dateFin || dateFin < dateDebut) ? "#334155" : "#22c55e",
+            color: (!photoFile || !dateDebut || !dateFin || dateFin < dateDebut) ? "#64748b" : "#052e16",
+            cursor: (!photoFile || !dateDebut || !dateFin || dateFin < dateDebut || sending) ? "default" : "pointer",
           }}>
           {sending ? "Diffusion…" : "📡 Diffuser"}
         </button>

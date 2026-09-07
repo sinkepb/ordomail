@@ -18,6 +18,23 @@ function dataUrlToBase64(dataUrl) {
   return dataUrl.split(",")[1] || "";
 }
 
+// Date de début/fin par défaut pour un lot publié en une fois (07/09/2026,
+// dates devenues obligatoires pour tous les types d'offre y compris
+// "catalogue") — aujourd'hui → +30 jours, pré-rempli pour ne pas bloquer la
+// publication d'un lot de plusieurs pages derrière une saisie manuelle,
+// modifiable avant de publier si besoin.
+function toDateInputValue(date) {
+  return date.toISOString().slice(0, 10);
+}
+function defaultDateDebut() {
+  return toDateInputValue(new Date());
+}
+function defaultDateFin() {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return toDateInputValue(d);
+}
+
 function aggregateOffre(events, offreId) {
   const key = `offre-${offreId}`;
   const relevant = events.filter(e => e.story_id === key);
@@ -47,6 +64,8 @@ function OffresSection({ pharmacie }) {
   const [pdfProcessing, setPdfProcessing] = useState(false);
   const [pdfPublishing, setPdfPublishing] = useState(null);  // {done, total} | null
   const [pdfError, setPdfError]         = useState("");
+  const [pdfDateDebut, setPdfDateDebut] = useState("");
+  const [pdfDateFin, setPdfDateFin]     = useState("");
   const sb = getSupabaseClient();
 
   // Offres mobile (03/09/2026) — une offre publiée depuis le téléphone (ou une
@@ -111,6 +130,7 @@ function OffresSection({ pharmacie }) {
   async function handleCataloguePdf(file) {
     if (!file || isDemoMode) return;
     setPdfError(""); setPdfPages(null); setPdfProcessing(true);
+    setPdfDateDebut(defaultDateDebut()); setPdfDateFin(defaultDateFin());
     try {
       const base64 = await fileToBase64(file);
       const images = await pdfAllPagesAsImages(base64);
@@ -137,6 +157,7 @@ function OffresSection({ pharmacie }) {
   async function publishCataloguePages() {
     const indices = [...pdfSelected].sort((a, b) => a - b);
     if (indices.length === 0 || !pdfPages) return;
+    if (!pdfDateDebut || !pdfDateFin || pdfDateFin < pdfDateDebut) return;
     setPdfPublishing({ done: 0, total: indices.length });
     const created = [];
     for (const i of indices) {
@@ -149,7 +170,9 @@ function OffresSection({ pharmacie }) {
         // seulement sur preview, divergence de schema decouverte en testant
         // ce module) ; une chaine vide reste falsy partout cote JS (mêmes
         // garde-fous "story.title &&" / "offre.titre ||" qu'un null).
-        const payload = { type: "catalogue", titre: "", image_url: url, actif: true, pharmacie_id: pharmacie.id, created_via: "pdf" };
+        // date_debut/date_fin (07/09/2026) — même fenêtre pour tout le lot,
+        // saisie une seule fois avant publication plutôt que par page.
+        const payload = { type: "catalogue", titre: "", image_url: url, actif: true, pharmacie_id: pharmacie.id, created_via: "pdf", date_debut: pdfDateDebut, date_fin: pdfDateFin };
         const { data } = await sb.from("offres_stories").insert(payload).select().single();
         if (data) created.push(data);
       } catch (e) {
@@ -347,12 +370,29 @@ function OffresSection({ pharmacie }) {
                 );
               })}
             </div>
+
+            {/* Date de début/fin d'affichage — obligatoire, appliquée à
+                toutes les pages publiées dans ce lot (07/09/2026). */}
+            <div style={{ display:"flex", gap:8, marginBottom:4 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de début *</label>
+                <input type="date" value={pdfDateDebut} onChange={e=>setPdfDateDebut(e.target.value)}
+                  style={{ width:"100%", border:`1.5px solid ${!pdfDateDebut?"#fecaca":"#e0e7ff"}`, borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de fin *</label>
+                <input type="date" value={pdfDateFin} min={pdfDateDebut || undefined} onChange={e=>setPdfDateFin(e.target.value)}
+                  style={{ width:"100%", border:`1.5px solid ${!pdfDateFin||pdfDateFin<pdfDateDebut?"#fecaca":"#e0e7ff"}`, borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+              </div>
+            </div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginBottom:14 }}>Pré-remplies à aujourd'hui → +30 jours, modifiables avant publication.</div>
+
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={()=>{ setPdfPages(null); setPdfSelected(new Set()); }} disabled={!!pdfPublishing}
                 style={{ flex:1, padding:"10px", border:"1.5px solid #e0e7ff", borderRadius:10, background:"#fff", color:"#374151", fontWeight:600, fontSize:13, cursor:pdfPublishing?"default":"pointer", fontFamily:"inherit" }}>
                 Annuler
               </button>
-              <button onClick={publishCataloguePages} disabled={pdfSelected.size===0||!!pdfPublishing}
+              <button onClick={publishCataloguePages} disabled={pdfSelected.size===0||!pdfDateDebut||!pdfDateFin||pdfDateFin<pdfDateDebut||!!pdfPublishing}
                 style={{ flex:2, padding:"10px", border:"none", borderRadius:10, background:"#1a3a6e", color:"#fff", fontWeight:700, fontSize:13, cursor:(pdfSelected.size===0||pdfPublishing)?"default":"pointer", fontFamily:"inherit", opacity:pdfSelected.size===0?0.6:1 }}>
                 {pdfPublishing ? `Publication… ${pdfPublishing.done}/${pdfPublishing.total}` : `✅ Publier ${pdfSelected.size} page${pdfSelected.size>1?"s":""}`}
               </button>
