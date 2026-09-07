@@ -705,7 +705,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
       const { data: rappel } = await sb.from("rappels_ordonnance")
-        .select("id, pharmacie_id, patient_prenom, patient_telephone, statut, pharmacies(nom)")
+        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, statut, pharmacies(nom)")
         .eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
@@ -717,13 +717,18 @@ Deno.serve(async (req) => {
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const message = buildRappelMessage(rappel.patient_prenom, lien, pharmacieNom);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom);
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
       if (email?.trim()) {
         canal = "email_test";
-        const html = `<p>${message.split("\n")[0]}</p><p><a href="${lien}">${lien}</a></p>`;
+        // Toutes les lignes du message sauf la dernière (le lien brut, déjà
+        // repris juste après en lien cliquable) — sinon seule la première
+        // ligne apparaissait dans l'email depuis la mise en forme multi-ligne
+        // du message (07/09/2026).
+        const bodyLines = message.split("\n").slice(0, -1);
+        const html = `<p>${bodyLines.join("<br>")}</p><p><a href="${lien}">${lien}</a></p>`;
         const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
         if (!result.success) {
           return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });

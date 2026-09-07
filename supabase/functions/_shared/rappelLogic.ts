@@ -31,14 +31,17 @@ export function buildRappelLien(appUrl: string, token: string): string {
   return `${appUrl}/?r=${token}`;
 }
 
-export function buildRappelMessage(prenom: string, lien: string, pharmacieNom: string): string {
-  return `Bonjour ${prenom}, ${pharmacieNom} vous informe que votre renouvellement d'ordonnance est prévu prochainement. Cliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
+// Mise en forme (07/09/2026, retour direct) — un saut de ligne après le nom
+// du patient et après chaque phrase, plutôt qu'un seul bloc de texte, pour
+// une meilleure lisibilité sur petit écran. "M/Mme" ajouté devant le nom.
+export function buildRappelMessage(prenom: string, nom: string, lien: string, pharmacieNom: string): string {
+  return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que votre renouvellement d'ordonnance est prévu prochainement.\nCliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
 }
 
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_telephone, pharmacies(nom)")
+    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
     .lte("date_prochaine_relance", new Date().toISOString());
@@ -50,7 +53,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
       const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, lien, pharmacieNom);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom);
 
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 
