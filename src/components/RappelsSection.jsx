@@ -159,23 +159,39 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
 // branché (voir _shared/sms.ts) ; envoie désormais un vrai SMS, au tarif
 // réel, directement au patient. Simple confirmation plutôt qu'un formulaire
 // email : il n'y a plus rien à saisir, juste à confirmer la dépense.
-function EnvoyerTestModal({ rappel, onCancel, onSend, sending, error }) {
+function EnvoyerTestModal({ rappel, canal, onCancel, onSend, sending, error }) {
+  // Adresse de test mémorisée (07/09/2026) — évite de la ressaisir à chaque
+  // rappel testé pendant que le sender SMS OVH est en attente de modération.
+  const [email, setEmail] = useState(() => {
+    try { return localStorage.getItem("ordomail_test_email") || ""; } catch { return ""; }
+  });
+  const isEmail = canal === "email";
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>📱 Envoyer le SMS maintenant</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>{isEmail ? "✉️ Tester par email" : "📱 Envoyer le SMS maintenant"}</div>
         <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
-          Envoie immédiatement le lien de rappel par SMS à <strong>{rappel.patient_prenom}</strong> ({rappel.patient_telephone}), sans attendre la prochaine relance automatique. Consomme un crédit SMS réel.
+          {isEmail
+            ? <>Envoie le même message que le SMS réel, par email, pour tester le parcours patient de <strong>{rappel.patient_prenom}</strong> sans consommer de crédit SMS.</>
+            : <>Envoie immédiatement le lien de rappel par SMS à <strong>{rappel.patient_prenom}</strong> ({rappel.patient_telephone}), sans attendre la prochaine relance automatique. Consomme un crédit SMS réel.</>}
         </div>
+        {isEmail && (
+          <input type="email" value={email} placeholder="votre@email.fr" onChange={e => setEmail(e.target.value)}
+            style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 14 }} />
+        )}
         {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={sending}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
             Annuler
           </button>
-          <button type="button" onClick={onSend} disabled={sending}
-            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: sending ? "default" : "pointer", fontFamily: "inherit", opacity: sending ? 0.7 : 1 }}>
+          <button type="button" disabled={sending || (isEmail && !email.trim())}
+            onClick={() => {
+              if (isEmail) { try { localStorage.setItem("ordomail_test_email", email.trim()); } catch { /* stockage indisponible, tant pis */ } }
+              onSend(isEmail ? email.trim() : undefined);
+            }}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: sending ? "default" : "pointer", fontFamily: "inherit", opacity: sending || (isEmail && !email.trim()) ? 0.5 : 1 }}>
             {sending ? "Envoi…" : "Envoyer"}
           </button>
         </div>
@@ -310,6 +326,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [sendModalRappel, setSendModalRappel] = useState(null);
+  const [sendCanal, setSendCanal] = useState("sms"); // "sms" | "email" — voir EnvoyerTestModal
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
@@ -364,10 +381,10 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setEditingRappel(null);
   }
 
-  async function handleEnvoyer() {
+  async function handleEnvoyer(email) {
     setSending(true); setSendError("");
     try {
-      await envoyerTestRappel(sendModalRappel.id);
+      await envoyerTestRappel(sendModalRappel.id, email);
       setRappels(prev => prev.map(r => r.id === sendModalRappel.id ? { ...r, statut: "sms_envoye" } : r));
       setSendModalRappel(null);
     } catch (e) {
@@ -470,12 +487,21 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
               {/* Envoi manuel du SMS (06/09/2026) — déclenche l'envoi réel
                   sans attendre le prochain passage du cron. Masqué une fois
                   le patient déjà répondu ou le rappel terminé (voir
-                  secure-data:rappels_envoyer_test, même contrainte). */}
+                  secure-data:rappels_envoyer_test, même contrainte).
+                  Bouton email (07/09/2026) — sender SMS OVH en attente de
+                  modération : permet de continuer à tester le parcours
+                  patient de bout en bout sans crédit SMS en attendant. */}
               {(r.statut === "en_attente" || r.statut === "sms_envoye") && (
-                <button onClick={() => { setSendError(""); setSendModalRappel(r); }} disabled={busy}
-                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
-                  📱 Envoyer le SMS
-                </button>
+                <>
+                  <button onClick={() => { setSendError(""); setSendCanal("sms"); setSendModalRappel(r); }} disabled={busy}
+                    style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                    📱 Envoyer le SMS
+                  </button>
+                  <button onClick={() => { setSendError(""); setSendCanal("email"); setSendModalRappel(r); }} disabled={busy}
+                    style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                    ✉️ Tester par email
+                  </button>
+                </>
               )}
               {r.statut === "a_traiter" && (
                 <button onClick={() => setValidatingRappel(r)} disabled={busy}
@@ -496,7 +522,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
 
       {showForm && <RappelForm onCancel={() => setShowForm(false)} onCreated={handleCreated} creating={creating} setCreating={setCreating} />}
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
-      {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
+      {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} canal={sendCanal} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
     </div>

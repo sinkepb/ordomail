@@ -54,11 +54,11 @@ export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappe
   return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
 }
 
-// Déclenchement manuel du SMS (06/09/2026) — envoyait auparavant le lien par
-// email à une adresse de test (SMS pas encore branché, voir
-// supabase/functions/_shared/sms.ts) ; envoie désormais le vrai SMS au
-// patient, sans attendre le prochain passage du cron.
-export async function envoyerTestRappel(rappelId) {
+// Déclenchement manuel du SMS (06/09/2026). `email` optionnel (07/09/2026,
+// réintroduit le temps que le sender OVH "OrdoMail" sorte de modération) :
+// si fourni, envoie le même message par email à cette adresse au lieu du
+// SMS réel — voir secure-data:rappels_envoyer_test.
+export async function envoyerTestRappel(rappelId, email) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_envoyer_test', { rappelId });
+  return await callSecureData('rappels_envoyer_test', { rappelId, email });
 }

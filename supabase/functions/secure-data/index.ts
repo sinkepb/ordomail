@@ -29,6 +29,7 @@ import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
+import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
 
@@ -633,26 +634,25 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
-    // Envoi de test (04/09/2026) — en attendant un vrai prestataire SMS
-    // (_shared/sms.ts, mock), permet au pharmacien de déclencher
-    // immédiatement l'envoi du lien de rappel PAR EMAIL (à une adresse de
-    // son choix, typiquement la sienne) pour tester le parcours patient de
-    // bout en bout sans attendre J+21 ni le scan cron. Même effet de bord
-    // que le cron réel (rotation du token, passage à "sms_envoye") — voir
-    // _shared/rappelLogic.ts pour le pendant SMS/production.
-    // Déclenchement manuel du SMS (06/09/2026) — envoyait auparavant le lien
-    // par email à une adresse de test, le temps que le SMS réel n'existe pas
-    // (voir _shared/sms.ts). Le SMS étant désormais réellement branché
-    // (OVHcloud SMS), ce bouton envoie maintenant le vrai SMS au patient,
-    // sans attendre le prochain passage du cron — utile pour relancer un
-    // patient sans repasser par le cycle J+21 complet. Reste appelé
-    // "rappels_envoyer_test" côté ressource pour limiter le diff, mais
-    // n'a plus rien d'un test : c'est un envoi réel, au tarif SMS réel.
+    // Déclenchement manuel (04/09/2026, devenu envoi SMS réel le 06/09/2026 —
+    // voir historique git pour le détail des deux évolutions). Ce bouton
+    // envoie normalement le vrai SMS au patient, sans attendre le prochain
+    // passage du cron — utile pour relancer un patient sans repasser par le
+    // cycle J+21 complet.
+    //
+    // Canal EMAIL réintroduit le 07/09/2026 : le sender SMS "OrdoMail" est en
+    // attente de modération OVH (waitingValidation), donc le SMS réel ne part
+    // pas encore. Si `email` est fourni dans params, on envoie le même
+    // message par email (Postmark, _shared/email.ts) à cette adresse au lieu
+    // du SMS, pour continuer à tester le parcours patient de bout en bout en
+    // attendant la validation OVH. Mêmes effets de bord dans les deux cas
+    // (rotation du token, passage à "sms_envoye") — voir _shared/rappelLogic.ts
+    // pour le pendant automatique (cron quotidien).
     if (resource === "rappels_envoyer_test") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId } = params || {};
+      const { rappelId, email } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -670,18 +670,32 @@ Deno.serve(async (req) => {
       const lien = buildRappelLien(appUrl, newToken);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
       const message = buildRappelMessage(rappel.patient_prenom, lien, pharmacieNom);
-      const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
-      if (!result.success) {
-        return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi du SMS" }), { status: 502, headers: CORS });
+
+      let mocked = false;
+      let canal: "sms" | "email_test" = "sms";
+      if (email?.trim()) {
+        canal = "email_test";
+        const html = `<p>${message.split("\n")[0]}</p><p><a href="${lien}">${lien}</a></p>`;
+        const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
+        if (!result.success) {
+          return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
+        }
+      } else {
+        const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
+        if (!result.success) {
+          return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi du SMS" }), { status: 502, headers: CORS });
+        }
+        mocked = result.mocked;
       }
+
       await sb.from("rappels_ordonnance").update({
         statut: "sms_envoye",
         token: newToken,
         date_dernier_sms_envoye: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked: result.mocked, manuel: true } });
-      return new Response(JSON.stringify({ data: { success: true, mocked: result.mocked } }), { headers: CORS });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(canal === "email_test" ? { to: email.trim() } : {}) } });
+      return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
