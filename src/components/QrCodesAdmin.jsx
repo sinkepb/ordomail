@@ -42,6 +42,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const stickerCanvasRef = useRef(null);
   const [viewTab, setViewTab] = useState("sticker");
   const [posterHtml, setPosterHtml] = useState(null);
+  const [posterHtmlA3, setPosterHtmlA3] = useState(null);
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
 
@@ -168,11 +169,15 @@ function QrCodesAdmin({ adminToken } = {}) {
 
   useEffect(() => {
     if (!viewingQr || viewTab !== "affiche") return;
-    setPosterLoading(true); setPosterErr(""); setPosterHtml(null);
-    generatePosterHTML({
-      url: `${qrBaseUrl}/?qr=${viewingQr.token}`,
-      pharmacieName: viewingQr.pharmacies?.nom,
-    }).then(setPosterHtml).catch((e) => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
+    setPosterLoading(true); setPosterErr(""); setPosterHtml(null); setPosterHtmlA3(null);
+    const params = { url: `${qrBaseUrl}/?qr=${viewingQr.token}`, pharmacieName: viewingQr.pharmacies?.nom };
+    // Les deux formats sont générés d'avance, comme l'A4 déjà en place — même
+    // raison (voir handleDownloadPoster) : le bouton A3 doit pouvoir ouvrir
+    // window.open() dans le même tick que le clic, sans regénérer le HTML.
+    Promise.all([
+      generatePosterHTML({ ...params, format: "A4" }).then(setPosterHtml),
+      generatePosterHTML({ ...params, format: "A3" }).then(setPosterHtmlA3),
+    ]).catch((e) => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewingQr, viewTab]);
 
@@ -184,6 +189,13 @@ function QrCodesAdmin({ adminToken } = {}) {
     if (!viewingQr || !posterHtml) return;
     setPosterErr("");
     const win = openPosterPDFFromHTML(posterHtml);
+    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+  }
+
+  function handleDownloadPosterA3() {
+    if (!viewingQr || !posterHtmlA3) return;
+    setPosterErr("");
+    const win = openPosterPDFFromHTML(posterHtmlA3);
     if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
   }
 
@@ -397,7 +409,7 @@ function QrCodesAdmin({ adminToken } = {}) {
               ) : viewTab === "affiche" ? (
                 <>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-                    Affiche A4 — à imprimer ou enregistrer en PDF
+                    Affiche — à imprimer ou enregistrer en PDF (A4 ou A3)
                   </div>
                   <div style={{ width: 222, height: 314, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
@@ -406,10 +418,16 @@ function QrCodesAdmin({ adminToken } = {}) {
                         style={{ width: 793, height: 1123, border: "none", transform: "scale(0.28)", transformOrigin: "top left" }} />
                     )}
                   </div>
-                  <button onClick={handleDownloadPoster} disabled={!posterHtml}
-                    style={{ width: "100%", padding: "10px 20px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !posterHtml ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtml ? 0.6 : 1 }}>
-                    {posterLoading ? "Préparation…" : "🖨️ Imprimer / Enregistrer en PDF (A4)"}
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={handleDownloadPoster} disabled={!posterHtml}
+                      style={{ flex: 1, padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !posterHtml ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtml ? 0.6 : 1 }}>
+                      {posterLoading ? "Préparation…" : "🖨️ Enregistrer en PDF (A4)"}
+                    </button>
+                    <button onClick={handleDownloadPosterA3} disabled={!posterHtmlA3}
+                      style={{ flex: 1, padding: "10px 16px", border: "1px solid #3b82f6", borderRadius: 10, background: "transparent", color: "#3b82f6", fontWeight: 800, fontSize: 13, cursor: !posterHtmlA3 ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtmlA3 ? 0.6 : 1 }}>
+                      {posterLoading ? "Préparation…" : "🖨️ Enregistrer en PDF (A3)"}
+                    </button>
+                  </div>
                   {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
                 </>
               ) : (

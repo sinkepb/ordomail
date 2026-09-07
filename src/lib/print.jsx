@@ -317,7 +317,13 @@ async function openQrSheetPDF(qrCodes, batchLabel) {
 // Toutes les dimensions en px reprennent celles du fichier source (conçu
 // pour tenir sur une page A4 de 793×1123px à 96dpi) — ne pas les modifier
 // sans revérifier que le contenu tient toujours sur une seule page.
-async function generatePosterHTML({ url, pharmacieName }) {
+// format "A4" (défaut, inchangé) ou "A3" (07/09/2026) — l'affiche A3 réutilise
+// exactement le même contenu (793×1123px, cf. commentaire ci-dessus : ne pas
+// retoucher ces dimensions) simplement agrandi ×√2 dans une page A3, au lieu
+// de redessiner chaque valeur en px à une nouvelle échelle. A3 = A4 × √2 dans
+// les deux dimensions par définition (série ISO 216), donc le rendu est
+// identique à l'A4, juste plus grand — aucun risque de débordement à revérifier.
+async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
   const mod = await import("qrcode");
   const QR = mod.default || mod;
   const qrSvg = await QR.toString(url, {
@@ -327,12 +333,16 @@ async function generatePosterHTML({ url, pharmacieName }) {
     color: { dark: "#0B1F16", light: "#ffffff" },
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
+  const isA3 = format === "A3";
+  const scale = isA3 ? Math.SQRT2 : 1;
+  const pageW = isA3 ? 1122 : 793;
+  const pageH = isA3 ? 1588 : 1123;
 
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Affiche A4 — Scannez pour envoyer votre ordonnance</title>
+<title>Affiche ${format} — Scannez pour envoyer votre ordonnance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -344,13 +354,20 @@ async function generatePosterHTML({ url, pharmacieName }) {
      pas un bug de mise en page. */
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { margin: 0; padding: 0; }
-  @page { size: A4; margin: 0; }
+  @page { size: ${format}; margin: 0; }
   @media print { .no-print { display: none !important; } }
   body { background: #ccc; font-family: 'Manrope', sans-serif; }
+  .page {
+    width: ${pageW}px; height: ${pageH}px;
+    margin: 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
   .sheet {
     position: relative;
     width: 793px; height: 1123px;
-    margin: 0 auto;
+    flex: none;
+    transform: scale(${scale});
     background: #F5F8F5;
     color: #12241C;
     overflow: hidden;
@@ -362,8 +379,9 @@ async function generatePosterHTML({ url, pharmacieName }) {
 </head>
 <body>
 
-<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF (${format})</button>
 
+<div class="page">
 <div class="sheet">
   <div style="position:absolute;inset:0;background:radial-gradient(120% 34% at 50% -6%, rgba(22,192,121,0.16), transparent 62%), radial-gradient(110% 26% at 50% 106%, rgba(11,122,84,0.12), transparent 62%);pointer-events:none;"></div>
   <div style="position:absolute;inset:20px;border:2px solid rgba(11,122,84,0.16);border-radius:22px;pointer-events:none;"></div>
@@ -414,6 +432,7 @@ async function generatePosterHTML({ url, pharmacieName }) {
       <div style="font-family:'Manrope';font-weight:700;font-size:19px;line-height:1.2;color:#12241C;">Attendez votre tour</div>
     </div>
   </div>
+</div>
 </div>
 
 </body>
