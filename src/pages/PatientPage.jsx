@@ -540,7 +540,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           .from("stories_content")
           .select("*")
           .eq("actif", true);
-        let eligible = contents || [];
+        // Fenêtre d'affichage optionnelle (07/09/2026, date_debut/date_fin) —
+        // filtrée ici plutôt qu'en RLS/SQL : même endroit que le filtre
+        // "désactivée par cette pharmacie" juste en dessous, pas de policy
+        // supplémentaire nécessaire. NULL de part et d'autre = pas de borne.
+        const todayKey = new Date().toISOString().slice(0, 10);
+        let eligible = (contents || []).filter(s =>
+          (!s.date_debut || s.date_debut <= todayKey) && (!s.date_fin || s.date_fin >= todayKey)
+        );
         // Exclure les stories que CETTE pharmacie a désactivées — absence de ligne
         // de sélection = story affichée par défaut (comportement inchangé pour les
         // pharmacies qui n'ont jamais utilisé ce réglage).

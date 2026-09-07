@@ -597,6 +597,54 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
+    // Réactiver un rappel terminé (07/09/2026) — repart sur le même
+    // patient/téléphone/consentement déjà recueilli plutôt que de forcer la
+    // création d'un nouveau rappel depuis zéro. Même schéma de date par
+    // défaut que rappels_traiter (J+21, ou l'écart croissant si le dernier
+    // choix du patient était "rien"). Seul un rappel "termine" peut être
+    // réactivé — les autres statuts ont déjà leur propre chemin de relance.
+    if (resource === "rappels_reactiver") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, dateRappel } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (existing.statut !== "termine") {
+        return new Response(JSON.stringify({ error: "Seul un rappel terminé peut être réactivé" }), { status: 409, headers: CORS });
+      }
+      let dateProchaineRelance: string;
+      if (dateRappel) {
+        const parsed = new Date(dateRappel);
+        if (Number.isNaN(parsed.getTime())) {
+          return new Response(JSON.stringify({ error: "Date de rappel invalide" }), { status: 400, headers: CORS });
+        }
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (parsed < today) {
+          return new Response(JSON.stringify({ error: "La date de rappel ne peut pas être dans le passé" }), { status: 400, headers: CORS });
+        }
+        dateProchaineRelance = parsed.toISOString();
+      } else {
+        const joursOffset = existing.choix_patient === "rien" ? existing.cycle_numero * 31 + 21 : 21;
+        dateProchaineRelance = new Date(Date.now() + joursOffset * 86400000).toISOString();
+      }
+      const { error: reactiverError } = await sb.from("rappels_ordonnance").update({
+        statut: "en_attente",
+        choix_patient: null,
+        cycle_numero: existing.cycle_numero + 1,
+        date_prochaine_relance: dateProchaineRelance,
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (reactiverError) throw new Error(reactiverError.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "reactive" });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     // Modifier un rappel existant (04/09/2026) — nom/prénom/téléphone/
     // commentaire toujours modifiables ; la date de relance ne l'est que
     // tant que le rappel est "en_attente" (au-delà, le cycle est déjà en

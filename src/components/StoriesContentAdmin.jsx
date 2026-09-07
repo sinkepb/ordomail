@@ -34,6 +34,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
   const [form, setForm]         = useState({
     type: "info", titre: "", contenu: "", emoji: "💡",
     question: "", reponses: "", explication: "", actif: true, image_url: "",
+    date_debut: "", date_fin: "",
   });
   const [saving, setSaving]     = useState(false);
   const [search, setSearch]     = useState("");
@@ -76,7 +77,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
 
   function openNew() {
     setEditing(null);
-    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true, image_url:"" });
+    setForm({ type:"info", titre:"", contenu:"", emoji:"💡", question:"", reponses:"", explication:"", actif:true, image_url:"", date_debut:"", date_fin:"" });
     setShowForm(true);
   }
 
@@ -87,12 +88,17 @@ function StoriesContentAdmin({ adminToken } = {}) {
       emoji: item.emoji || "💡", question: item.question || "",
       reponses: item.reponses || "", explication: item.explication || "",
       actif: item.actif, image_url: item.image_url || "",
+      date_debut: item.date_debut || "", date_fin: item.date_fin || "",
     });
     setShowForm(true);
   }
 
   async function saveItem() {
     if (!form.titre.trim()) return;
+    if (form.date_debut && form.date_fin && form.date_fin < form.date_debut) {
+      setError("La date de fin doit être postérieure à la date de début.");
+      return;
+    }
     setSaving(true);
     setError("");
     const payload = {
@@ -100,6 +106,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
       emoji: form.emoji, question: form.question,
       reponses: form.reponses, explication: form.explication, actif: form.actif,
       image_url: form.image_url || null,
+      date_debut: form.date_debut || null, date_fin: form.date_fin || null,
     };
     try {
       if (editing) {
@@ -234,6 +241,23 @@ function StoriesContentAdmin({ adminToken } = {}) {
             </div>
           )}
 
+          {/* Fenêtre d'affichage (07/09/2026) — optionnelle, programme une
+              story à l'avance (ex. campagne saisonnière) sans dépendre d'une
+              activation/désactivation manuelle à la bonne date. */}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de début d'affichage (optionnel)</label>
+              <input type="date" value={form.date_debut} onChange={e=>setForm(f=>({...f,date_debut:e.target.value}))}
+                style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#64748b", marginBottom:4 }}>Date de fin d'affichage (optionnel)</label>
+              <input type="date" value={form.date_fin} min={form.date_debut || undefined} onChange={e=>setForm(f=>({...f,date_fin:e.target.value}))}
+                style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }}/>
+            </div>
+          </div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:14 }}>Laissez vide pour un affichage sans limite de date, tant que "Actif" reste coché.</div>
+
           {/* Actif */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
             <input type="checkbox" checked={form.actif} onChange={e=>setForm(f=>({...f,actif:e.target.checked}))} id="actif-check"/>
@@ -295,6 +319,11 @@ function StoriesContentAdmin({ adminToken } = {}) {
                 <span style={{ fontWeight:700, fontSize:14, color:"#1a1a1a" }}>{item.titre}</span>
                 <span style={{ fontSize:10, background:typeInfo.color+"22", color:typeInfo.color, borderRadius:20, padding:"1px 8px", fontWeight:700 }}>{typeInfo.label}</span>
                 {!item.actif && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:20, padding:"1px 8px", fontWeight:700 }}>Inactif</span>}
+                {(item.date_debut || item.date_fin) && (
+                  <span style={{ fontSize:10, background:"#fef9c3", color:"#854d0e", borderRadius:20, padding:"1px 8px", fontWeight:700 }}>
+                    📅 {item.date_debut ? new Date(item.date_debut).toLocaleDateString("fr-FR") : "…"} → {item.date_fin ? new Date(item.date_fin).toLocaleDateString("fr-FR") : "…"}
+                  </span>
+                )}
               </div>
               {item.contenu && <div style={{ fontSize:12, color:"#64748b", lineHeight:1.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.contenu}</div>}
               {item.question && <div style={{ fontSize:12, color:"#6d28d9", marginTop:2 }}>❓ {item.question}</div>}

@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, createRappel, traiterRappel, terminerRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
+import { fetchRappels, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -313,6 +313,55 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
+// Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
+// patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
+// à recréer un rappel depuis zéro. Même choix de date par défaut que la
+// validation (J+21).
+function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
+  const [dateRappel, setDateRappel] = useState(defaultDateRappel);
+  const [error, setError] = useState("");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!dateRappel || dateRappel < todayDateInputValue()) {
+      setError("La date de rappel ne peut pas être dans le passé.");
+      return;
+    }
+    onConfirm(dateRappel);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🔄 Réactiver ce rappel ?</div>
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>
+          Reprend le suivi de <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> sans recréer un rappel — mêmes coordonnées, nouveau cycle.
+        </div>
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de rappel</label>
+        <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Pré-remplie à J+21 — modifiable si besoin.</div>
+
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button type="submit" disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? "Réactivation…" : "Réactiver"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function RappelsSection({ pharmacie, onCountATraiter }) {
   const [rappels, setRappels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -331,6 +380,9 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [sendError, setSendError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
+  const [reactivatingRappel, setReactivatingRappel] = useState(null);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("recent"); // "recent" | "alpha" | "date_rappel"
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -421,14 +473,49 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setBusyId(null);
   }
 
+  async function handleReactiverConfirm(dateRappel) {
+    const rappel = reactivatingRappel;
+    setBusyId(rappel.id);
+    try {
+      await reactiverRappel(rappel.id, dateRappel);
+      setRappels(prev => prev.map(r => r.id === rappel.id
+        ? { ...r, statut: "en_attente", choix_patient: null, cycle_numero: (r.cycle_numero || 1) + 1, date_prochaine_relance: new Date(dateRappel).toISOString() }
+        : r));
+      setReactivatingRappel(null);
+    } catch (e) {
+      console.error("[handleReactiverConfirm]", e.message);
+    }
+    setBusyId(null);
+  }
+
   // "En attente" inclut aussi "sms_envoye" (04/09/2026, retour direct) — le
   // rappel disparaissait silencieusement de cet onglet dès qu'un SMS (ou un
   // envoi de test) partait, alors que rien ne distingue les deux statuts
   // pour le pharmacien (mêmes actions disponibles sur la ligne : Modifier,
   // Envoyer, Fin de traitement) — seul le badge de statut affiché diffère.
-  const filtered = filtre === "tous" ? rappels
+  const parStatut = filtre === "tous" ? rappels
     : filtre === "en_attente" ? rappels.filter(r => r.statut === "en_attente" || r.statut === "sms_envoye")
     : rappels.filter(r => r.statut === filtre);
+  // Recherche par nom (07/09/2026) — nom ET prénom, insensible à la casse et
+  // aux accents (normalize) pour retrouver "Dupont" en tapant "dupond" est
+  // hors scope ici, mais "depont"/"Depont" doit matcher "Dépont".
+  const searchNorm = search.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const parRecherche = !searchNorm ? parStatut : parStatut.filter(r => {
+    const nomComplet = `${r.patient_prenom || ""} ${r.patient_nom || ""}`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    return nomComplet.includes(searchNorm);
+  });
+  const filtered = [...parRecherche].sort((a, b) => {
+    if (sortBy === "alpha") {
+      return `${a.patient_nom || ""}${a.patient_prenom || ""}`.localeCompare(`${b.patient_nom || ""}${b.patient_prenom || ""}`, "fr");
+    }
+    if (sortBy === "date_rappel") {
+      // Sans date de rappel (ex. rappels terminés) : renvoyés en dernier.
+      if (!a.date_prochaine_relance) return !b.date_prochaine_relance ? 0 : 1;
+      if (!b.date_prochaine_relance) return -1;
+      return new Date(a.date_prochaine_relance) - new Date(b.date_prochaine_relance);
+    }
+    return new Date(b.created_at) - new Date(a.created_at); // "recent" (défaut historique)
+  });
   const countATraiter = rappels.filter(r => r.statut === "a_traiter").length;
 
   return (
@@ -446,13 +533,25 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {FILTRES.map(([k, label]) => (
           <button key={k} onClick={() => setFiltre(k)}
             style={{ padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${filtre === k ? "#1a3a6e" : "#e2e8f0"}`, background: filtre === k ? "#1a3a6e" : "#fff", color: filtre === k ? "#fff" : "#64748b", fontWeight: filtre === k ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
             {label}
           </button>
         ))}
+      </div>
+
+      {/* Recherche par nom + tri (07/09/2026) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un patient…"
+          style={{ flex: "1 1 220px", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: "inherit", background: "#fff", color: "#374151", cursor: "pointer" }}>
+          <option value="recent">Plus récents d'abord</option>
+          <option value="alpha">Ordre alphabétique</option>
+          <option value="date_rappel">Date de rappel</option>
+        </select>
       </div>
 
       {loading && <div style={{ color: "#94a3b8", fontSize: 13 }}>Chargement…</div>}
@@ -515,6 +614,14 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                   Fin de traitement
                 </button>
               )}
+              {/* Réactivation (07/09/2026) — reprendre un rappel terminé sans
+                  en recréer un nouveau depuis zéro. */}
+              {r.statut === "termine" && (
+                <button onClick={() => setReactivatingRappel(r)} disabled={busy}
+                  style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                  🔄 Réactiver
+                </button>
+              )}
             </div>
           );
         })}
@@ -525,6 +632,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} canal={sendCanal} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
+      {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
     </div>
   );
 }
