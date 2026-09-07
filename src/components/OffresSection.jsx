@@ -299,12 +299,24 @@ function OffresSection({ pharmacie }) {
       {mobileQRError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:14 }}>⚠️ {mobileQRError}</div>}
       {pdfError && <div style={{ fontSize:12, color:"#dc2626", marginBottom:14 }}>⚠️ {pdfError}</div>}
 
-      {/* Sélection des pages du catalogue PDF à publier en story (05/09/2026) */}
-      {pdfPages && (
+      {/* Sélection des pages du catalogue PDF à publier en story (05/09/2026).
+          Popup affichée dès le choix du fichier, pas seulement une fois le PDF
+          traité (07/09/2026, retour direct) : rendre chaque page en image côté
+          client peut prendre plusieurs secondes sur un catalogue de plusieurs
+          pages, et le seul indice visible était un "…" discret sur le bouton —
+          l'utilisateur ne savait pas si le clic avait été pris en compte. */}
+      {(pdfPages || pdfProcessing) && (
         <div style={{ position:"fixed", inset:0, background:"rgba(15,23,47,0.6)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
-          onClick={()=>{ if(!pdfPublishing) { setPdfPages(null); setPdfSelected(new Set()); } }}>
+          onClick={()=>{ if(!pdfPublishing && !pdfProcessing) { setPdfPages(null); setPdfSelected(new Set()); } }}>
           <div onClick={e=>e.stopPropagation()}
             style={{ background:"#fff", borderRadius:16, padding:22, width:"100%", maxWidth:560, maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 12px 40px rgba(0,0,0,0.25)" }}>
+            {pdfProcessing ? (
+              <div style={{ padding:"40px 10px", textAlign:"center" }}>
+                <div style={{ fontSize:32, marginBottom:14 }}>⏳</div>
+                <div style={{ fontWeight:800, fontSize:15, marginBottom:6 }}>Création des offres en cours…</div>
+                <div style={{ fontSize:12.5, color:"#64748b" }}>Lecture du PDF et préparation des pages, un instant.</div>
+              </div>
+            ) : (<>
             <div style={{ fontWeight:800, fontSize:15, marginBottom:4 }}>📄 Choisissez les pages à publier</div>
             <div style={{ fontSize:12, color:"#64748b", marginBottom:14 }}>
               {pdfPages.length} page{pdfPages.length>1?"s":""} détectée{pdfPages.length>1?"s":""} — chaque page cochée devient une story image plein écran.
@@ -343,6 +355,7 @@ function OffresSection({ pharmacie }) {
                 {pdfPublishing ? `Publication… ${pdfPublishing.done}/${pdfPublishing.total}` : `✅ Publier ${pdfSelected.size} page${pdfSelected.size>1?"s":""}`}
               </button>
             </div>
+            </>)}
           </div>
         </div>
       )}
