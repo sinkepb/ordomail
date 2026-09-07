@@ -170,7 +170,7 @@ function EnvoyerTestModal({ rappel, canal, onCancel, onSend, sending, error }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>{isEmail ? "✉️ Tester par email" : "📱 Envoyer le SMS maintenant"}</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>{isEmail ? "✉️ Envoyer l'email" : "📱 Envoyer le SMS maintenant"}</div>
         <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
           {isEmail
             ? <>Envoie le même message que le SMS réel, par email, pour tester le parcours patient de <strong>{rappel.patient_prenom}</strong> sans consommer de crédit SMS.</>
@@ -499,7 +499,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                   </button>
                   <button onClick={() => { setSendError(""); setSendCanal("email"); setSendModalRappel(r); }} disabled={busy}
                     style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
-                    ✉️ Tester par email
+                    ✉️ Envoyer l'email
                   </button>
                 </>
               )}
