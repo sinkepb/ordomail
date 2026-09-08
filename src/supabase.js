@@ -91,6 +91,7 @@ export {
 export {
   fetchRappels,
   fetchRappelJournal,
+  fetchRappelsStats,
   createRappel,
   traiterRappel,
   terminerRappel,

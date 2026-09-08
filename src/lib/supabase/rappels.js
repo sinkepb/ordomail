@@ -30,6 +30,17 @@ export async function fetchRappelJournal(rappelId) {
   }
 }
 
+// Statistiques d'efficacité côté pharmacien (08/09/2026) — voir secure-data:rappels_stats.
+export async function fetchRappelsStats() {
+  if (IS_DEMO) return null;
+  try {
+    return await callSecureData('rappels_stats', {});
+  } catch (e) {
+    console.error('[fetchRappelsStats]', e.message);
+    return null;
+  }
+}
+
 export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement }) {
   if (IS_DEMO) {
     const db = getDB();

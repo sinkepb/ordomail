@@ -10,6 +10,16 @@ const CHOIX = [
   { key: "partiel", emoji: "🔶", label: "Renouvellement partiel", sub: "Nous vous contacterons pour préciser" },
 ];
 
+// Créneau de retrait (08/09/2026) — demandé uniquement si le patient vient
+// chercher quelque chose (pas pour "rien"). Indication large plutôt qu'un
+// horaire précis — voir migration 20260908_rappels_creneau_retrait.sql.
+const CRENEAUX = [
+  { key: "ce_matin", emoji: "🌅", label: "Ce matin" },
+  { key: "cet_apres_midi", emoji: "☀️", label: "Cet après-midi" },
+  { key: "demain_matin", emoji: "🌤️", label: "Demain matin" },
+  { key: "demain_apres_midi", emoji: "🌇", label: "Demain après-midi" },
+];
+
 async function callResolveRappel(method, params) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -27,9 +37,10 @@ async function callResolveRappel(method, params) {
 }
 
 function RappelChoixPage({ token }) {
-  const [state, setState] = useState("chargement"); // chargement | pret | envoi | merci | erreur
+  const [state, setState] = useState("chargement"); // chargement | pret | creneau | envoi | merci | erreur
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
+  const [choixEnCours, setChoixEnCours] = useState(null);
 
   useEffect(() => {
     if (!token) { setState("erreur"); setError("Lien invalide."); return; }
@@ -38,16 +49,25 @@ function RappelChoixPage({ token }) {
       .catch(e => { setState("erreur"); setError(e.message); });
   }, [token]);
 
-  const choisir = useCallback(async (choix) => {
+  const envoyer = useCallback(async (choix, creneau) => {
     setState("envoi");
     try {
-      await callResolveRappel("POST", { token, choix });
+      await callResolveRappel("POST", { token, choix, creneau });
       setState("merci");
     } catch (e) {
       setState("erreur");
       setError(e.message);
     }
   }, [token]);
+
+  // "Ne rien prendre" n'a pas de retrait à planifier — envoi direct. Les deux
+  // autres choix passent par une étape supplémentaire pour indiquer un
+  // créneau de passage (08/09/2026).
+  const choisir = useCallback((choix) => {
+    if (choix === "rien") { envoyer(choix, null); return; }
+    setChoixEnCours(choix);
+    setState("creneau");
+  }, [envoyer]);
 
   return (
     <div style={{ minHeight: "100vh", width: "100%", background: "linear-gradient(160deg, #1a3a6e 0%, #3b5fa4 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", textAlign: "center", boxSizing: "border-box" }}>
@@ -62,7 +82,7 @@ function RappelChoixPage({ token }) {
         </div>
       )}
 
-      {(state === "pret" || state === "envoi") && info && (
+      {state === "pret" && info && (
         <div style={{ width: "100%", maxWidth: 340 }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.3 }}>
             Bonjour {info.patientPrenom} 👋
@@ -72,13 +92,12 @@ function RappelChoixPage({ token }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {CHOIX.map(c => (
-              <button key={c.key} onClick={() => choisir(c.key)} disabled={state === "envoi"}
+              <button key={c.key} onClick={() => choisir(c.key)}
                 style={{
                   padding: "14px 18px", borderRadius: 14, border: "2px solid rgba(255,255,255,0.4)",
                   background: "rgba(255,255,255,0.12)", color: "#fff", fontWeight: 800, fontSize: 15,
-                  cursor: state === "envoi" ? "default" : "pointer", fontFamily: "inherit",
+                  cursor: "pointer", fontFamily: "inherit",
                   display: "flex", alignItems: "center", gap: 10, textAlign: "left",
-                  opacity: state === "envoi" ? 0.6 : 1,
                 }}>
                 <span style={{ fontSize: 20 }}>{c.emoji}</span>
                 <span>
@@ -90,6 +109,37 @@ function RappelChoixPage({ token }) {
           </div>
         </div>
       )}
+
+      {state === "creneau" && (
+        <div style={{ width: "100%", maxWidth: 340 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.3 }}>
+            Quand pouvez-vous passer ? 🕐
+          </div>
+          <div style={{ fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, marginBottom: 28 }}>
+            Ça aide votre pharmacien à préparer votre commande à l'avance.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {CRENEAUX.map(c => (
+              <button key={c.key} onClick={() => envoyer(choixEnCours, c.key)}
+                style={{
+                  padding: "14px 18px", borderRadius: 14, border: "2px solid rgba(255,255,255,0.4)",
+                  background: "rgba(255,255,255,0.12)", color: "#fff", fontWeight: 800, fontSize: 15,
+                  cursor: "pointer", fontFamily: "inherit",
+                  display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                }}>
+                <span style={{ fontSize: 20 }}>{c.emoji}</span>
+                <span>{c.label}</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => envoyer(choixEnCours, null)}
+            style={{ marginTop: 16, background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+            Je ne sais pas encore
+          </button>
+        </div>
+      )}
+
+      {state === "envoi" && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 15 }}>Envoi…</div>}
 
       {state === "merci" && (
         <div style={{ color: "#fff" }}>

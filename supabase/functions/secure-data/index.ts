@@ -524,6 +524,66 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    // Statistiques d'efficacité des rappels, côté pharmacien (08/09/2026) —
+    // même logique de calcul que admin_rappels_metrics (secure-data-admin,
+    // isSmsReel exclut les envois de test par email) mais scopée à UNE
+    // pharmacie, et avec deux métriques que l'admin n'a pas : le taux de
+    // RENOUVELLEMENT réel (tout_renouveler + partiel, pas juste "a répondu")
+    // et le délai de réponse moyen — plus parlantes pour un titulaire que le
+    // simple taux de réponse.
+    if (resource === "rappels_stats") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const since90 = new Date(Date.now() - 90 * 86400000).toISOString();
+      const { data: rappels } = await sb.from("rappels_ordonnance").select("id, statut").eq("pharmacie_id", pharmacieId);
+      const rappelIds = (rappels || []).map((r) => r.id);
+      const { data: evenements } = rappelIds.length
+        ? await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappelIds).gte("created_at", since90)
+        : { data: [] as any[] };
+
+      const parRappel = new Map<string, any[]>();
+      for (const e of evenements || []) {
+        if (!parRappel.has(e.rappel_id)) parRappel.set(e.rappel_id, []);
+        parRappel.get(e.rappel_id)!.push(e);
+      }
+
+      let smsEnvoyes = 0, reponses = 0, echecs = 0, sommeDelaisMs = 0, nbDelais = 0;
+      const choixCounts = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
+      for (const evts of parRappel.values()) {
+        evts.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        let dernierEnvoiAt: string | null = null;
+        for (const e of evts) {
+          if (e.type === "sms_envoye") {
+            if (e.meta?.canal !== "email_test") smsEnvoyes++;
+            dernierEnvoiAt = e.created_at;
+          }
+          if (e.type === "sms_echec") echecs++;
+          if (e.type === "reponse_patient") {
+            reponses++;
+            if (e.meta?.choix && choixCounts[e.meta.choix] !== undefined) choixCounts[e.meta.choix]++;
+            if (dernierEnvoiAt) {
+              sommeDelaisMs += new Date(e.created_at).getTime() - new Date(dernierEnvoiAt).getTime();
+              nbDelais++;
+            }
+          }
+        }
+      }
+
+      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter").length;
+      const data = {
+        rappelsActifs,
+        rappelsTotal: (rappels || []).length,
+        smsEnvoyes90j: smsEnvoyes,
+        echecs90j: echecs,
+        tauxReponse: smsEnvoyes > 0 ? Math.round((reponses / smsEnvoyes) * 100) : 0,
+        tauxRenouvellement: smsEnvoyes > 0 ? Math.round(((choixCounts.tout_renouveler + choixCounts.partiel) / smsEnvoyes) * 100) : 0,
+        delaiReponseMoyenHeures: nbDelais > 0 ? Math.round((sommeDelaisMs / nbDelais / 3600000) * 10) / 10 : null,
+        choixCounts,
+      };
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     // Historique détaillé d'un rappel (07/09/2026) — rappels_evenements
     // journalise déjà tout (cree/sms_envoye/sms_echec/reponse_patient/traite/
     // termine/reactive, voir les actions ci-dessous) mais la table n'accorde

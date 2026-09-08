@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -15,6 +15,15 @@ const CHOIX_LABEL = {
   tout_renouveler: "✅ Tout renouveler",
   rien: "🚫 Ne rien prendre",
   partiel: "🔶 Renouvellement partiel",
+};
+
+// Créneau de retrait choisi par le patient à la confirmation (08/09/2026) —
+// voir RappelChoixPage.jsx et la migration 20260908_rappels_creneau_retrait.sql.
+const CRENEAU_LABEL = {
+  ce_matin: "🌅 Ce matin",
+  cet_apres_midi: "☀️ Cet après-midi",
+  demain_matin: "🌤️ Demain matin",
+  demain_apres_midi: "🌇 Demain après-midi",
 };
 
 // Historique détaillé d'un rappel (07/09/2026) — un événement par ligne de
@@ -413,6 +422,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [journalOpenId, setJournalOpenId] = useState(null);
   const [journal, setJournal] = useState([]);
   const [journalLoading, setJournalLoading] = useState(false);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -423,6 +433,10 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
       setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter" : "en_attente");
       setLoading(false);
     });
+    // Statistiques d'efficacité (08/09/2026) — chargées une fois au montage,
+    // pas de temps réel ici (contrairement à la liste) : ce sont des agrégats
+    // sur 90 jours, une fraîcheur à la minute près n'apporte rien.
+    fetchRappelsStats().then(setStats);
   }, [pharmacie?.id]);
 
   // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
@@ -572,6 +586,29 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
         </button>
       </div>
 
+      {/* Statistiques d'efficacité (08/09/2026) — silencieux si absent (démo,
+          échec réseau) plutôt qu'un bloc d'erreur pour un simple indicateur. */}
+      {stats && stats.smsEnvoyes90j > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8, marginBottom: 16 }}>
+          <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#15803d" }}>{stats.tauxRenouvellement}%</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Renouvellement réel · 90j</div>
+          </div>
+          <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#1d4ed8" }}>{stats.tauxReponse}%</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Taux de réponse · 90j</div>
+          </div>
+          <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#7e22ce" }}>{stats.delaiReponseMoyenHeures != null ? `${stats.delaiReponseMoyenHeures}h` : "—"}</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Délai de réponse moyen</div>
+          </div>
+          <div style={{ background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#334155" }}>{stats.rappelsActifs}</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Rappels actifs</div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {FILTRES.map(([k, label]) => (
           <button key={k} onClick={() => setFiltre(k)}
@@ -616,6 +653,9 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
                 {r.statut === "a_traiter" && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
+                )}
+                {r.statut === "a_traiter" && r.creneau_retrait && (
+                  <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>{CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
                 )}
               </div>
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>

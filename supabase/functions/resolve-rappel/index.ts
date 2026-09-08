@@ -5,9 +5,11 @@
 // GET  ?token=<token>  → identité minimale pour personnaliser l'écran (prénom
 //                        du patient, nom de la pharmacie) — jamais le nom de
 //                        famille ni le téléphone à un appelant anonyme.
-// POST {token, choix}  → enregistre le choix du patient (tout_renouveler /
-//                        rien / partiel) et fait passer le rappel en
-//                        "à traiter" côté pharmacien.
+// POST {token, choix, creneau?} → enregistre le choix du patient
+//                        (tout_renouveler / rien / partiel), un créneau de
+//                        retrait optionnel (08/09/2026 — indication large,
+//                        pas une réservation de capacité) et fait passer le
+//                        rappel en "à traiter" côté pharmacien.
 //
 // N'accepte le POST que si le rappel est encore au statut "sms_envoye" — un
 // token déjà répondu, ou d'un cycle précédent (régénéré à chaque envoi, voir
@@ -18,6 +20,9 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel"];
+// Créneau de retrait (08/09/2026) — optionnel, indication large plutôt qu'un
+// vrai système de réservation de capacité (voir migration correspondante).
+const CRENEAUX_VALIDES = ["ce_matin", "cet_apres_midi", "demain_matin", "demain_apres_midi"];
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -63,9 +68,12 @@ serve(async (req) => {
     }
 
     if (req.method === "POST") {
-      const { token, choix } = await req.json();
+      const { token, choix, creneau } = await req.json();
       if (!token || !CHOIX_VALIDES.includes(choix)) {
         return new Response(JSON.stringify({ error: "token et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
+      }
+      if (creneau && !CRENEAUX_VALIDES.includes(creneau)) {
+        return new Response(JSON.stringify({ error: "Créneau invalide" }), { status: 400, headers: CORS });
       }
 
       const { data: rappel } = await sb
@@ -81,11 +89,12 @@ serve(async (req) => {
       const { error } = await sb.from("rappels_ordonnance").update({
         statut: "a_traiter",
         choix_patient: choix,
+        creneau_retrait: creneau || null,
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
       if (error) throw new Error(error.message);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix } });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}) } });
 
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
