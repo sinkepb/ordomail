@@ -6,8 +6,8 @@ import { useState, useEffect, useCallback } from "react";
 
 const CHOIX = [
   { key: "tout_renouveler", emoji: "✅", label: "Tout renouveler" },
-  { key: "rien", emoji: "🚫", label: "Ne rien prendre" },
   { key: "partiel", emoji: "🔶", label: "Renouvellement partiel", sub: "Nous vous contacterons pour préciser" },
+  { key: "rien", emoji: "🚫", label: "Ne rien prendre" },
 ];
 
 // Créneau de retrait (08/09/2026) — demandé uniquement si le patient vient
@@ -88,25 +88,25 @@ function RappelChoixPage({ token }) {
 
       {state === "pret" && info && (
         <div style={{ width: "100%", maxWidth: 420 }}>
-          <div style={{ fontSize: 30, fontWeight: 900, color: "#fff", marginBottom: 14, lineHeight: 1.3 }}>
+          <div style={{ fontSize: 60, fontWeight: 900, color: "#fff", marginBottom: 28, lineHeight: 1.3 }}>
             Bonjour {info.patientPrenom} 👋
           </div>
-          <div style={{ fontSize: 19, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 32 }}>
+          <div style={{ fontSize: 38, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 64 }}>
             Votre renouvellement d'ordonnance chez <strong>{info.pharmacieNom}</strong> est prévu prochainement. Que souhaitez-vous faire ?
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
             {CHOIX.map(c => (
               <button key={c.key} onClick={() => choisir(c.key)}
                 style={{
-                  padding: "22px 22px", borderRadius: 18, border: "2.5px solid rgba(255,255,255,0.45)",
-                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 20,
+                  padding: "32px 24px", borderRadius: 30, border: "4px solid rgba(255,255,255,0.45)",
+                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 34,
                   cursor: "pointer", fontFamily: "inherit",
-                  display: "flex", alignItems: "center", gap: 16, textAlign: "left",
+                  display: "flex", alignItems: "center", gap: 20, textAlign: "left",
                 }}>
-                <span style={{ fontSize: 30, flexShrink: 0 }}>{c.emoji}</span>
-                <span>
+                <span style={{ fontSize: 54, flexShrink: 0 }}>{c.emoji}</span>
+                <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "break-word" }}>
                   <div>{c.label}</div>
-                  {c.sub && <div style={{ fontSize: 15, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>{c.sub}</div>}
+                  {c.sub && <div style={{ fontSize: 24, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 6 }}>{c.sub}</div>}
                 </span>
               </button>
             ))}
@@ -116,28 +116,28 @@ function RappelChoixPage({ token }) {
 
       {state === "creneau" && (
         <div style={{ width: "100%", maxWidth: 420 }}>
-          <div style={{ fontSize: 30, fontWeight: 900, color: "#fff", marginBottom: 14, lineHeight: 1.3 }}>
+          <div style={{ fontSize: 60, fontWeight: 900, color: "#fff", marginBottom: 28, lineHeight: 1.3 }}>
             Quand pouvez-vous passer ? 🕐
           </div>
-          <div style={{ fontSize: 19, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 32 }}>
+          <div style={{ fontSize: 38, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 64 }}>
             Ça aide votre pharmacien à préparer votre commande à l'avance.
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
             {CRENEAUX.map(c => (
               <button key={c.key} onClick={() => envoyer(choixEnCours, c.key)}
                 style={{
-                  padding: "22px 22px", borderRadius: 18, border: "2.5px solid rgba(255,255,255,0.45)",
-                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 20,
+                  padding: "32px 24px", borderRadius: 30, border: "4px solid rgba(255,255,255,0.45)",
+                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 34,
                   cursor: "pointer", fontFamily: "inherit",
-                  display: "flex", alignItems: "center", gap: 16, textAlign: "left",
+                  display: "flex", alignItems: "center", gap: 20, textAlign: "left",
                 }}>
-                <span style={{ fontSize: 30, flexShrink: 0 }}>{c.emoji}</span>
-                <span>{c.label}</span>
+                <span style={{ fontSize: 54, flexShrink: 0 }}>{c.emoji}</span>
+                <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "break-word" }}>{c.label}</span>
               </button>
             ))}
           </div>
           <button onClick={() => envoyer(choixEnCours, null)}
-            style={{ marginTop: 22, padding: "10px", background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 17, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+            style={{ marginTop: 44, padding: "20px", background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 34, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
             Je ne sais pas encore
           </button>
         </div>
