@@ -525,12 +525,18 @@ Deno.serve(async (req) => {
     }
 
     // Statistiques d'efficacité des rappels, côté pharmacien (08/09/2026) —
-    // même logique de calcul que admin_rappels_metrics (secure-data-admin,
-    // isSmsReel exclut les envois de test par email) mais scopée à UNE
-    // pharmacie, et avec deux métriques que l'admin n'a pas : le taux de
-    // RENOUVELLEMENT réel (tout_renouveler + partiel, pas juste "a répondu")
-    // et le délai de réponse moyen — plus parlantes pour un titulaire que le
-    // simple taux de réponse.
+    // deux métriques que l'admin n'a pas : le taux de RENOUVELLEMENT réel
+    // (tout_renouveler + partiel, pas juste "a répondu") et le délai de
+    // réponse moyen — plus parlantes pour un titulaire que le simple taux de
+    // réponse.
+    //
+    // Contrairement à admin_rappels_metrics (secure-data-admin), qui exclut
+    // les envois de test par email pour ne jamais fausser une projection de
+    // COÛT SMS, cette action compte les deux canaux (retour direct du
+    // 08/09/2026) : le sender SMS OVH est encore en attente de modération,
+    // donc tous les envois réels passent aujourd'hui par le canal email —
+    // exclure ce canal ici viderait le tableau de bord. À revoir une fois le
+    // SMS validé, si l'email de test doit alors redevenir un canal à part.
     if (resource === "rappels_stats") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
@@ -555,7 +561,7 @@ Deno.serve(async (req) => {
         let dernierEnvoiAt: string | null = null;
         for (const e of evts) {
           if (e.type === "sms_envoye") {
-            if (e.meta?.canal !== "email_test") smsEnvoyes++;
+            smsEnvoyes++;
             dernierEnvoiAt = e.created_at;
           }
           if (e.type === "sms_echec") echecs++;
