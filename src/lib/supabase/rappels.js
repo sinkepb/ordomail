@@ -19,6 +19,17 @@ export async function fetchRappels(pharmacieId, statut = null) {
   }
 }
 
+// Historique détaillé d'un rappel (07/09/2026) — voir secure-data:rappels_journal.
+export async function fetchRappelJournal(rappelId) {
+  if (IS_DEMO) return [];
+  try {
+    return await callSecureData('rappels_journal', { rappelId });
+  } catch (e) {
+    console.error('[fetchRappelJournal]', e.message);
+    return [];
+  }
+}
+
 export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement }) {
   if (IS_DEMO) {
     const db = getDB();

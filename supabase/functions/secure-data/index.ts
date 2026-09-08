@@ -524,6 +524,31 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    // Historique détaillé d'un rappel (07/09/2026) — rappels_evenements
+    // journalise déjà tout (cree/sms_envoye/sms_echec/reponse_patient/traite/
+    // termine/reactive, voir les actions ci-dessous) mais la table n'accorde
+    // aucun accès direct à anon/authenticated : jusqu'ici rien n'exposait
+    // cette donnée au pharmacien, qui ne voyait que le statut courant.
+    if (resource === "rappels_journal") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const { data, error } = await sb.from("rappels_evenements")
+        .select("type, meta, created_at")
+        .eq("rappel_id", rappelId)
+        .order("created_at", { ascending: true });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     // Le pharmacien valide un rappel "à traiter" (quel que soit le choix du
     // patient) : le cycle repart à J+21, comme demandé ("jusqu'à ce que le
     // pharmacien mette fin au rappel").

@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -16,6 +16,33 @@ const CHOIX_LABEL = {
   rien: "🚫 Ne rien prendre",
   partiel: "🔶 Renouvellement partiel",
 };
+
+// Historique détaillé d'un rappel (07/09/2026) — un événement par ligne de
+// rappels_evenements (voir secure-data:rappels_journal). meta varie selon le
+// type : {canal, mocked, to} pour sms_envoye, {choix} pour reponse_patient,
+// {error} pour sms_echec.
+const JOURNAL_INFO = {
+  cree:            { icon: "🆕", label: "Rappel créé" },
+  sms_envoye:      { icon: "📱", label: "SMS envoyé" },
+  sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
+  reponse_patient: { icon: "💬", label: "Patient a répondu" },
+  traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
+  termine:         { icon: "🔚", label: "Rappel terminé" },
+  reactive:        { icon: "🔄", label: "Rappel réactivé" },
+};
+function journalLigne(evt) {
+  const info = JOURNAL_INFO[evt.type] || { icon: "•", label: evt.type };
+  if (evt.type === "sms_envoye" && evt.meta?.canal === "email_test") {
+    return { ...info, icon: "✉️", label: `Email envoyé (test${evt.meta?.to ? " → " + evt.meta.to : ""})` };
+  }
+  if (evt.type === "reponse_patient" && evt.meta?.choix) {
+    return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
+  }
+  if (evt.type === "sms_echec" && evt.meta?.error) {
+    return { ...info, label: `Échec d'envoi — ${evt.meta.error}` };
+  }
+  return info;
+}
 
 const FILTRES = [
   ["tous", "Tous"],
@@ -383,6 +410,9 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("recent"); // "recent" | "alpha" | "date_rappel"
+  const [journalOpenId, setJournalOpenId] = useState(null);
+  const [journal, setJournal] = useState([]);
+  const [journalLoading, setJournalLoading] = useState(false);
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -488,6 +518,15 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     setBusyId(null);
   }
 
+  async function toggleJournal(rappelId) {
+    if (journalOpenId === rappelId) { setJournalOpenId(null); return; }
+    setJournalOpenId(rappelId);
+    setJournalLoading(true);
+    const data = await fetchRappelJournal(rappelId);
+    setJournal(data || []);
+    setJournalLoading(false);
+  }
+
   // "En attente" inclut aussi "sms_envoye" (04/09/2026, retour direct) — le
   // rappel disparaissait silencieusement de cet onglet dès qu'un SMS (ou un
   // envoi de test) partait, alors que rien ne distingue les deux statuts
@@ -564,7 +603,8 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
           const info = STATUT_INFO[r.statut] || STATUT_INFO.en_attente;
           const busy = busyId === r.id;
           return (
-            <div key={r.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div key={r.id} style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
                 <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}</div>
@@ -622,6 +662,38 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                   🔄 Réactiver
                 </button>
               )}
+              {/* Historique détaillé (07/09/2026) — journal complet des
+                  événements du rappel (voir secure-data:rappels_journal),
+                  utile en cas de litige ou de question du patient. */}
+              <button onClick={() => toggleJournal(r.id)}
+                style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: journalOpenId === r.id ? "#f8fafc" : "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+                🕐 Historique{journalOpenId === r.id ? " ▲" : " ▼"}
+              </button>
+            </div>
+            {journalOpenId === r.id && (
+              <div style={{ borderTop: "1px solid #f1f5f9", padding: "12px 16px", background: "#fafbfc" }}>
+                {journalLoading && <div style={{ fontSize: 12.5, color: "#94a3b8" }}>Chargement…</div>}
+                {!journalLoading && journal.length === 0 && (
+                  <div style={{ fontSize: 12.5, color: "#94a3b8" }}>Aucun événement enregistré.</div>
+                )}
+                {!journalLoading && journal.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {journal.map((evt, i) => {
+                      const ligne = journalLigne(evt);
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5 }}>
+                          <span style={{ flexShrink: 0 }}>{ligne.icon}</span>
+                          <span style={{ flexShrink: 0, color: "#94a3b8", fontVariantNumeric: "tabular-nums", minWidth: 130 }}>
+                            {new Date(evt.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span style={{ color: "#334155" }}>{ligne.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             </div>
           );
         })}
