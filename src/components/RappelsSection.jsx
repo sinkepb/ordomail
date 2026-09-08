@@ -655,7 +655,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
                 )}
                 {r.statut === "a_traiter" && r.creneau_retrait && (
-                  <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>{CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
+                  <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
                 )}
               </div>
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
