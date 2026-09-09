@@ -241,13 +241,15 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                 )}
               </div>
               <div style={{marginBottom:14}}>
-                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>SIRET</label>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>SIRET *</label>
                 <input type="text" placeholder="Rempli automatiquement via la sélection ci-dessus, ou à saisir" value={form.siret}
                   onChange={e=>setForm(f=>({...f,siret:e.target.value.replace(/\D/g,"").slice(0,14)}))}
-                  style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
-                <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Optionnel — 14 chiffres.</div>
+                  style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${errors.siret?"#ef4444":"#e2e8f0"}`,borderRadius:9,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                {errors.siret
+                  ? <div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{errors.siret}</div>
+                  : <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>14 chiffres — obligatoire, figure sur vos factures OrdoMail.</div>}
               </div>
-              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";if(!isValidAddress(form.adresse))e.adresse="Adresse complète requise (numéro, rue, code postal)";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
+              <button onClick={()=>{const e={};if(!form.nom)e.nom="Requis";if(!form.email.includes("@"))e.email="Email invalide";if(!form.pharmacie)e.pharmacie="Requis";if(!isValidAddress(form.adresse))e.adresse="Adresse complète requise (numéro, rue, code postal)";if(!/^\d{14}$/.test(form.siret))e.siret="SIRET requis (14 chiffres)";setErrors(e);if(!Object.keys(e).length)setStep("card");}}
                 style={{width:"100%",padding:12,border:"none",borderRadius:11,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>Continuer →</button>
             </>
           )}

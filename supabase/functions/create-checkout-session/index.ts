@@ -69,12 +69,22 @@ serve(async (req) => {
     // 1. Vérifier que la pharmacie existe
     const { data: ph, error: phErr } = await supabase
       .from("pharmacies")
-      .select("id, stripe_customer_id")
+      .select("id, nom, adresse, siret, stripe_customer_id")
       .eq("id", pharmacieId)
       .maybeSingle();
     if (phErr || !ph) {
       return new Response(JSON.stringify({ error: "Pharmacie introuvable" }),
         { status: 404, headers: CORS });
+    }
+    // @conformite 09/09/2026 — filet de sécurité pour les pharmacies créées avant
+    // que le SIRET devienne obligatoire à l'inscription (register-pharmacie) :
+    // on bloque ici plutôt que de laisser partir une facture Stripe sans
+    // identification légale du client.
+    if (!/^\d{14}$/.test(ph.siret || "")) {
+      return new Response(
+        JSON.stringify({ error: "SIRET manquant — complétez-le dans Paramètres > Compte avant de continuer." }),
+        { status: 400, headers: CORS },
+      );
     }
 
     // 2. Promotion active éligible (Phase 4, §6-9) — vérification "molle" ici,
@@ -144,11 +154,34 @@ serve(async (req) => {
     // 3. Créer (ou réutiliser) le Customer Stripe, et le mémoriser tout de suite sur la
     // pharmacie — stripe-webhook en a besoin pour retrouver la pharmacie au retour du
     // paiement (customer.subscription.created cherche par stripe_customer_id).
+    //
+    // @fix 09/09/2026 (conformité facturation) — le Customer n'embarquait jusqu'ici
+    // que l'email : les factures Stripe (pdf_url stocké tel quel dans `factures`,
+    // jamais régénéré par OrdoMail — voir stripe-webhook) ne comportaient donc
+    // aucune identification légale de l'acheteur (raison sociale, adresse, SIRET),
+    // pourtant déjà saisis à l'inscription (register-pharmacie / référentiel
+    // pharmacies). Raison sociale + adresse alimentent `name`/`address` (repris
+    // tels quels sur la facture PDF Stripe) ; le SIRET n'a pas de type de tax ID
+    // Stripe dédié (fr_siret n'existe pas — seul fr_vat, la TVA, en a un, et une
+    // pharmacie n'a pas forcément de n° de TVA intracommunautaire) donc il est
+    // ajouté via `invoice_settings.custom_fields`, mécanisme prévu par Stripe
+    // précisément pour ce genre de mention complémentaire imprimée sur la facture.
+    const custIdentity: Record<string, unknown> = {
+      name: ph.nom || undefined,
+      address: ph.adresse ? { line1: ph.adresse, country: "FR" } : undefined,
+      invoice_settings: ph.siret ? { custom_fields: [{ name: "SIRET", value: ph.siret }] } : undefined,
+    };
     let customerId = ph.stripe_customer_id;
     if (!customerId) {
-      const customer = await stripe.customers.create({ email, metadata: { pharmacie_id: pharmacieId } });
+      const customer = await stripe.customers.create({ email, metadata: { pharmacie_id: pharmacieId }, ...custIdentity });
       customerId = customer.id;
       await supabase.from("pharmacies").update({ stripe_customer_id: customerId }).eq("id", pharmacieId);
+    } else {
+      // Client Stripe déjà créé (ex. avant ce correctif, ou upgrade de plan) —
+      // resynchronise à chaque passage en caisse pour rattraper les infos
+      // manquantes ou modifiées depuis (adresse/SIRET peuvent avoir été
+      // complétés après coup côté pharmacie).
+      await stripe.customers.update(customerId, custIdentity).catch(() => {});
     }
 
     // 4. Créer la session Checkout — essai gratuit 30 jours, carte requise dès

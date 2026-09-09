@@ -11,6 +11,7 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   const safePhNom     = escapeHtml(pharmacie?.nom || "Pharmacie");
   const safePhAdresse = escapeHtml(pharmacie?.adresse || pharmacie?.email || "—");
   const safePhEmail   = escapeHtml(pharmacie?.email || "—");
+  const safePhSiret   = escapeHtml(pharmacie?.siret || "");
   const safeDesc      = escapeHtml(invoice.desc || "Abonnement mensuel");
   const safeInvoiceId = escapeHtml(invoice.id);
 
@@ -90,6 +91,7 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
     <div class="party-info">
       ${safePhAdresse}<br>
       ${safePhEmail}<br>
+      ${safePhSiret ? `SIRET : ${safePhSiret}<br>` : ""}
       Plan : ${planInfo.icon} ${planInfo.label}
     </div>
   </div>
@@ -125,6 +127,11 @@ function generateInvoiceHTML({ invoice, pharmacie, plan }) {
     <div class="total-row"><span>TVA 20 %</span><span>${tva.toFixed(2)} €</span></div>
     <div class="total-row main"><span>Total TTC</span><span>${invoice.amount.toFixed(2)} €</span></div>
   </div>
+</div>
+
+
+<div style="margin-top:24px;font-size:10px;color:#94a3b8;line-height:1.7;border-top:1px solid #e2e8f0;padding-top:14px">
+  Pas d'escompte pour paiement anticipé. En cas de retard de paiement : pénalités au taux d'intérêt légal en vigueur majoré de 10 points, exigibles sans qu'un rappel soit nécessaire, et indemnité forfaitaire pour frais de recouvrement de 40 € (art. L441-10 du Code de commerce).
 </div>
 
 <div class="footer">

@@ -25,6 +25,16 @@ Deno.serve(async (req) => {
         { status: 400, headers: CORS }
       );
     }
+    // @conformite 09/09/2026 — SIRET obligatoire (BillingModule.jsx le valide déjà
+    // côté client, 14 chiffres) : nécessaire pour l'identification légale du client
+    // sur les factures Stripe (voir create-checkout-session — name/address/SIRET
+    // transmis au Customer) et sur le modèle de facture (generateInvoiceHTML).
+    if (!/^\d{14}$/.test(siret || "")) {
+      return new Response(
+        JSON.stringify({ error: "SIRET requis (14 chiffres)" }),
+        { status: 400, headers: CORS }
+      );
+    }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -64,10 +74,10 @@ Deno.serve(async (req) => {
           // en base pour les comptes déjà créés.
           nom: pharmacieNom || nom,
           adresse: adresse || null,
-          // Renseigné uniquement si choisi via l'autocomplete du référentiel
-          // (BillingModule.jsx) — jamais saisi librement, donc soit un vrai
-          // SIRET à 14 chiffres, soit absent.
-          siret: /^\d{14}$/.test(siret || "") ? siret : null,
+          // Obligatoire depuis le 09/09/2026 (déjà validé ci-dessus) — via
+          // l'autocomplete du référentiel (BillingModule.jsx) ou saisi
+          // librement.
+          siret,
           email,
           email_reception: `${emailSlug}@in.ordomail.fr`,
           email_slug:      emailSlug,

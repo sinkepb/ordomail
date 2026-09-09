@@ -67,6 +67,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [showUpgrade, setShowUpgrade] = useState(null);
   const [nom, setNom] = useState(pharmacie.nom||"");
   const [adresse, setAdresse] = useState(pharmacie.adresse||"");
+  const [siret, setSiret] = useState(pharmacie.siret||"");
   const [couleur, setCouleur] = useState(pharmacie.couleur||"#1a3a6e");
   const [accentUnique, setAccentUnique] = useState(pharmacie.accent_unique||"");
   const [titulaireNom, setTitulaireNom] = useState(pharmacie.titulaireNom||"");
@@ -117,7 +118,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
     const pinChanges = {};
     postes.forEach(p => { if (p.pin && p.pin.length === 4 && /^\d{4}$/.test(p.pin)) pinChanges[p.id] = p.pin; });
     const tasks = [
-      onSave({nom,adresse,couleur,accent_unique:accentUnique||null,pin_mode:pinMode}),
+      onSave({nom,adresse,siret:siret||null,couleur,accent_unique:accentUnique||null,pin_mode:pinMode}),
       savePostes(pharmacie.id, postes.map(p=>({...p,pin:undefined})), pinChanges),
     ];
     if (titulaireNom.trim() && titulaireNom.trim() !== (pharmacie.titulaireNom||"")) {
@@ -361,6 +362,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
           <ErrorBoundary compact label="Compte">
           <CompteSection pharmacie={pharmacie} postes={postes} planInfo={planInfo}
             nom={nom} onNomChange={setNom} adresse={adresse} onAdresseChange={setAdresse}
+            siret={siret} onSiretChange={setSiret}
             couleur={couleur} onCouleurChange={setCouleur}
             accentUnique={accentUnique} onAccentUniqueChange={setAccentUnique}
             titulaireNom={titulaireNom} onTitulaireNomChange={setTitulaireNom}

@@ -9,7 +9,7 @@ import { PlanSwitcherModal } from "./UpgradeModal.jsx";
 import { isDemoMode, getSupabaseClient, fetchFactures, fetchAbonnement } from "../supabase.js";
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
-  nom, onNomChange, adresse, onAdresseChange, couleur, onCouleurChange,
+  nom, onNomChange, adresse, onAdresseChange, siret, onSiretChange, couleur, onCouleurChange,
   accentUnique, onAccentUniqueChange,
   titulaireNom, onTitulaireNomChange }) {
   const [pwdOld,setPwdOld]=useState(""); const [pwdNew,setPwdNew]=useState(""); const [pwdMsg,setPwdMsg]=useState(null);
@@ -196,6 +196,12 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
           <Input label="Nom du titulaire" value={titulaireNom} onChange={onTitulaireNomChange} placeholder="Dr MARTIN Pierre" icon="👤"/>
           <Input label="Nom de la pharmacie" value={nom} onChange={onNomChange} placeholder="Pharmacie..." icon="🏥"/>
           <Input label="Adresse" value={adresse} onChange={onAdresseChange} placeholder="12 rue..." icon="📍"/>
+          <Input label="SIRET" value={siret} onChange={v=>onSiretChange(v.replace(/\D/g,"").slice(0,14))} placeholder="123 456 789 00012" icon="🏷️"/>
+          {!siret && (
+            <div style={{fontSize:11,color:"#b45309",marginTop:-8,marginBottom:14}}>
+              ⚠️ Obligatoire pour l'identification légale de votre pharmacie sur les factures — à compléter avant votre prochain paiement.
+            </div>
+          )}
           <div style={{marginBottom:14}}>
             <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>Couleur de la pharmacie</label>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
