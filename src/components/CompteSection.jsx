@@ -350,10 +350,27 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
           </div>
           <button onClick={()=>setShowPlanSwitcher(true)} style={{padding:"9px 16px",border:"none",borderRadius:9,background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↕ Changer de plan</button>
         </div>
-        {abonnement?.current_period_end && (
+        {abonnement?.current_period_end && !abonnement?.cancel_at_period_end && (
           <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>
             📅 Prochaine facture le <strong>{new Date(abonnement.current_period_end).toLocaleDateString("fr-FR")}</strong>
             {abonnement.billing_cycle && ` · facturation ${abonnement.billing_cycle==="annual"?"annuelle":"mensuelle"}`}
+          </div>
+        )}
+        {/* Résiliation programmée via le Portail client Stripe (09/09/2026) —
+            cancel_at_period_end passe à true immédiatement, mais le statut Stripe
+            reste "active" et l'accès continue jusqu'à current_period_end : sans
+            ce bandeau, rien ne distinguait cet état d'un abonnement normal côté
+            Dashboard avant l'événement final customer.subscription.deleted. */}
+        {abonnement?.cancel_at_period_end && abonnement?.current_period_end && (
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:12,color:"#991b1b",fontWeight:600,lineHeight:1.6}}>
+              ⚠️ Résiliation programmée — votre accès à OrdoMail {plan.label} s'arrêtera le{" "}
+              <strong>{new Date(abonnement.current_period_end).toLocaleDateString("fr-FR")}</strong>, sans nouveau prélèvement.
+            </div>
+            <button onClick={openBillingPortal} disabled={portalLoading}
+              style={{marginTop:8,padding:"6px 12px",border:"1.5px solid #fca5a5",borderRadius:8,background:"#fff",color:"#991b1b",fontWeight:700,fontSize:11,cursor:portalLoading?"default":"pointer",fontFamily:"inherit",opacity:portalLoading?0.6:1}}>
+              {portalLoading?"Ouverture…":"Annuler la résiliation"}
+            </button>
           </div>
         )}
         {/* Phase 6 (§13) — downgrade programmé mais pas encore appliqué :

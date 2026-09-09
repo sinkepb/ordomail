@@ -63,7 +63,14 @@ serve(async (req) => {
         // était concerné en production au moment de la découverte — corrigé manuellement
         // en base pour lui, ce correctif couvre tous les abonnements à venir.
         await supabase.from("pharmacies").update({ plan, plan_status:sub.status, stripe_subscription_id:sub.id }).eq("id",ph.id);
-        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        // @fix 09/09/2026 — `abonnements.cancel_at_period_end` existe dans le schéma
+        // depuis l'origine mais n'était jamais écrit ici : une résiliation demandée
+        // via le Portail client Stripe (cancel_at_period_end passe à true, le statut
+        // reste "active" jusqu'à la fin de la période en cours) ne se voyait donc
+        // nulle part côté OrdoMail avant l'événement customer.subscription.deleted
+        // final — aucun moyen pour le pharmacien de savoir, depuis son Dashboard,
+        // qu'une résiliation était déjà programmée.
+        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
         // Un downgrade peut arriver ici sans jamais passer par UpgradeModal.jsx
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
