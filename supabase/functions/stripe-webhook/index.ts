@@ -165,6 +165,22 @@ serve(async (req) => {
           }
         }
       }
+      // Pack SMS supplémentaire (11/09/2026, secure-data:sms_acheter_pack) —
+      // paiement ponctuel distinct de l'abonnement (mode "payment"), crédité
+      // uniquement à la confirmation réelle, jamais de façon optimiste côté
+      // client. Idempotent sur stripe_checkout_session_id (UNIQUE) au cas où
+      // Stripe redélivre le même événement.
+      if (session.mode === "payment" && session.metadata?.type === "pack_sms" && pharmacieId) {
+        const { data: already } = await supabase.from("sms_packs_achetes").select("id").eq("stripe_checkout_session_id", session.id).maybeSingle();
+        if (!already) {
+          await supabase.from("sms_packs_achetes").insert({
+            pharmacie_id: pharmacieId,
+            quantite: Number(session.metadata.quantite) || 100,
+            prix_paye_ttc: session.amount_total || 0,
+            stripe_checkout_session_id: session.id,
+          });
+        }
+      }
     }
     // Échec de prélèvement automatique (carte refusée, fonds insuffisants…) — jusqu'ici
     // aucun événement Stripe lié à un échec de paiement n'était traité : le statut de

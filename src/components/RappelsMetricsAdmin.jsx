@@ -1,13 +1,12 @@
 // Panneau Rappels & SMS — backoffice OrdoMail Business (05/09/2026).
-// Le SMS des rappels de renouvellement est encore mocké (voir
-// supabase/functions/_shared/rappelLogic.ts), mais son coût par envoi sera
-// incontrôlé une fois activé (retour direct de l'utilisateur : "le coût
-// supplémentaire des sms que je ne peux maîtriser lors des rappels"). Ce
-// panneau donne une visibilité sur le volume AVANT que ça devienne une
-// facture — tendance réseau + détail par pharmacie pour repérer une grosse
-// consommatrice avant, pas après. Ressource : admin_rappels_metrics
-// (secure-data-admin), qui exclut déjà les envois de test par email du
-// comptage SMS (meta.canal === "email_test").
+// SMS réel depuis le 11/09/2026 (sender OVH "SISEO" validé) — ce panneau
+// garde son objectif d'origine (visibilité sur le volume avant que ça
+// devienne une facture, retour direct de l'utilisateur : "le coût
+// supplémentaire des sms que je ne peux maîtriser") mais suit désormais
+// aussi le quota mensuel Performance (200 SMS inclus + packs de 100, voir
+// _shared/smsQuota.ts) via admin_sms_consommation, en plus des tendances
+// réseau d'admin_rappels_metrics (qui exclut déjà les envois de test par
+// email du comptage, meta.canal === "email_test").
 import { useState, useEffect } from "react";
 
 async function callSecureData(resource, params, adminToken) {
@@ -31,14 +30,19 @@ const PLAN_LABEL = { starter: "Essentiel", standard: "Fluidité", pro: "Performa
 
 function RappelsMetricsAdmin({ adminToken } = {}) {
   const [data, setData]       = useState(null);
+  const [quotas, setQuotas]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
 
   async function load() {
     setError("");
     try {
-      const { data } = await callSecureData("admin_rappels_metrics", {}, adminToken);
+      const [{ data }, quotasRes] = await Promise.all([
+        callSecureData("admin_rappels_metrics", {}, adminToken),
+        callSecureData("admin_sms_consommation", {}, adminToken),
+      ]);
       setData(data);
+      setQuotas(quotasRes.data || []);
     } catch(e) {
       setError(e.message);
     }
@@ -134,6 +138,40 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
             </div>
           </div>
         ))}
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, color:"#94a3b8", margin:"24px 0 10px", textTransform:"uppercase", letterSpacing:0.5 }}>
+        Quota SMS mensuel — plan Performance (200 inclus + packs de 100 à 10 € TTC)
+      </div>
+
+      {quotas.length === 0 && (
+        <div style={{ textAlign:"center", padding:32, color:"#64748b", fontSize:13, background:"#1e293b", border:"1px solid #334155", borderRadius:12 }}>
+          Aucune pharmacie Performance n'a encore envoyé de SMS ce mois-ci.
+        </div>
+      )}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {quotas.map(q => {
+          const pct = q.quotaTotal > 0 ? Math.min(100, Math.round((q.smsEnvoyesMoisCourant / q.quotaTotal) * 100)) : 0;
+          const overQuota = q.depassement > 0;
+          return (
+            <div key={q.pharmacieId} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:"11px 16px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                <span style={{ fontWeight:700, fontSize:13.5, color:"#fff" }}>{q.nom}</span>
+                <span style={{ fontSize:12.5, fontWeight:800, color: overQuota ? "#f87171" : "#4ade80" }}>
+                  {q.smsEnvoyesMoisCourant} / {q.quotaTotal} SMS
+                </span>
+              </div>
+              <div style={{ height:6, borderRadius:20, background:"#334155", overflow:"hidden", marginBottom:6 }}>
+                <div style={{ height:"100%", width:`${pct}%`, background: overQuota ? "#f87171" : "#4ade80", borderRadius:20 }} />
+              </div>
+              <div style={{ fontSize:11, color:"#64748b" }}>
+                {q.packsAchetesMoisCourant > 0 && <>{q.packsAchetesMoisCourant / 100} pack{q.packsAchetesMoisCourant > 100 ? "s" : ""} acheté{q.packsAchetesMoisCourant > 100 ? "s" : ""} ce mois · </>}
+                {overQuota ? <span style={{ color:"#f87171", fontWeight:700 }}>{q.depassement} SMS au-delà du quota</span> : `${q.quotaRestant} SMS restants`}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

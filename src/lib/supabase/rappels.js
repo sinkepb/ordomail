@@ -83,11 +83,29 @@ export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappe
   return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
 }
 
-// Déclenchement manuel du SMS (06/09/2026). `email` optionnel (07/09/2026,
-// réintroduit le temps que le sender OVH "OrdoMail" sorte de modération) :
-// si fourni, envoie le même message par email à cette adresse au lieu du
-// SMS réel — voir secure-data:rappels_envoyer_test.
+// Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le
+// 11/09/2026). `email` reste géré côté serveur pour du débogage ponctuel
+// mais n'est plus exposé dans l'interface — voir secure-data:rappels_envoyer_test.
 export async function envoyerTestRappel(rappelId, email) {
   if (IS_DEMO) return { success: true };
   return await callSecureData('rappels_envoyer_test', { rappelId, email });
+}
+
+// Quota SMS mensuel (11/09/2026) — voir _shared/smsQuota.ts pour le détail
+// du calcul (200 SMS/mois inclus dans Performance + packs de 100 achetés).
+export async function fetchSmsConsommation() {
+  if (IS_DEMO) return null;
+  try {
+    return await callSecureData('sms_consommation', {});
+  } catch (e) {
+    console.error('[fetchSmsConsommation]', e.message);
+    return null;
+  }
+}
+
+// Achat d'un pack de 100 SMS supplémentaires — retourne l'URL Stripe
+// Checkout (paiement ponctuel), voir secure-data:sms_acheter_pack.
+export async function acheterPackSms(appUrl) {
+  if (IS_DEMO) throw new Error('Achat de pack SMS indisponible en démo');
+  return await callSecureData('sms_acheter_pack', { appUrl });
 }

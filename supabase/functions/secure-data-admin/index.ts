@@ -22,6 +22,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { runPurge } from "../_shared/purgeLogic.ts";
+import { getSmsConsommation } from "../_shared/smsQuota.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -710,6 +711,22 @@ Deno.serve(async (req) => {
             .filter(p => p.rappelsActifs > 0 || p.sms90j > 0)
             .sort((a, b) => b.sms30j - a.sms30j),
         },
+      }), { headers: CORS });
+    }
+
+    // Quota SMS mensuel — vue backoffice (11/09/2026, voir _shared/smsQuota.ts
+    // pour la logique de calcul, partagée avec secure-data:sms_consommation
+    // côté pharmacien). Limité aux pharmacies Performance : c'est le seul
+    // plan avec les rappels SMS actifs, les autres n'ont jamais de quota.
+    if (resource === "admin_sms_consommation") {
+      const { data: pharmacies } = await sb.from("pharmacies").select("id, nom, plan").eq("plan", "pro");
+      const lignes = await Promise.all((pharmacies || []).map(async (ph: { id: string; nom: string }) => ({
+        pharmacieId: ph.id,
+        nom: ph.nom,
+        ...(await getSmsConsommation(sb, ph.id)),
+      })));
+      return new Response(JSON.stringify({
+        data: lignes.filter(l => l.smsEnvoyesMoisCourant > 0 || l.packsAchetesMoisCourant > 0).sort((a, b) => b.smsEnvoyesMoisCourant - a.smsEnvoyesMoisCourant),
       }), { headers: CORS });
     }
 

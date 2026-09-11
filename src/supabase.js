@@ -98,4 +98,6 @@ export {
   reactiverRappel,
   updateRappel,
   envoyerTestRappel,
+  fetchSmsConsommation,
+  acheterPackSms,
 } from './lib/supabase/rappels.js';

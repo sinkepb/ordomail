@@ -22,6 +22,7 @@
 // verify-admin et secure-data-admin — supabase secrets set ORDOMAIL_JWT_SECRET=...).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@14.0.0";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
@@ -32,6 +33,7 @@ import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
+import { getSmsConsommation, PACK_SMS_QUANTITE, PACK_SMS_PRIX_TTC_CENTIMES } from "../_shared/smsQuota.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -840,6 +842,63 @@ Deno.serve(async (req) => {
       }).eq("id", rappelId);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(canal === "email_test" ? { to: email.trim() } : {}) } });
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
+    }
+
+    // Quota SMS mensuel (11/09/2026) — 200 SMS/mois inclus dans Performance,
+    // packs de 100 au-delà (voir _shared/smsQuota.ts). Affiché sur le
+    // Dashboard pharmacien (RappelsSection.jsx) pour suivre la conso avant
+    // d'être surpris par un besoin de pack.
+    if (resource === "sms_consommation") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const conso = await getSmsConsommation(sb, pharmacieId);
+      return new Response(JSON.stringify({ data: conso }), { headers: CORS });
+    }
+
+    // Achat d'un pack de 100 SMS supplémentaires (11/09/2026) — paiement
+    // ponctuel (mode "payment", pas un abonnement) sur le Customer Stripe
+    // déjà associé à la pharmacie. La quantité n'est créditée qu'à la
+    // confirmation réelle du paiement (stripe-webhook, checkout.session.completed),
+    // jamais de façon optimiste ici — même logique que le kit matériel.
+    if (resource === "sms_acheter_pack") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies").select("stripe_customer_id, plan").eq("id", pharmacieId).maybeSingle();
+      if (!ph?.stripe_customer_id) {
+        return new Response(JSON.stringify({ error: "Aucun moyen de paiement enregistré — complétez d'abord votre abonnement" }), { status: 400, headers: CORS });
+      }
+      if (!(await planHasFeature(sb, ph.plan, "rappels"))) {
+        return new Response(JSON.stringify({ error: "Les rappels SMS ne sont disponibles que sur le plan Performance" }), { status: 403, headers: CORS });
+      }
+      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
+      const ALLOWED_APP_ORIGINS = [Deno.env.get("APP_URL"), "https://ordomail.fr", "http://localhost:5173", "http://127.0.0.1:5173"];
+      const base = resolveAppOrigin(params?.appUrl, ALLOWED_APP_ORIGINS, Deno.env.get("APP_URL") || "https://ordomail.fr");
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        customer: ph.stripe_customer_id,
+        client_reference_id: pharmacieId,
+        line_items: [{
+          price_data: {
+            currency: "eur",
+            unit_amount: PACK_SMS_PRIX_TTC_CENTIMES,
+            product_data: { name: `Pack ${PACK_SMS_QUANTITE} SMS OrdoMail` },
+            tax_behavior: "inclusive",
+          },
+          quantity: 1,
+        }],
+        metadata: { pharmacie_id: pharmacieId, type: "pack_sms", quantite: String(PACK_SMS_QUANTITE) },
+        // Pas de paramètre ?checkout=... en retour (contrairement à
+        // create-checkout-session) : ce paramètre route vers BillingModule en
+        // vue "checkout" (l'étape carte bancaire de l'inscription), pas un
+        // écran de confirmation — inadapté ici. Un retour à la racine suffit :
+        // la session titulaire déjà active renvoie directement au Dashboard,
+        // où le quota SMS se rafraîchit tout seul au montage de l'onglet Rappels.
+        success_url: base,
+        cancel_url: base,
+      });
+      return new Response(JSON.stringify({ data: { url: session.url } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
