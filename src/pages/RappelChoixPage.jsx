@@ -12,7 +12,7 @@ const CHOIX = [
 
 // Créneau de retrait (08/09/2026) — demandé uniquement si le patient vient
 // chercher quelque chose (pas pour "rien"). Indication large plutôt qu'un
-// horaire précis — voir migration 20260908_rappels_creneau_retrait.sql.
+// horaire précise — voir migration 20260908_rappels_creneau_retrait.sql.
 const CRENEAUX = [
   { key: "ce_matin", emoji: "🌅", label: "Ce matin" },
   { key: "cet_apres_midi", emoji: "☀️", label: "Cet après-midi" },
@@ -69,44 +69,40 @@ function RappelChoixPage({ token }) {
     setState("creneau");
   }, [envoyer]);
 
-  // Tailles agrandies (08/09/2026, retour direct) — un patient qui répond à
-  // ce lien SMS n'est pas forcément à l'aise avec un petit texte sur mobile ;
-  // le public visé inclut des personnes âgées. Boutons pleine largeur, gros
-  // texte, gros émojis plutôt qu'une mise en page compacte.
   return (
-    <div style={{ minHeight: "100vh", width: "100%", background: "linear-gradient(160deg, #1a3a6e 0%, #3b5fa4 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px", textAlign: "center", boxSizing: "border-box" }}>
-      <div style={{ fontSize: 60, marginBottom: 20 }}>💊</div>
+    <div style={{ minHeight: "100vh", width: "100%", background: "linear-gradient(160deg, #1a3a6e 0%, #3b5fa4 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", textAlign: "center", boxSizing: "border-box" }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>💊</div>
 
-      {state === "chargement" && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 19 }}>Chargement…</div>}
+      {state === "chargement" && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 15 }}>Chargement…</div>}
 
       {state === "erreur" && (
         <div style={{ color: "#fff" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>Lien invalide ou expiré</div>
-          <div style={{ fontSize: 17, color: "rgba(255,255,255,0.75)" }}>{error}</div>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 8 }}>Lien invalide ou expiré</div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)" }}>{error}</div>
         </div>
       )}
 
       {state === "pret" && info && (
-        <div style={{ width: "100%", maxWidth: 420 }}>
-          <div style={{ fontSize: 60, fontWeight: 900, color: "#fff", marginBottom: 28, lineHeight: 1.3 }}>
+        <div style={{ width: "100%", maxWidth: 340 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.3 }}>
             Bonjour {info.patientPrenom} 👋
           </div>
-          <div style={{ fontSize: 38, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 64 }}>
+          <div style={{ fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, marginBottom: 28 }}>
             Votre renouvellement d'ordonnance chez <strong>{info.pharmacieNom}</strong> est prévu prochainement. Que souhaitez-vous faire ?
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {CHOIX.map(c => (
               <button key={c.key} onClick={() => choisir(c.key)}
                 style={{
-                  padding: "32px 24px", borderRadius: 30, border: "4px solid rgba(255,255,255,0.45)",
-                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 34,
+                  padding: "14px 18px", borderRadius: 14, border: "2px solid rgba(255,255,255,0.4)",
+                  background: "rgba(255,255,255,0.12)", color: "#fff", fontWeight: 800, fontSize: 15,
                   cursor: "pointer", fontFamily: "inherit",
-                  display: "flex", alignItems: "center", gap: 20, textAlign: "left",
+                  display: "flex", alignItems: "center", gap: 10, textAlign: "left",
                 }}>
-                <span style={{ fontSize: 54, flexShrink: 0 }}>{c.emoji}</span>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{c.emoji}</span>
                 <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "break-word" }}>
                   <div>{c.label}</div>
-                  {c.sub && <div style={{ fontSize: 24, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 6 }}>{c.sub}</div>}
+                  {c.sub && <div style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{c.sub}</div>}
                 </span>
               </button>
             ))}
@@ -115,41 +111,41 @@ function RappelChoixPage({ token }) {
       )}
 
       {state === "creneau" && (
-        <div style={{ width: "100%", maxWidth: 420 }}>
-          <div style={{ fontSize: 60, fontWeight: 900, color: "#fff", marginBottom: 28, lineHeight: 1.3 }}>
+        <div style={{ width: "100%", maxWidth: 340 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.3 }}>
             Quand pouvez-vous passer ? 🕐
           </div>
-          <div style={{ fontSize: 38, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, marginBottom: 64 }}>
+          <div style={{ fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, marginBottom: 28 }}>
             Ça aide votre pharmacien à préparer votre commande à l'avance.
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {CRENEAUX.map(c => (
               <button key={c.key} onClick={() => envoyer(choixEnCours, c.key)}
                 style={{
-                  padding: "32px 24px", borderRadius: 30, border: "4px solid rgba(255,255,255,0.45)",
-                  background: "rgba(255,255,255,0.14)", color: "#fff", fontWeight: 800, fontSize: 34,
+                  padding: "14px 18px", borderRadius: 14, border: "2px solid rgba(255,255,255,0.4)",
+                  background: "rgba(255,255,255,0.12)", color: "#fff", fontWeight: 800, fontSize: 15,
                   cursor: "pointer", fontFamily: "inherit",
-                  display: "flex", alignItems: "center", gap: 20, textAlign: "left",
+                  display: "flex", alignItems: "center", gap: 10, textAlign: "left",
                 }}>
-                <span style={{ fontSize: 54, flexShrink: 0 }}>{c.emoji}</span>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{c.emoji}</span>
                 <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "break-word" }}>{c.label}</span>
               </button>
             ))}
           </div>
           <button onClick={() => envoyer(choixEnCours, null)}
-            style={{ marginTop: 44, padding: "20px", background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 34, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+            style={{ marginTop: 16, background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
             Je ne sais pas encore
           </button>
         </div>
       )}
 
-      {state === "envoi" && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 19 }}>Envoi…</div>}
+      {state === "envoi" && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 15 }}>Envoi…</div>}
 
       {state === "merci" && (
         <div style={{ color: "#fff" }}>
-          <div style={{ fontSize: 52, marginBottom: 16 }}>🙏</div>
-          <div style={{ fontSize: 25, fontWeight: 800, marginBottom: 10 }}>Merci !</div>
-          <div style={{ fontSize: 18, color: "rgba(255,255,255,0.85)", maxWidth: 340, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🙏</div>
+          <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 8 }}>Merci !</div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", maxWidth: 300 }}>
             Votre pharmacie a bien été informée de votre choix.
           </div>
         </div>
