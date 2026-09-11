@@ -414,8 +414,12 @@ function QrCodesAdmin({ adminToken } = {}) {
                   <div style={{ width: 222, height: 314, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
                     {!posterLoading && posterHtml && (
+                      // flexShrink:0 indispensable : dans ce conteneur flex, un iframe de
+                      // 793px de large se faisait sinon écraser à sa largeur mini par défaut
+                      // (300px) par le rétrécissement flex automatique — l'aperçu apparaissait
+                      // comme une fine bande quasi invisible au lieu du poster complet.
                       <iframe title="Aperçu affiche A4" srcDoc={posterHtml}
-                        style={{ width: 793, height: 1123, border: "none", transform: "scale(0.28)", transformOrigin: "top left" }} />
+                        style={{ width: 793, height: 1123, border: "none", flexShrink: 0, transform: "scale(0.28)", transformOrigin: "top left" }} />
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
