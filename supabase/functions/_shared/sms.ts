@@ -41,7 +41,12 @@ async function sha1Hex(input: string): Promise<string> {
 // toutes, débloque toutes les pharmacies d'un coup — le nom de la pharmacie
 // reste identifiable pour le patient via le corps du message lui-même (voir
 // buildRappelMessage, _shared/rappelLogic.ts) plutôt que via l'expéditeur.
-const PLATFORM_SENDER = "OrdoMail";
+//
+// "OrdoMail" refusé par la modération OVH le 07/09/2026 ("nom d'expéditeur
+// trop générique") — "OrdoPharma" proposé en remplacement risquait le même
+// motif de refus (toujours un mot composé générique) ; "SISEO" validé par
+// OVH le 11/09/2026.
+const PLATFORM_SENDER = "SISEO";
 
 // Les numéros patients sont saisis et stockés en format national français
 // ("0612345678", voir normalizeTel() côté RappelsSection.jsx — jamais
