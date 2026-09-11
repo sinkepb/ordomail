@@ -165,15 +165,25 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
                 défaut historique. En "unique", plus de postes nommés : la
                 limite du plan s'applique au nombre de connexions simultanées
                 (voir vendeur_sessions, verify-pin), toujours réellement
-                bloquante, pas juste indicative. */}
+                bloquante, pas juste indicative.
+                @fix 11/09/2026 — le choix du mode ne persistait qu'au clic sur
+                le bouton "Sauvegarder" tout en haut du panneau, un bouton
+                distinct et sans lien visuel avec le bloc PIN unique juste
+                en dessous. Un titulaire qui configurait son code PIN unique
+                et cliquait "Enregistrer" (confirmation affichée) repartait
+                persuadé que tout était fait, alors que pin_mode lui-même
+                n'avait jamais été envoyé au serveur — au rechargement suivant,
+                l'interface retombait sur "multi". Chaque bouton persiste
+                désormais pin_mode immédiatement, indépendamment du bouton
+                Sauvegarder global. */}
             <div style={{display:"flex",gap:8,marginBottom:16}}>
-              <button type="button" onClick={()=>setPinMode("multi")}
+              <button type="button" onClick={()=>{ setPinMode("multi"); onSave({pin_mode:"multi"}); }}
                 style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,textAlign:"left",
                   border:`1.5px solid ${pinMode==="multi"?"#1a3a6e":"#e0e7ff"}`,background:pinMode==="multi"?"#f0f4ff":"#fff",color:pinMode==="multi"?"#1a3a6e":"#64748b"}}>
                 🖥️ Un PIN par poste
                 <div style={{fontWeight:400,fontSize:11,color:"#94a3b8",marginTop:2}}>Chaque poste a son propre code</div>
               </button>
-              <button type="button" onClick={()=>setPinMode("unique")}
+              <button type="button" onClick={()=>{ setPinMode("unique"); onSave({pin_mode:"unique"}); }}
                 style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,textAlign:"left",
                   border:`1.5px solid ${pinMode==="unique"?"#1a3a6e":"#e0e7ff"}`,background:pinMode==="unique"?"#f0f4ff":"#fff",color:pinMode==="unique"?"#1a3a6e":"#64748b"}}>
                 🔐 PIN unique
