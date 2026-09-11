@@ -245,11 +245,11 @@ function PricingSection({ onGoToPricing }) {
                 {p.positioning && <p style={{ fontSize:12.5, color:C.slate, lineHeight:1.6, margin:"0 0 14px" }}>{p.positioning}</p>}
                 <div style={{ marginBottom:16 }}>
                   <span style={{ fontSize:38, fontWeight:900, color:p.color }}>{price}</span>
-                  <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> € HT/mois</span>
+                  <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> € TTC/mois</span>
                   {billing==="annual" && (
                     <>
                       <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>
-                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {p.priceAnnual}€ HT facturés une fois par an (2 mois offerts)</div>
+                      <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {p.priceAnnual}€ TTC facturés une fois par an (2 mois offerts)</div>
                     </>
                   )}
                 </div>

@@ -4,8 +4,12 @@ import { escapeHtml } from "./utils.js";
 
 function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   const planInfo = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
-  const tva = Math.round(invoice.amount * 0.20 * 100) / 100;
-  const ht  = Math.round((invoice.amount - tva) * 100) / 100;
+  // @conformite-tarifs — invoice.amount est le montant TTC réellement facturé
+  // (voir CompteSection.jsx : montant_ttc vient tel quel de Stripe). Le HT et
+  // la TVA se déduisent donc du TTC (÷1,20), et non l'inverse comme avant
+  // (qui calculait à tort 20 % du TTC comme si c'était le HT).
+  const ht  = Math.round((invoice.amount / 1.20) * 100) / 100;
+  const tva = Math.round((invoice.amount - ht) * 100) / 100;
   // pharmacie.nom/adresse/email sont définis par le titulaire dans ses paramètres —
   // moins exposés qu'un champ patient, mais on échappe quand même par défense en profondeur.
   const safePhNom     = escapeHtml(pharmacie?.nom || "Pharmacie");
