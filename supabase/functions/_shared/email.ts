@@ -20,6 +20,20 @@ export interface SendEmailResult {
   error?: string;
 }
 
+// Formule d'appel/signature standard (14/09/2026) — appliquée aux emails
+// adressés à un client (pharmacien), PAS à ceux adressés en interne à
+// l'équipe support (ex. aide_poser_question) où elle n'aurait aucun sens.
+// "Madame, Monsieur," plutôt qu'une civilité devinée : aucune donnée de
+// genre n'est collectée sur le titulaire, cette formule reste correcte
+// dans tous les cas — convention courrier standard quand le genre du
+// destinataire n'est pas connu.
+export function wrapCustomerEmail(htmlBody: string, textBody: string): { html: string; text: string } {
+  return {
+    html: `<p>Madame, Monsieur,</p>${htmlBody}<p>Cordialement,<br>Équipe Support OrdoMail</p>`,
+    text: `Madame, Monsieur,\n\n${textBody}\n\nCordialement,\nÉquipe Support OrdoMail`,
+  };
+}
+
 export async function sendTransactionalEmail(
   to: string,
   subject: string,

@@ -11,7 +11,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { reportAlert } from "../_shared/alert.ts";
-import { sendTransactionalEmail } from "../_shared/email.ts";
+import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
 
 // Libellés commerciaux (voir src/lib/plans.js:PLAN_LIMITS, dupliqué ici —
 // cette fonction Deno ne peut pas importer le module frontend ESM).
@@ -65,13 +65,12 @@ Deno.serve(async (req) => {
       // l'application du downgrade lui-même, déjà actée côté Stripe/DB.
       if (ph.email) {
         const label = PLAN_LABELS[newPlan] || newPlan;
+        const { html, text } = wrapCustomerEmail(
+          `<p>Comme programmé, votre abonnement est passé au plan <strong>${label}</strong>.</p>`,
+          `Comme programmé, votre abonnement OrdoMail est passé au plan ${label}.`,
+        );
         try {
-          await sendTransactionalEmail(
-            ph.email,
-            `Votre abonnement OrdoMail est passé à ${label}`,
-            `<p>Comme programmé, votre abonnement est passé au plan <strong>${label}</strong>.</p>`,
-            `Comme programmé, votre abonnement OrdoMail est passé au plan ${label}.`,
-          );
+          await sendTransactionalEmail(ph.email, `Votre abonnement OrdoMail est passé à ${label}`, html, text);
         } catch { /* non bloquant */ }
       }
       applied++;

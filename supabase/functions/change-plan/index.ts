@@ -10,7 +10,7 @@ import Stripe from "https://esm.sh/stripe@14.0.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
-import { sendTransactionalEmail } from "../_shared/email.ts";
+import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
 
 // Ordre des plans — sert uniquement à détecter upgrade vs downgrade (§13),
 // pas les limites/fonctionnalités elles-mêmes (voir planFeatures.ts).
@@ -63,8 +63,9 @@ serve(async (req) => {
     // changement de plan lui-même, déjà appliqué côté Stripe à ce stade.
     async function notifierChangement(sujet: string, htmlBody: string, textBody: string) {
       if (!ph!.email) return;
+      const { html, text } = wrapCustomerEmail(htmlBody, textBody);
       try {
-        await sendTransactionalEmail(ph!.email, sujet, htmlBody, textBody);
+        await sendTransactionalEmail(ph!.email, sujet, html, text);
       } catch { /* non bloquant */ }
     }
 
