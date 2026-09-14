@@ -459,7 +459,11 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
 // generatePosterHTML. Le QR est généré avec le même package "qrcode" que le
 // reste de l'app (le design source chargeait qrcode-generator depuis un CDN —
 // pas nécessaire, on a déjà tout en local).
-async function generatePosterLandscapeHTML({ url, pharmacieName }) {
+// format "A4" (défaut) ou "A3" (14/09/2026) — même principe que
+// generatePosterHTML : le contenu (297x210mm) est redessiné à l'identique,
+// juste agrandi ×√2 dans une page A3 landscape (420x297mm), via .page/.sheet
+// comme la version portrait.
+async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }) {
   const mod = await import("qrcode");
   const QR = mod.default || mod;
   const qrSvg = await QR.toString(url, {
@@ -469,24 +473,36 @@ async function generatePosterLandscapeHTML({ url, pharmacieName }) {
     color: { dark: "#0B1F16", light: "#ffffff" },
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
+  const isA3 = format === "A3";
+  const scale = isA3 ? Math.SQRT2 : 1;
+  const pageW = isA3 ? 420 : 297;
+  const pageH = isA3 ? 297 : 210;
 
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Affiche A4 paysage — Scannez pour envoyer votre ordonnance</title>
+<title>Affiche ${format} paysage — Scannez pour envoyer votre ordonnance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { margin: 0; padding: 0; }
-  @page { size: A4 landscape; margin: 0; }
+  @page { size: ${format} landscape; margin: 0; }
   @media print { .no-print { display: none !important; } }
   body { background: #ccc; font-family: 'Manrope', sans-serif; }
+  .page {
+    width: ${pageW}mm; height: ${pageH}mm;
+    margin: 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
   .sheet {
     position: relative;
     width: 297mm; height: 210mm;
+    flex: none;
+    transform: scale(${scale});
     background: #F5F8F5;
     color: #12241C;
     overflow: hidden;
@@ -498,7 +514,9 @@ async function generatePosterLandscapeHTML({ url, pharmacieName }) {
 </head>
 <body>
 
-<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF (paysage)</button>
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF (${format} paysage)</button>
+
+<div class="page">
 
 <div class="sheet">
   <div style="position:absolute;inset:0;background:radial-gradient(70% 60% at 4% 0%, rgba(22,192,121,0.16), transparent 62%), radial-gradient(60% 60% at 100% 104%, rgba(11,122,84,0.12), transparent 62%);pointer-events:none;"></div>
@@ -552,6 +570,7 @@ async function generatePosterLandscapeHTML({ url, pharmacieName }) {
     </div>
     <div style="text-align:center;margin-top:16px;font-family:'Manrope';font-weight:800;letter-spacing:0.14em;font-size:14px;color:#0B7A54;text-transform:uppercase;">Scannez-moi</div>
   </div>
+</div>
 </div>
 
 </body>
