@@ -190,7 +190,7 @@ function SecuritySection() {
             Les ordonnances sont des données de santé au sens du RGPD. Gmail et Outlook ne sont pas certifiés HDS. OrdoMail est architecturé pour la conformité dès le premier jour.
           </p>
           <div style={{ background:"rgba(230,168,23,0.12)", border:"1px solid rgba(230,168,23,0.3)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"#fcd34d", lineHeight:1.6 }}>
-            ⚠️ La quasi-totalité des pharmacies françaises utilise Gmail pour recevoir des ordonnances — une violation réglementaire caractérisée.
+            ⚠️ La quasi-totalité des pharmacies françaises utilise des boîtes mail génériques non adaptées à cet usage.
           </div>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap:12 }}>

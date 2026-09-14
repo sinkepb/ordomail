@@ -4,6 +4,11 @@ import Stripe from "https://esm.sh/stripe@14.0.0";
 import { resolvePlan } from "../_shared/webhook-plan.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
+import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
+
+// Libellés commerciaux (voir src/lib/plans.js:PLAN_LIMITS, dupliqué ici —
+// cette fonction Deno ne peut pas importer le module frontend ESM).
+const PLAN_LABELS: Record<string, string> = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion:"2023-10-16" });
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 serve(async (req) => {
@@ -42,7 +47,7 @@ serve(async (req) => {
   try {
     if (["customer.subscription.created","customer.subscription.updated"].includes(event.type)) {
       const sub = obj as Stripe.Subscription;
-      const { data:ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id",sub.customer).single();
+      const { data:ph } = await supabase.from("pharmacies").select("id, email").eq("stripe_customer_id",sub.customer).single();
       if (ph) {
         const lookupKey = sub.items.data[0]?.price.lookup_key;
         const { plan, known } = resolvePlan(lookupKey);
@@ -75,6 +80,32 @@ serve(async (req) => {
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
         await trimExcessPostes(supabase, ph.id, plan);
+
+        // Email de confirmation d'abonnement (14/09/2026) — uniquement à la
+        // création (pas .updated, qui refire à chaque renouvellement/
+        // changement de plan, déjà couvert séparément par change-plan pour
+        // les changements volontaires). Récapitule prix + prochaine date de
+        // prélèvement réelle : sub.trial_end si l'essai gratuit est en cours
+        // (cas normal à l'inscription, TRIAL_DAYS=30 dans create-checkout-
+        // session), sinon current_period_end. Best-effort, non bloquant.
+        if (event.type === "customer.subscription.created" && ph.email) {
+          const label = PLAN_LABELS[plan] || plan;
+          const priceItem = sub.items.data[0]?.price;
+          const montant = Math.round((priceItem?.unit_amount || 0) / 100);
+          const isAnnual = priceItem?.recurring?.interval === "year";
+          const prochainPrelevement = new Date((sub.trial_end || sub.current_period_end) * 1000).toLocaleDateString("fr-FR");
+          const { html, text } = wrapCustomerEmail(
+            `<p>Votre abonnement OrdoMail <strong>${label}</strong> est confirmé.</p>
+             <p><strong>Récapitulatif :</strong><br>
+             Plan : ${label}<br>
+             Prix : ${montant} € TTC / ${isAnnual ? "an" : "mois"}<br>
+             ${sub.trial_end ? `Essai gratuit jusqu'au <strong>${prochainPrelevement}</strong>, date du premier prélèvement.` : `Prochain prélèvement le <strong>${prochainPrelevement}</strong>.`}</p>`,
+            `Votre abonnement OrdoMail ${label} est confirmé.\n\nRécapitulatif :\nPlan : ${label}\nPrix : ${montant} € TTC / ${isAnnual ? "an" : "mois"}\n${sub.trial_end ? `Essai gratuit jusqu'au ${prochainPrelevement}, date du premier prélèvement.` : `Prochain prélèvement le ${prochainPrelevement}.`}`,
+          );
+          try {
+            await sendTransactionalEmail(ph.email, `Confirmation de votre abonnement OrdoMail ${label}`, html, text);
+          } catch { /* non bloquant */ }
+        }
 
         // Phase 4 tarification (§8) — une place promo n'est comptée QU'ICI,
         // après confirmation réelle du paiement par Stripe, jamais à la
