@@ -66,18 +66,37 @@ function normalizeTel(v) {
 function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
 }
-// Format YYYY-MM-DD attendu par <input type="date"> — J+21 par défaut
-// (04/09/2026), modifiable ensuite par le pharmacien.
+// Format YYYY-MM-DD attendu par <input type="date">.
 function toDateInputValue(date) {
   return date.toISOString().slice(0, 10);
 }
-function defaultDateRappel() {
-  const d = new Date();
-  d.setDate(d.getDate() + 21);
-  return toDateInputValue(d);
+function shiftDate(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
 }
 function todayDateInputValue() {
   return toDateInputValue(new Date());
+}
+
+// Le pharmacien saisit la date de RENOUVELLEMENT de l'ordonnance (14/09/2026)
+// — celle indiquée par le médecin/le traitement — pas la date d'envoi du SMS.
+// L'app calcule elle-même l'envoi REMINDER_LEAD_DAYS avant cette échéance ;
+// date_prochaine_relance en base reste la date d'envoi réelle (colonne et
+// logique serveur inchangées), seule la conversion aller-retour change ici.
+const REMINDER_LEAD_DAYS = 7;
+// J+21 pour la date d'envoi (comportement historique inchangé par défaut) =
+// J+28 pour la date de renouvellement une fois qu'on retranche les 7 jours.
+function defaultDateRenouvellement() {
+  return toDateInputValue(shiftDate(new Date(), 21 + REMINDER_LEAD_DAYS));
+}
+// Date de renouvellement -> date d'envoi du SMS (ce qui part au serveur).
+function renouvellementVersEnvoi(dateRenouvellement) {
+  return toDateInputValue(shiftDate(new Date(dateRenouvellement), -REMINDER_LEAD_DAYS));
+}
+// Date d'envoi stockée -> date de renouvellement affichée (édition d'un rappel existant).
+function envoiVersRenouvellement(dateEnvoi) {
+  return toDateInputValue(shiftDate(new Date(dateEnvoi), REMINDER_LEAD_DAYS));
 }
 
 // Exporté (04/09/2026) — réutilisé depuis Dashboard.jsx pour créer un rappel
@@ -95,8 +114,8 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   const [prenom, setPrenom] = useState(editingRappel?.patient_prenom || initialPrenom);
   const [telephone, setTelephone] = useState(editingRappel?.patient_telephone || "");
   const [dateRappel, setDateRappel] = useState(() => editingRappel?.date_prochaine_relance
-    ? toDateInputValue(new Date(editingRappel.date_prochaine_relance))
-    : defaultDateRappel());
+    ? envoiVersRenouvellement(editingRappel.date_prochaine_relance)
+    : defaultDateRenouvellement());
   const [commentaire, setCommentaire] = useState(editingRappel?.commentaire || "");
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
@@ -114,7 +133,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
       return;
     }
     if (canEditDate && (!dateRappel || dateRappel < todayDateInputValue())) {
-      setError("La date de rappel ne peut pas être dans le passé.");
+      setError("La date de renouvellement ne peut pas être dans le passé.");
       return;
     }
     if (!isEdit && !consentement) {
@@ -124,7 +143,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     setCreating(true);
     try {
       const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim() };
-      if (canEditDate) payload.dateRappel = dateRappel;
+      if (canEditDate) payload.dateRappel = renouvellementVersEnvoi(dateRappel);
       if (!isEdit) payload.consentement = consentement;
       await onCreated(payload);
     } catch (e2) {
@@ -153,13 +172,13 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
 
         {canEditDate ? (
           <>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Date de rappel</label>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Date de renouvellement</label>
             <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
               style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
-            <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>{isEdit ? "Modifiable tant que le rappel n'a pas été envoyé." : "Pré-remplie à J+21 (renouvellement standard) — modifiable si besoin."}</div>
+            <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>{isEdit ? "Le SMS part 7 jours avant cette date — modifiable tant qu'il n'a pas été envoyé." : "Le SMS sera envoyé automatiquement 7 jours avant — pré-remplie à J+28, modifiable si besoin."}</div>
           </>
         ) : (
-          <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12, fontStyle: "italic" }}>Date de rappel non modifiable : ce cycle est déjà en cours.</div>
+          <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12, fontStyle: "italic" }}>Date de renouvellement non modifiable : ce cycle est déjà en cours.</div>
         )}
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Commentaire (optionnel)</label>
@@ -221,18 +240,18 @@ function EnvoyerTestModal({ rappel, onCancel, onSend, sending, error }) {
   );
 }
 
-// Prochaine date de rappel par défaut selon le choix du patient (04/09/2026)
-// — J+21 pour un renouvellement (total ou partiel), ou un écart croissant
-// pour "ne rien prendre" (numéro de cycle ACTUEL, avant incrémentation, ×31
-// jours + 21) : un patient qui décline plusieurs fois de suite n'a pas
-// besoin d'être rappelé aussi souvent. Même formule que côté serveur
-// (secure-data:rappels_traiter) — dupliquée ici pour pré-remplir le champ,
-// le serveur reste la source de vérité qui valide la date finale envoyée.
+// Prochaine date de RENOUVELLEMENT par défaut selon le choix du patient
+// (04/09/2026, +7j de délai SMS le 14/09/2026) — J+28 pour un renouvellement
+// (total ou partiel, soit J+21 d'envoi + 7 jours d'avance), ou un écart
+// croissant pour "ne rien prendre" (numéro de cycle ACTUEL, avant
+// incrémentation, ×31 jours + 21, +7) : un patient qui décline plusieurs
+// fois de suite n'a pas besoin d'être rappelé aussi souvent. Même formule
+// que côté serveur (secure-data:rappels_traiter) pour la date d'ENVOI —
+// dupliquée ici pour pré-remplir le champ, le serveur reste la source de
+// vérité qui valide la date finale envoyée (voir renouvellementVersEnvoi).
 function defaultDateForChoix(rappel) {
-  const d = new Date();
-  const jours = rappel.choix_patient === "rien" ? rappel.cycle_numero * 31 + 21 : 21;
-  d.setDate(d.getDate() + jours);
-  return toDateInputValue(d);
+  const jours = (rappel.choix_patient === "rien" ? rappel.cycle_numero * 31 + 21 : 21) + REMINDER_LEAD_DAYS;
+  return toDateInputValue(shiftDate(new Date(), jours));
 }
 
 // Popup de confirmation à la validation d'un rappel "à traiter" (04/09/2026)
@@ -251,14 +270,14 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
     e.preventDefault();
     setError("");
     if (!dateRappel || dateRappel < todayDateInputValue()) {
-      setError("La date de rappel ne peut pas être dans le passé.");
+      setError("La date de renouvellement ne peut pas être dans le passé.");
       return;
     }
     if (requiresLivraison && !livre) {
       setError("Confirmez que le médicament a bien été livré avant de valider.");
       return;
     }
-    onConfirm(dateRappel);
+    onConfirm(renouvellementVersEnvoi(dateRappel));
   }
 
   const titre = rappel.choix_patient === "tout_renouveler" ? "✅ Confirmer le renouvellement"
@@ -284,11 +303,11 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
           </label>
         )}
 
-        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de rappel</label>
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de renouvellement</label>
         <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
         <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>
-          {rappel.choix_patient === "rien" ? "Espacée automatiquement (le patient a décliné) — modifiable si besoin." : "Pré-remplie à J+21 — modifiable si besoin."}
+          Le SMS part 7 jours avant cette date{rappel.choix_patient === "rien" ? " — espacée automatiquement (le patient a décliné), modifiable si besoin." : " — pré-remplie à J+28, modifiable si besoin."}
         </div>
 
         {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
@@ -337,19 +356,19 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 // Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
-// validation (J+21).
+// validation (J+28 de renouvellement, soit J+21 d'envoi).
 function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
-  const [dateRappel, setDateRappel] = useState(defaultDateRappel);
+  const [dateRappel, setDateRappel] = useState(defaultDateRenouvellement);
   const [error, setError] = useState("");
 
   function handleSubmit(e) {
     e.preventDefault();
     setError("");
     if (!dateRappel || dateRappel < todayDateInputValue()) {
-      setError("La date de rappel ne peut pas être dans le passé.");
+      setError("La date de renouvellement ne peut pas être dans le passé.");
       return;
     }
-    onConfirm(dateRappel);
+    onConfirm(renouvellementVersEnvoi(dateRappel));
   }
 
   return (
@@ -361,10 +380,10 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
           Reprend le suivi de <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> sans recréer un rappel — mêmes coordonnées, nouveau cycle.
         </div>
 
-        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de rappel</label>
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Prochaine date de renouvellement</label>
         <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
-        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Pré-remplie à J+21 — modifiable si besoin.</div>
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Le SMS part 7 jours avant cette date — pré-remplie à J+28, modifiable si besoin.</div>
 
         {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
@@ -656,7 +675,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
           style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: "inherit", background: "#fff", color: "#374151", cursor: "pointer" }}>
           <option value="recent">Plus récents d'abord</option>
           <option value="alpha">Ordre alphabétique</option>
-          <option value="date_rappel">Date de rappel</option>
+          <option value="date_rappel">Date de renouvellement</option>
         </select>
       </div>
 
