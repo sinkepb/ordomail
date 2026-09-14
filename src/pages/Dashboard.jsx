@@ -16,6 +16,7 @@ import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
 import { AideModal } from "../components/AideModal.jsx";
+import { generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML } from "../lib/print.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
@@ -85,6 +86,43 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [pinUniqueError, setPinUniqueError] = useState("");
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
+  // Onglet QR code en libre-service (14/09/2026) — uniquement les affiches
+  // A4/A3 (portrait + paysage) : la génération de lots de stickers physiques
+  // et l'association manuelle restent réservées au backoffice OrdoMail
+  // (QrCodesAdmin.jsx), ce panneau ne fait que réimprimer l'affiche du QR
+  // déjà actif pour CETTE pharmacie (pharmacie.qr_token, voir register-pharmacie
+  // et la migration de backfill du 14/09/2026).
+  const [posterFormat, setPosterFormat] = useState("A4");
+  const [posterOrientation, setPosterOrientation] = useState("portrait");
+  const [posterHtml, setPosterHtml] = useState(null);
+  const [posterHtmlA3, setPosterHtmlA3] = useState(null);
+  const [posterHtmlPaysage, setPosterHtmlPaysage] = useState(null);
+  const [posterHtmlPaysageA3, setPosterHtmlPaysageA3] = useState(null);
+  const [posterLoading, setPosterLoading] = useState(false);
+  const [posterErr, setPosterErr] = useState("");
+
+  useEffect(() => {
+    if (section !== "qrcode" || !pharmacie.qr_token || posterHtml) return;
+    setPosterLoading(true); setPosterErr("");
+    const params = { url: `${window.location.origin}/?patient=${pharmacie.id}&t=${pharmacie.qr_token}`, pharmacieName: pharmacie.nom };
+    Promise.all([
+      generatePosterHTML({ ...params, format: "A4" }).then(setPosterHtml),
+      generatePosterHTML({ ...params, format: "A3" }).then(setPosterHtmlA3),
+      generatePosterLandscapeHTML({ ...params, format: "A4" }).then(setPosterHtmlPaysage),
+      generatePosterLandscapeHTML({ ...params, format: "A3" }).then(setPosterHtmlPaysageA3),
+    ]).catch(e => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
+
+  function handleDownloadPoster() {
+    const map = { A4: { portrait: posterHtml, paysage: posterHtmlPaysage }, A3: { portrait: posterHtmlA3, paysage: posterHtmlPaysageA3 } };
+    const html = map[posterFormat][posterOrientation];
+    if (!html) return;
+    setPosterErr("");
+    const win = openPosterPDFFromHTML(html);
+    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+  }
+
   async function addPoste() {
     // Utiliser le planInfo à jour (basé sur pharmacie.plan actuel)
     const currentPlanInfo = PLAN_LIMITS[pharmacie.plan] || planInfo;
@@ -130,6 +168,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   }
 
   const tabs = [["postes","🖥️","Postes"],
+    ["qrcode","🏷️","QR code"],
     ...(planInfo.offresStories ? [["stories","📊","Stories"]] : []),
     ["compte","👤","Compte"],["journal","🗒️","Journal d'activité"]];
 
@@ -360,6 +399,60 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
               </div>
               <div style={{marginTop:8,fontSize:11,color:"#64748b",lineHeight:1.6}}>ℹ️ C'est le titulaire qui crée et modifie les codes PIN depuis cette page.</div>
             </div>
+          </div>
+          </ErrorBoundary>
+        )}
+
+        {section==="qrcode"&&(
+          <ErrorBoundary compact label="QR code">
+          <div style={{background:"#fff",borderRadius:14,padding:22,boxShadow:"0 2px 10px rgba(0,0,0,0.07)",maxWidth:420}}>
+            <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>🏷️ Affiche QR code</div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>À imprimer et afficher en pharmacie pour que vos patients vous envoient leur ordonnance en la scannant.</div>
+            {!pharmacie.qr_token ? (
+              <div style={{fontSize:13,color:"#b91c1c",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 14px"}}>
+                Votre code QR n'est pas encore configuré pour cette pharmacie — contactez le support via le bouton ❓ Aide.
+              </div>
+            ) : (
+              <>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {["A4","A3"].map(f=>(
+                    <button key={f} onClick={()=>setPosterFormat(f)}
+                      style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterFormat===f?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterFormat===f?"#1a3a6e":"#fff",color:posterFormat===f?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                      Format {f}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:6,marginBottom:14}}>
+                  {[["portrait","📄 Portrait"],["paysage","🖼️ Paysage"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setPosterOrientation(k)}
+                      style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterOrientation===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterOrientation===k?"#f0f4ff":"#fff",color:posterOrientation===k?"#1a3a6e":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {(() => {
+                  const isA3 = posterFormat === "A3";
+                  const isPortrait = posterOrientation === "portrait";
+                  const html = isA3 ? (isPortrait ? posterHtmlA3 : posterHtmlPaysageA3) : (isPortrait ? posterHtml : posterHtmlPaysage);
+                  const dims = isPortrait ? (isA3 ? {w:1122,h:1588} : {w:793,h:1123}) : (isA3 ? {w:1587,h:1122} : {w:1122,h:793});
+                  const scale = (isPortrait ? 222 : 314) / dims.w;
+                  return (
+                    <div style={{width:314,height:222,margin:"0 auto 14px",borderRadius:10,overflow:"hidden",background:"#f8faff",border:"1px solid #e0e7ff",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {posterLoading && <div style={{color:"#94a3b8",fontSize:12}}>Aperçu…</div>}
+                      {!posterLoading && html && (
+                        <iframe title={`Aperçu affiche ${posterFormat} ${posterOrientation}`} srcDoc={html}
+                          style={{width:dims.w,height:dims.h,border:"none",flexShrink:0,transform:`scale(${scale})`,transformOrigin:"top left"}}/>
+                      )}
+                    </div>
+                  );
+                })()}
+                <button onClick={handleDownloadPoster} disabled={posterLoading}
+                  style={{width:"100%",padding:"11px 16px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:13,cursor:posterLoading?"default":"pointer",fontFamily:"inherit",opacity:posterLoading?0.6:1}}>
+                  {posterLoading ? "Préparation…" : `🖨️ Enregistrer en PDF (${posterFormat} ${posterOrientation==="portrait"?"portrait":"paysage"})`}
+                </button>
+                {posterErr && <div style={{marginTop:10,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",color:"#b91c1c",fontSize:12}}>{posterErr}</div>}
+              </>
+            )}
           </div>
           </ErrorBoundary>
         )}

@@ -90,6 +90,15 @@ Deno.serve(async (req) => {
           // resynchronise cette valeur à chaque changement de plan.
           sonnette_active: false,
           couleur:         "#1a3a6e",
+          // @fix 14/09/2026 — jamais renseigné ici depuis la création de cette
+          // fonction (repéré en ajoutant l'onglet QR code en libre-service côté
+          // pharmacien) : sans lui, le lien ?patient=<id>&t=<qr_token> de la
+          // pharmacie est définitivement non fonctionnel (submit-ordonnance
+          // exige qr_token === pharmacies.qr_token). Seules les pharmacies
+          // déjà existantes au 23/07/2026 avaient été couvertes par un
+          // backfill ponctuel — voir la migration 20260914_backfill_qr_token.sql
+          // pour celles créées depuis.
+          qr_token:        crypto.randomUUID().replace(/-/g, ""),
         })
         .select()
         .single();
