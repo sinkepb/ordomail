@@ -1145,7 +1145,7 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
                   color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
                   display: "flex", alignItems: "center", gap: 10,
                 }}>
-                  📤 Prendre une photo / choisir un fichier
+                  📤 Choisir un fichier
                 </button>
                 <input ref={addFileInputRef} type="file" accept="image/*,.pdf" multiple
                   style={{ display: "none" }}

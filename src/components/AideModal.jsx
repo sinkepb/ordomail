@@ -22,9 +22,9 @@ const FAQ = [
   {
     categorie: "Ordonnances",
     items: [
-      { q: "Comment une ordonnance arrive-t-elle dans OrdoMail ?", r: "Le patient scanne le QR code de la pharmacie (sticker, affiche ou badge NFC) avec son téléphone, prend une photo ou choisit un fichier de son ordonnance, et l'envoie. Elle apparaît alors automatiquement dans l'onglet Ordonnances, statut \"Nouveau\"." },
+      { q: "Comment une ordonnance arrive-t-elle dans OrdoMail ?", r: "Le patient scanne le QR code de la pharmacie (sticker, affiche ou badge NFC) avec son téléphone, puis envoie le fichier de son ordonnance électronique reçue par email de son médecin. Elle apparaît alors automatiquement dans l'onglet Ordonnances, statut \"Nouveau\"." },
       { q: "Comment imprimer une ordonnance reçue ?", r: "Ouvrez l'ordonnance dans l'onglet Ordonnances puis cliquez sur \"Imprimer\". Une fois confirmée comme imprimée, elle passe au statut \"Imprimé\" et le nom du poste qui l'a traitée est enregistré." },
-      { q: "Une ordonnance ne s'affiche pas alors que le patient dit l'avoir envoyée", r: "Vérifiez d'abord votre connexion internet et rafraîchissez la page. Si le problème persiste, demandez au patient de renvoyer via le QR code (photo nette, fichier < 10 Mo) — en dernier recours, contactez le support via ce module d'aide." },
+      { q: "Une ordonnance ne s'affiche pas alors que le patient dit l'avoir envoyée", r: "Vérifiez d'abord votre connexion internet et rafraîchissez la page. Si le problème persiste, demandez au patient de renvoyer le fichier via le QR code (< 10 Mo) — en dernier recours, contactez le support via ce module d'aide." },
       { q: "Combien de temps les ordonnances sont-elles conservées ?", r: "Les ordonnances (fichier et données) sont automatiquement supprimées après quelques jours pour limiter la conservation de données de santé, conformément à la politique de confidentialité. Imprimez ou traitez chaque ordonnance rapidement après réception." },
     ],
   },
