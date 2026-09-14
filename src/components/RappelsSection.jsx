@@ -156,7 +156,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>{isEdit ? "✏️ Modifier le rappel" : "🔔 Nouveau rappel de renouvellement"}</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>{isEdit ? "✏️ Modifier le rappel" : "🔔 Nouveau rappel"}</div>
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Nom du patient</label>
         <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Dupont"
@@ -595,7 +595,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>
-          🔔 Rappels de renouvellement
+          🔔 Rappels
           {countATraiter > 0 && (
             <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} à traiter</span>
           )}
