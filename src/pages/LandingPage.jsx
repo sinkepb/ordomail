@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import { C, useFadeIn, PLANS } from "../lib/utils.js";
+import { toHT } from "../lib/plans.js";
 
 const DEMO_ORDOS = [
   { nom: "MARTIN Pierre",    cv: "1 75 04 75 118 042 18", medecin: "Dr Bernard",  source: "email",  status: "nouveau",  mins: 3  },
@@ -246,9 +247,10 @@ function PricingSection({ onGoToPricing }) {
                 <div style={{ marginBottom:16 }}>
                   <span style={{ fontSize:38, fontWeight:900, color:p.color }}>{price}</span>
                   <span style={{ fontSize:15, color:C.muted, fontWeight:400 }}> € TTC/mois</span>
+                  <div style={{ fontSize:12.5, color:C.muted, marginTop:2 }}>soit {toHT(price).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})} € HT/mois</div>
                   {billing==="annual" && (
                     <>
-                      <div style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>−{p.price-price}€/mois vs mensuel</div>
+                      <div style={{ fontSize:12, color:"#16a34a", fontWeight:600, marginTop:4 }}>−{p.price-price}€/mois vs mensuel</div>
                       <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>soit {p.priceAnnual}€ TTC facturés une fois par an (2 mois offerts)</div>
                     </>
                   )}

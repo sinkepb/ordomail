@@ -159,3 +159,10 @@ export function canAddPoste(plan, postes) {
   const limit = PLAN_LIMITS[plan]?.maxPostes || 2;
   return (postes || []).filter(p => p.actif).length < limit;
 }
+
+// TVA 20 % (même taux que la génération de facture, voir print.jsx:
+// generateInvoiceHTML — le TTC est le seul montant réellement facturé par
+// Stripe, le HT s'en déduit donc par division plutôt que l'inverse).
+export function toHT(ttc) {
+  return Math.round((ttc / 1.20) * 100) / 100;
+}

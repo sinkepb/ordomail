@@ -5,7 +5,7 @@
 // + le paiement Stripe Checkout réel (phase 3), déjà testé de bout en bout le
 // 24/07/2026. Ne pas modifier son comportement lors d'un futur refactor sans retester.
 import { useState, useEffect } from "react";
-import { PLAN_LIMITS, PLAN_ORDER, getKitRule, ACTIVE_PROMOTION, getPromoPrice } from "../lib/plans.js";
+import { PLAN_LIMITS, PLAN_ORDER, getKitRule, ACTIVE_PROMOTION, getPromoPrice, toHT } from "../lib/plans.js";
 import { PersistentNav } from "../pages/LandingPage.jsx";
 import { getSupabaseClient, setPendingCheckout } from "../supabase.js";
 
@@ -427,9 +427,15 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
             <div><div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>OrdoMail {plan.label}</div><div style={{fontSize:12,color:"#94a3b8"}}>{checkoutBilling==="annual"?"Annuel (1 mois offert)":"Mensuel"}</div></div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Aujourd'hui</span><span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>0 € — Gratuit</span></div>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} €/mois</span></div>
+          {/* @fix 14/09/2026 — pour l'annuel, `price` EST déjà le total annuel réel
+              (priceAnnual, ligne ~106), pas un tarif mensuel : afficher "/mois" puis
+              multiplier ce même total par 12 juste en dessous (ancien code) affichait
+              un montant ×12 en trop (ex. 490€/mois puis "5 880 €/an" pour un plan à
+              490€/an réellement facturés). Le HT s'ajoute sur le même montant TTC. */}
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#94a3b8"}}>Après 30 jours</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price} € TTC{checkoutBilling==="annual"?"/an":"/mois"}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}><span/><span style={{fontSize:11,color:"#94a3b8"}}>soit {toHT(price).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})} € HT{checkoutBilling==="annual"?"/an":"/mois"}</span></div>
           {checkoutBilling==="annual" && (
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Soit facturé</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{price*12} €/an</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}><span style={{fontSize:12,color:"#94a3b8"}}>Soit</span><span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{Math.round(price/12)} € TTC/mois</span></div>
           )}
         </div>
       </div>
@@ -485,8 +491,9 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   {promoAmount != null && (
                     <span style={{fontSize:15,color:"#94a3b8",textDecoration:"line-through",marginRight:8}}>{officialPr} €</span>
                   )}
-                  <span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> €/mois</span>
-                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {promoAmount != null ? promoAmount : p.priceAnnual} € facturés une fois / an</div>}
+                  <span style={{fontSize:34,fontWeight:900,color:p.color}}>{pr}</span><span style={{fontSize:13,color:"#94a3b8"}}> € TTC/mois</span>
+                  <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>soit {toHT(pr).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})} € HT/mois</div>
+                  {billingTab==="annual" && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>soit {promoAmount != null ? promoAmount : p.priceAnnual} € TTC facturés une fois / an</div>}
                   {promoAmount != null && <div style={{fontSize:11,color:"#c2410c",fontWeight:700,marginTop:2}}>Prix garanti {ACTIVE_PROMOTION.dureeGarantieMois} mois</div>}
                 </div>
                 <button onClick={()=>{setCheckoutPlan(pid);setCheckoutBilling(billingTab);setStep(resumePharmacieId?"card":"details");setView("checkout");}}
