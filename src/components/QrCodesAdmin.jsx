@@ -41,6 +41,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [stickerErr, setStickerErr] = useState("");
   const stickerCanvasRef = useRef(null);
   const [viewTab, setViewTab] = useState("sticker");
+  const [posterOrientation, setPosterOrientation] = useState("portrait");
   const [posterHtml, setPosterHtml] = useState(null);
   const [posterHtmlA3, setPosterHtmlA3] = useState(null);
   const [posterHtmlPaysage, setPosterHtmlPaysage] = useState(null);
@@ -170,7 +171,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   }
 
   useEffect(() => {
-    if (!viewingQr || viewTab !== "affiche") return;
+    if (!viewingQr || (viewTab !== "afficheA4" && viewTab !== "afficheA3")) return;
     setPosterLoading(true); setPosterErr(""); setPosterHtml(null); setPosterHtmlA3(null); setPosterHtmlPaysage(null); setPosterHtmlPaysageA3(null);
     const params = { url: `${qrBaseUrl}/?qr=${viewingQr.token}`, pharmacieName: viewingQr.pharmacies?.nom };
     // Les quatre formats sont générés d'avance, comme l'A4 déjà en place — même
@@ -215,6 +216,59 @@ function QrCodesAdmin({ adminToken } = {}) {
     setPosterErr("");
     const win = openPosterPDFFromHTML(posterHtmlPaysageA3);
     if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+  }
+
+  // Un onglet Affiche par format papier (A4/A3, 14/09/2026) — chacun propose
+  // les deux orientations (portrait/paysage) via posterOrientation, plutôt
+  // qu'un onglet unique empilant les 4 combinaisons verticalement. Les
+  // dimensions px des deux formats respectent le même ratio ISO 216
+  // (A3 = A4 x √2 dans les deux sens), donc un seul calcul d'échelle
+  // (fit-to-width) suffit pour un aperçu cohérent quel que soit le format.
+  function renderAfficheTab(format) {
+    const isA3 = format === "A3";
+    const portraitHtml = isA3 ? posterHtmlA3 : posterHtml;
+    const paysageHtml = isA3 ? posterHtmlPaysageA3 : posterHtmlPaysage;
+    const downloadPortrait = isA3 ? handleDownloadPosterA3 : handleDownloadPoster;
+    const downloadPaysage = isA3 ? handleDownloadPosterPaysageA3 : handleDownloadPosterPaysage;
+    const portraitDims = isA3 ? { w: 1122, h: 1588 } : { w: 793, h: 1123 };
+    const paysageDims = isA3 ? { w: 1587, h: 1122 } : { w: 1122, h: 793 };
+    const isPortrait = posterOrientation === "portrait";
+    const dims = isPortrait ? portraitDims : paysageDims;
+    const scale = (isPortrait ? 222 : 314) / dims.w;
+    const html = isPortrait ? portraitHtml : paysageHtml;
+    const download = isPortrait ? downloadPortrait : downloadPaysage;
+
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+          Affiche {format} — à imprimer ou enregistrer en PDF
+        </div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 12 }}>
+          {[["portrait", "📄 Portrait"], ["paysage", "🖼️ Paysage"]].map(([k, l]) => (
+            <button key={k} onClick={() => setPosterOrientation(k)}
+              style={{ padding: "6px 14px", border: `1px solid ${posterOrientation === k ? "#3b82f6" : "#334155"}`, borderRadius: 8, background: posterOrientation === k ? "#1e3a8a" : "transparent", color: posterOrientation === k ? "#93c5fd" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div style={{ width: 314, height: 222, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
+          {/* flexShrink:0 indispensable : dans ce conteneur flex, l'iframe se
+              faisait sinon écraser à sa largeur mini par défaut (300px) par le
+              rétrécissement flex automatique — l'aperçu apparaissait comme une
+              fine bande quasi invisible au lieu du poster complet. */}
+          {!posterLoading && html && (
+            <iframe title={`Aperçu affiche ${format} ${posterOrientation}`} srcDoc={html}
+              style={{ width: dims.w, height: dims.h, border: "none", flexShrink: 0, transform: `scale(${scale})`, transformOrigin: "top left" }} />
+          )}
+        </div>
+        <button onClick={download} disabled={!html}
+          style={{ width: "100%", padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !html ? "default" : "pointer", fontFamily: "inherit", opacity: !html ? 0.6 : 1 }}>
+          {posterLoading ? "Préparation…" : `🖨️ Enregistrer en PDF (${format} ${isPortrait ? "portrait" : "paysage"})`}
+        </button>
+        {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
+      </>
+    );
   }
 
   const filteredPharmacies = pharmaSearch
@@ -394,7 +448,7 @@ function QrCodesAdmin({ adminToken } = {}) {
 
             <div style={{ borderTop: "1px solid #334155", marginTop: 4, paddingTop: 16 }}>
               <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 16 }}>
-                {[["sticker", "🟢 Sticker"], ["affiche", "📄 Affiche"], ["nfc", "🏷️ Badge NFC"]].map(([k, l]) => (
+                {[["sticker", "🟢 Sticker"], ["afficheA4", "📄 Affiche A4"], ["afficheA3", "📄 Affiche A3"], ["nfc", "🏷️ Badge NFC"]].map(([k, l]) => (
                   <button key={k} onClick={() => setViewTab(k)}
                     style={{ padding: "7px 16px", border: `1px solid ${viewTab === k ? "#22c55e" : "#334155"}`, borderRadius: 8, background: viewTab === k ? "#14532d" : "transparent", color: viewTab === k ? "#86efac" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                     {l}
@@ -424,55 +478,10 @@ function QrCodesAdmin({ adminToken } = {}) {
                   </button>
                   {stickerErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{stickerErr}</div>}
                 </>
-              ) : viewTab === "affiche" ? (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-                    Affiche — à imprimer ou enregistrer en PDF (A4, A3, ou paysage A4/A3)
-                  </div>
-                  <div style={{ width: 222, height: 314, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
-                    {!posterLoading && posterHtml && (
-                      // flexShrink:0 indispensable : dans ce conteneur flex, un iframe de
-                      // 793px de large se faisait sinon écraser à sa largeur mini par défaut
-                      // (300px) par le rétrécissement flex automatique — l'aperçu apparaissait
-                      // comme une fine bande quasi invisible au lieu du poster complet.
-                      <iframe title="Aperçu affiche A4" srcDoc={posterHtml}
-                        style={{ width: 793, height: 1123, border: "none", flexShrink: 0, transform: "scale(0.28)", transformOrigin: "top left" }} />
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={handleDownloadPoster} disabled={!posterHtml}
-                      style={{ flex: 1, padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !posterHtml ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtml ? 0.6 : 1 }}>
-                      {posterLoading ? "Préparation…" : "🖨️ Enregistrer en PDF (A4)"}
-                    </button>
-                    <button onClick={handleDownloadPosterA3} disabled={!posterHtmlA3}
-                      style={{ flex: 1, padding: "10px 16px", border: "1px solid #3b82f6", borderRadius: 10, background: "transparent", color: "#3b82f6", fontWeight: 800, fontSize: 13, cursor: !posterHtmlA3 ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtmlA3 ? 0.6 : 1 }}>
-                      {posterLoading ? "Préparation…" : "🖨️ Enregistrer en PDF (A3)"}
-                    </button>
-                  </div>
-
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", margin: "18px 0 10px" }}>
-                    Variante paysage (texte à gauche, QR à droite)
-                  </div>
-                  <div style={{ width: 314, height: 222, margin: "0 auto 14px", borderRadius: 10, overflow: "hidden", background: "#0f172a", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {posterLoading && <div style={{ color: "#64748b", fontSize: 12 }}>Aperçu…</div>}
-                    {!posterLoading && posterHtmlPaysage && (
-                      <iframe title="Aperçu affiche paysage" srcDoc={posterHtmlPaysage}
-                        style={{ width: 1122, height: 793, border: "none", flexShrink: 0, transform: "scale(0.28)", transformOrigin: "top left" }} />
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={handleDownloadPosterPaysage} disabled={!posterHtmlPaysage}
-                      style={{ flex: 1, padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !posterHtmlPaysage ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtmlPaysage ? 0.6 : 1 }}>
-                      {posterLoading ? "Préparation…" : "🖨️ PDF Paysage (A4)"}
-                    </button>
-                    <button onClick={handleDownloadPosterPaysageA3} disabled={!posterHtmlPaysageA3}
-                      style={{ flex: 1, padding: "10px 16px", border: "1px solid #3b82f6", borderRadius: 10, background: "transparent", color: "#3b82f6", fontWeight: 800, fontSize: 13, cursor: !posterHtmlPaysageA3 ? "default" : "pointer", fontFamily: "inherit", opacity: !posterHtmlPaysageA3 ? 0.6 : 1 }}>
-                      {posterLoading ? "Préparation…" : "🖨️ PDF Paysage (A3)"}
-                    </button>
-                  </div>
-                  {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
-                </>
+              ) : viewTab === "afficheA4" ? (
+                renderAfficheTab("A4")
+              ) : viewTab === "afficheA3" ? (
+                renderAfficheTab("A3")
               ) : (
                 <NfcWriter url={`${qrBaseUrl}/?qr=${viewingQr.token}`} color="#3b82f6"/>
               )}
