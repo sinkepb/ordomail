@@ -156,10 +156,27 @@ serve(async (req) => {
     // conservée (le service a été rendu, pas de "remboursement" de place).
     if (event.type === "customer.subscription.deleted") {
       const sub = obj as Stripe.Subscription;
-      const { data: ph } = await supabase.from("pharmacies").select("id").eq("stripe_customer_id", sub.customer).single();
+      const { data: ph } = await supabase.from("pharmacies").select("id, email, plan").eq("stripe_customer_id", sub.customer).single();
       if (ph) {
         await supabase.from("pharmacies").update({ plan_status: "canceled" }).eq("id", ph.id);
         await supabase.from("abonnements").update({ status: "canceled", updated_at: new Date().toISOString() }).eq("stripe_sub_id", sub.id);
+
+        // Email récapitulatif de résiliation (15/09/2026) — best-effort, non
+        // bloquant. `ph.plan` reste le dernier plan actif (jamais remis à
+        // null ici), suffisant pour le récap ; lookupKey en repli si jamais
+        // absent/désynchronisé.
+        if (ph.email) {
+          const lookupKey = sub.items.data[0]?.price.lookup_key;
+          const label = PLAN_LABELS[ph.plan] || resolvePlan(lookupKey).plan;
+          const dateFin = new Date((sub.ended_at || sub.canceled_at || Date.now() / 1000) * 1000).toLocaleDateString("fr-FR");
+          const { html, text } = wrapCustomerEmail(
+            `<p>Votre abonnement OrdoMail <strong>${label}</strong> a bien été résilié, avec effet au <strong>${dateFin}</strong>.</p><p>Aucun nouveau prélèvement ne sera effectué. Vous pouvez souscrire à nouveau à tout moment depuis votre espace.</p>`,
+            `Votre abonnement OrdoMail ${label} a bien été résilié, avec effet au ${dateFin}.\nAucun nouveau prélèvement ne sera effectué. Vous pouvez souscrire à nouveau à tout moment depuis votre espace.`,
+          );
+          try {
+            await sendTransactionalEmail(ph.email, "Confirmation de résiliation de votre abonnement OrdoMail", html, text);
+          } catch { /* non bloquant */ }
+        }
       }
     }
     // @fix 29/08/2026 (audit Phase 7, §19) — invoice.payment_succeeded ne
