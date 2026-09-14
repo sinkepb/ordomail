@@ -10,10 +10,14 @@ import Stripe from "https://esm.sh/stripe@14.0.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
+import { sendTransactionalEmail } from "../_shared/email.ts";
 
 // Ordre des plans — sert uniquement à détecter upgrade vs downgrade (§13),
 // pas les limites/fonctionnalités elles-mêmes (voir planFeatures.ts).
 const PLAN_ORDER = ["starter", "standard", "pro"];
+// Libellés commerciaux (voir src/lib/plans.js:PLAN_LIMITS, dupliqué ici —
+// cette fonction Deno ne peut pas importer le module frontend ESM).
+const PLAN_LABELS: Record<string, string> = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -48,9 +52,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Vous n'êtes pas autorisé à modifier cet abonnement" }), { status: 403, headers: CORS });
     }
 
-    const { data: ph } = await supabase.from("pharmacies").select("plan, stripe_subscription_id").eq("id", pharmacieId).maybeSingle();
+    const { data: ph } = await supabase.from("pharmacies").select("plan, stripe_subscription_id, email").eq("id", pharmacieId).maybeSingle();
     if (!ph?.stripe_subscription_id) {
       return new Response(JSON.stringify({ error: "Pas d'abonnement Stripe actif" }), { status: 400, headers: CORS });
+    }
+
+    // Email de confirmation (14/09/2026) — best-effort : ni l'upgrade ni le
+    // downgrade programmé ne notifiaient le titulaire jusqu'ici, uniquement
+    // visible dans l'app. Un échec d'envoi ne doit jamais faire échouer le
+    // changement de plan lui-même, déjà appliqué côté Stripe à ce stade.
+    async function notifierChangement(sujet: string, htmlBody: string, textBody: string) {
+      if (!ph!.email) return;
+      try {
+        await sendTransactionalEmail(ph!.email, sujet, htmlBody, textBody);
+      } catch { /* non bloquant */ }
     }
 
     // Phase 6 tarification (§13) — un downgrade est programmé à la fin de la
@@ -68,6 +83,13 @@ serve(async (req) => {
       await supabase.from("pharmacies").update({
         plan_pending: newPlan, plan_pending_billing: billing, plan_pending_effective_at: effectiveAt,
       }).eq("id", pharmacieId);
+      const dateStr = new Date(effectiveAt).toLocaleDateString("fr-FR");
+      const label = PLAN_LABELS[newPlan] || newPlan;
+      await notifierChangement(
+        "Changement de plan programmé — OrdoMail",
+        `<p>Votre abonnement OrdoMail passera au plan <strong>${label}</strong> à la fin de votre période de facturation en cours, le <strong>${dateStr}</strong>.</p><p>Vous conservez toutes vos fonctionnalités actuelles jusqu'à cette date.</p>`,
+        `Votre abonnement OrdoMail passera au plan ${label} le ${dateStr}. Vous conservez toutes vos fonctionnalités actuelles jusqu'à cette date.`,
+      );
       return new Response(JSON.stringify({ success: true, scheduled: true, effectiveAt, newPlan }), { headers: CORS });
     }
 
@@ -96,6 +118,13 @@ serve(async (req) => {
       plan_pending: null, plan_pending_billing: null, plan_pending_effective_at: null,
     }).eq("id", pharmacieId);
     await trimExcessPostes(supabase, pharmacieId, newPlan);
+
+    const label = PLAN_LABELS[newPlan] || newPlan;
+    await notifierChangement(
+      `Votre abonnement OrdoMail est passé à ${label}`,
+      `<p>Votre abonnement a été mis à niveau vers <strong>${label}</strong>, effectif immédiatement.</p><p>Le montant proratisé pour le reste de la période en cours sera prélevé automatiquement.</p>`,
+      `Votre abonnement a été mis à niveau vers ${label}, effectif immédiatement. Le montant proratisé pour le reste de la période en cours sera prélevé automatiquement.`,
+    );
 
     return new Response(JSON.stringify({ success: true, newPlan }), { headers: CORS });
 

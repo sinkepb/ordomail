@@ -11,6 +11,11 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { sendTransactionalEmail } from "../_shared/email.ts";
+
+// Libellés commerciaux (voir src/lib/plans.js:PLAN_LIMITS, dupliqué ici —
+// cette fonction Deno ne peut pas importer le module frontend ESM).
+const PLAN_LABELS: Record<string, string> = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, { "Content-Type": "application/json" });
@@ -25,7 +30,7 @@ Deno.serve(async (req) => {
   const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
 
   const { data: pending, error } = await supabase.from("pharmacies")
-    .select("id, plan_pending, plan_pending_billing, stripe_subscription_id")
+    .select("id, plan_pending, plan_pending_billing, stripe_subscription_id, email")
     .not("plan_pending", "is", null)
     .lte("plan_pending_effective_at", new Date().toISOString());
   if (error) {
@@ -56,6 +61,19 @@ Deno.serve(async (req) => {
         plan_pending: null, plan_pending_billing: null, plan_pending_effective_at: null,
       }).eq("id", ph.id);
       await trimExcessPostes(supabase, ph.id, newPlan);
+      // Best-effort (14/09/2026) — un échec d'envoi ne doit pas faire échouer
+      // l'application du downgrade lui-même, déjà actée côté Stripe/DB.
+      if (ph.email) {
+        const label = PLAN_LABELS[newPlan] || newPlan;
+        try {
+          await sendTransactionalEmail(
+            ph.email,
+            `Votre abonnement OrdoMail est passé à ${label}`,
+            `<p>Comme programmé, votre abonnement est passé au plan <strong>${label}</strong>.</p>`,
+            `Comme programmé, votre abonnement OrdoMail est passé au plan ${label}.`,
+          );
+        } catch { /* non bloquant */ }
+      }
       applied++;
     } catch (e) {
       errors.push(`${ph.id}: ${(e as Error).message}`);
