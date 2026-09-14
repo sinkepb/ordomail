@@ -170,6 +170,12 @@ serve(async (req) => {
       name: ph.nom || undefined,
       address: ph.adresse ? { line1: ph.adresse, country: "FR" } : undefined,
       invoice_settings: ph.siret ? { custom_fields: [{ name: "SIRET", value: ph.siret }] } : undefined,
+      // @fix 14/09/2026 — sans ça, les libellés générés par Stripe lui-même sur
+      // la facture (ex. la ligne de proratisation "Trial period for OrdoMail
+      // Essentiel") restent en anglais quelle que soit la langue de l'app :
+      // ce sont des chaînes de Stripe, pas du texte OrdoMail, elles suivent la
+      // langue du client Stripe (preferred_locales), pas du navigateur.
+      preferred_locales: ["fr"],
     };
     let customerId = ph.stripe_customer_id;
     if (!customerId) {
@@ -200,6 +206,7 @@ serve(async (req) => {
       mode: "subscription",
       customer: customerId,
       client_reference_id: pharmacieId,
+      locale: "fr",
       line_items: [{ price: priceId, quantity: 1 }, ...kitLineItems],
       subscription_data: {
         trial_period_days: TRIAL_DAYS,

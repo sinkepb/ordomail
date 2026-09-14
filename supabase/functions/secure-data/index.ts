@@ -902,6 +902,7 @@ Deno.serve(async (req) => {
         mode: "payment",
         customer: ph.stripe_customer_id,
         client_reference_id: pharmacieId,
+        locale: "fr",
         line_items: [{
           price_data: {
             currency: "eur",

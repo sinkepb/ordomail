@@ -49,6 +49,7 @@ Deno.serve(async (req) => {
     const session = await stripe.billingPortal.sessions.create({
       customer: ph.stripe_customer_id,
       return_url: `${base}/?checkout=portal-return`,
+      locale: "fr",
     });
 
     return new Response(JSON.stringify({ url: session.url }), { headers: CORS });
