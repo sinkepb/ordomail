@@ -465,7 +465,6 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
       <WorkflowSection />
       <div id="security"><SecuritySection /></div>
       <div id="pricing"><PricingSection onGoToPricing={onGoToPricing} /></div>
-      <TestimonialsSection />
       <CTASection onCTA={(action)=>{ if(action==="trial") onGoToCheckout("standard","monthly"); else onGoToApp("demo"); }} />
       <Footer onNav={(l)=>{
         if(l==="Tarifs") onGoToPricing();
