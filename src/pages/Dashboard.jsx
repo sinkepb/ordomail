@@ -15,6 +15,7 @@ import { RappelsSection, RappelForm } from "../components/RappelsSection.jsx";
 import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
+import { AideModal } from "../components/AideModal.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
@@ -462,6 +463,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [loadingId, setLoadingId] = useState(null);
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
+  const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
   const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
@@ -1106,6 +1108,16 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         />
         </ErrorBoundary>
       )}
+
+      {/* Bouton d'aide flottant (14/09/2026) — visible titulaire ET vendeur sur
+          tous les onglets, indépendant de desktop-nav/BottomNav pour ne pas
+          avoir à faire transiter canAdmin/canRappels dans ces deux composants
+          juste pour ce bouton. */}
+      <button onClick={()=>setShowAide(true)} title="Aide"
+        style={{position:"fixed",right:16,bottom:84,width:48,height:48,borderRadius:"50%",border:"none",background:"#0f172a",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 6px 20px rgba(0,0,0,0.25)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        ❓
+      </button>
+      {showAide&&<AideModal posteNom={posteNom} onClose={()=>setShowAide(false)}/>}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}

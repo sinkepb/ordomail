@@ -844,6 +844,29 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
     }
 
+    // Module d'aide backoffice (14/09/2026) — "poser une question" quand la
+    // FAQ en ligne (recherche côté client, voir AideModal.jsx) ne suffit pas.
+    // Pas de table dédiée : simple email à contact@ordomail.fr, comme
+    // rappels_envoyer_test réutilise déjà sendTransactionalEmail plutôt que
+    // d'ajouter un canal de plus pour un besoin ponctuel/faible volume.
+    if (resource === "aide_poser_question") {
+      const { question, posteNom } = params || {};
+      if (!question?.trim()) {
+        return new Response(JSON.stringify({ error: "Question requise" }), { status: 400, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies").select("nom, email").eq("id", pharmacieId).maybeSingle();
+      const pharmacieNom = ph?.nom || "Pharmacie inconnue";
+      const auteur = vendeurSub ? (posteNom?.trim() || "Poste vendeur") : "Titulaire";
+      const safeQuestion = String(question).trim().slice(0, 2000);
+      const html = `<p><strong>Pharmacie :</strong> ${pharmacieNom} (${ph?.email || "—"})</p><p><strong>Posé par :</strong> ${auteur}</p><p><strong>Question :</strong></p><p>${safeQuestion.replace(/\n/g, "<br>")}</p>`;
+      const text = `Pharmacie : ${pharmacieNom} (${ph?.email || "—"})\nPosé par : ${auteur}\n\nQuestion :\n${safeQuestion}`;
+      const result = await sendTransactionalEmail("contact@ordomail.fr", `[Aide] Question de ${pharmacieNom}`, html, text);
+      if (!result.success) {
+        return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de la question" }), { status: 502, headers: CORS });
+      }
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     // Quota SMS mensuel (11/09/2026) — 200 SMS/mois inclus dans Performance,
     // packs de 100 au-delà (voir _shared/smsQuota.ts). Affiché sur le
     // Dashboard pharmacien (RappelsSection.jsx) pour suivre la conso avant
