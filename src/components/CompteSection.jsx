@@ -398,6 +398,25 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
             </div>
           ))}
         </div>
+        {/* Récapitulatif des droits du plan (14/09/2026) — jusqu'ici seuls les
+            deux compteurs d'usage (postes/ordonnances) ci-dessus donnaient un
+            aperçu du plan : rien ne listait explicitement à quoi il donne
+            droit (fonctionnalités incluses ou non). */}
+        <div style={{background:"#f8fafc",borderRadius:9,padding:"12px 14px",marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Inclus dans {plan.label}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {[
+              ["📋", "Réception, impression et suivi des ordonnances", true],
+              [plan.offresStories?"📊":"🚫", "Offres & Stories patients", !!plan.offresStories],
+              [plan.sonnette?"🔔":"🚫", "Sonnette patient (\"C'est votre tour !\")", !!plan.sonnette],
+              [plan.rappels?"⏰":"🚫", "Rappels de renouvellement — 200 SMS inclus/mois", !!plan.rappels],
+            ].map(([icon,label,included])=>(
+              <div key={label} style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,color:included?"#1a1a1a":"#94a3b8"}}>
+                <span>{icon}</span><span>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
         {/* Phase 5 (§16) — moyen de paiement + annulation via le Portail
             client Stripe hébergé, plutôt que reconstruire ces flux sensibles
             nous-mêmes. */}
