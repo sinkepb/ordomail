@@ -450,6 +450,114 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
 </html>`;
 }
 
+// ─── Affiche A4 paysage (QR codes pré-imprimés, 14/09/2026) ───────────────────
+// Variante paysage de l'affiche ci-dessus, portée depuis un design généré sous
+// Claude Design (export "Affiche A4 Paysage PharmScan (offline).html" fourni
+// par l'utilisateur) : texte à gauche / QR à droite, au lieu de l'empilement
+// vertical de la version portrait. Layout différent (pas juste une mise à
+// l'échelle comme A3), donc fonction dédiée plutôt que branchement dans
+// generatePosterHTML. Le QR est généré avec le même package "qrcode" que le
+// reste de l'app (le design source chargeait qrcode-generator depuis un CDN —
+// pas nécessaire, on a déjà tout en local).
+async function generatePosterLandscapeHTML({ url, pharmacieName }) {
+  const mod = await import("qrcode");
+  const QR = mod.default || mod;
+  const qrSvg = await QR.toString(url, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 0,
+    color: { dark: "#0B1F16", light: "#ffffff" },
+  });
+  const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Affiche A4 paysage — Scannez pour envoyer votre ordonnance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  html, body { margin: 0; padding: 0; }
+  @page { size: A4 landscape; margin: 0; }
+  @media print { .no-print { display: none !important; } }
+  body { background: #ccc; font-family: 'Manrope', sans-serif; }
+  .sheet {
+    position: relative;
+    width: 297mm; height: 210mm;
+    background: #F5F8F5;
+    color: #12241C;
+    overflow: hidden;
+    display: flex; align-items: stretch; gap: 52px;
+    padding: 60px 64px;
+  }
+  .print-btn { position: fixed; top: 20px; right: 20px; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
+</style>
+</head>
+<body>
+
+<button class="no-print print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF (paysage)</button>
+
+<div class="sheet">
+  <div style="position:absolute;inset:0;background:radial-gradient(70% 60% at 4% 0%, rgba(22,192,121,0.16), transparent 62%), radial-gradient(60% 60% at 100% 104%, rgba(11,122,84,0.12), transparent 62%);pointer-events:none;"></div>
+  <div style="position:absolute;inset:20px;border:2px solid rgba(11,122,84,0.16);border-radius:22px;pointer-events:none;"></div>
+
+  <div style="position:relative;flex:1 1 0;min-width:0;display:flex;flex-direction:column;padding:10px 0 6px 14px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="position:relative;width:22px;height:22px;flex:none;">
+        <div style="position:absolute;left:7px;top:0;width:7px;height:22px;background:#16C079;border-radius:2px;"></div>
+        <div style="position:absolute;top:7px;left:0;width:22px;height:7px;background:#16C079;border-radius:2px;"></div>
+      </div>
+      <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
+    </div>
+
+    <div style="margin-top:30px;display:flex;align-items:baseline;gap:13px;white-space:nowrap;">
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:62px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+    </div>
+
+    <p style="margin:16px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:27px;line-height:1.25;color:#2E4B3F;max-width:420px;">ENVOYEZ VOTRE ORDONNANCE</p>
+
+    <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:9px 20px 9px 13px;box-shadow:0 8px 22px rgba(11,122,84,0.12);margin-top:26px;align-self:flex-start;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
+      <span style="font-family:'Manrope';font-weight:700;font-size:15px;color:#12241C;">Ouvrez l'appareil photo et scannez</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:15px;margin-top:38px;">
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="width:44px;height:44px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:23px;">1</div>
+        <div style="font-family:'Manrope';font-weight:700;font-size:20px;line-height:1.2;color:#12241C;">Scannez le QR Code</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="width:44px;height:44px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:23px;">2</div>
+        <div style="font-family:'Manrope';font-weight:700;font-size:20px;line-height:1.2;color:#12241C;">Déposez votre ordonnance</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="width:44px;height:44px;flex:none;border-radius:50%;background:#0B7A54;color:#ffffff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:23px;">3</div>
+        <div style="font-family:'Manrope';font-weight:700;font-size:20px;line-height:1.2;color:#12241C;">Attendez votre tour</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:relative;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+    <div style="position:relative;width:470px;height:470px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;">
+      <div style="position:absolute;top:16px;left:16px;width:38px;height:38px;border-top:5px solid #16C079;border-left:5px solid #16C079;border-top-left-radius:14px;"></div>
+      <div style="position:absolute;top:16px;right:16px;width:38px;height:38px;border-top:5px solid #16C079;border-right:5px solid #16C079;border-top-right-radius:14px;"></div>
+      <div style="position:absolute;bottom:16px;left:16px;width:38px;height:38px;border-bottom:5px solid #16C079;border-left:5px solid #16C079;border-bottom-left-radius:14px;"></div>
+      <div style="position:absolute;bottom:16px;right:16px;width:38px;height:38px;border-bottom:5px solid #16C079;border-right:5px solid #16C079;border-bottom-right-radius:14px;"></div>
+      <div style="width:404px;height:404px;">${qrSvg}</div>
+    </div>
+    <div style="text-align:center;margin-top:16px;font-family:'Manrope';font-weight:800;letter-spacing:0.14em;font-size:14px;color:#0B7A54;text-transform:uppercase;">Scannez-moi</div>
+  </div>
+</div>
+
+</body>
+</html>`;
+}
+
 // Ouvre un HTML d'affiche déjà généré, sans aucun await avant window.open() —
 // séparée de generatePosterHTML (25/08/2026) : un appelant qui régénère le
 // HTML (import "qrcode", nouvel appel QR.toString) entre le clic et
@@ -470,4 +578,4 @@ function openPosterPDFFromHTML(html) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, openPosterPDFFromHTML };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML };
