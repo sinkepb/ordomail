@@ -117,6 +117,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     ? envoiVersRenouvellement(editingRappel.date_prochaine_relance)
     : defaultDateRenouvellement());
   const [commentaire, setCommentaire] = useState(editingRappel?.commentaire || "");
+  const [medecinPrescripteur, setMedecinPrescripteur] = useState(editingRappel?.medecin_prescripteur || "");
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
   const canEditDate = !isEdit || editingRappel.statut === "en_attente";
@@ -142,7 +143,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     }
     setCreating(true);
     try {
-      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim() };
+      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim() };
       if (canEditDate) payload.dateRappel = renouvellementVersEnvoi(dateRappel);
       if (!isEdit) payload.consentement = consentement;
       await onCreated(payload);
@@ -169,6 +170,11 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
         <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Médecin prescripteur (optionnel)</label>
+        <input value={medecinPrescripteur} onChange={e => setMedecinPrescripteur(e.target.value)} placeholder="Dr Martin"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>Repris dans le SMS pour distinguer les traitements si le patient a plusieurs rappels actifs.</div>
 
         {canEditDate ? (
           <>
@@ -479,6 +485,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
       ...r,
       patient_nom: payload.nom, patient_prenom: payload.prenom, patient_telephone: normalizeTel(payload.telephone),
       commentaire: payload.commentaire || null,
+      medecin_prescripteur: payload.medecinPrescripteur || null,
       ...(payload.dateRappel ? { date_prochaine_relance: new Date(payload.dateRappel).toISOString() } : {}),
     } : r));
     setEditingRappel(null);
@@ -674,7 +681,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
             <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}</div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}{r.medecin_prescripteur ? ` · ${r.medecin_prescripteur}` : ""}</div>
                 {r.statut === "en_attente" && r.date_prochaine_relance && (
                   <div style={{ fontSize: 12, color: "#4338ca", marginTop: 2 }}>
                     Rappel prévu le {new Date(r.date_prochaine_relance).toLocaleDateString("fr-FR")}
