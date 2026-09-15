@@ -789,7 +789,10 @@ Deno.serve(async (req) => {
       const params = parametres?.data || {};
       const depenseMarketingMensuelle = Number(params.depenseMarketingMensuelle) || 0;
       const nouveauxClients30j = (abonnements || []).filter((a: any) => a.created_at >= since30).length;
-      const cac = nouveauxClients30j > 0 ? depenseMarketingMensuelle / nouveauxClients30j : null;
+      // null tant qu'aucune dépense marketing n'a été saisie manuellement (onglet
+      // Paramètres) — un "0 €" laisserait croire à une acquisition gratuite plutôt
+      // qu'à une donnée simplement absente.
+      const cac = depenseMarketingMensuelle > 0 && nouveauxClients30j > 0 ? depenseMarketingMensuelle / nouveauxClients30j : null;
 
       return new Response(JSON.stringify({
         data: {
