@@ -385,7 +385,7 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
     display: flex; flex-direction: column; align-items: center;
     padding: 42px 46px 38px;
   }
-  .print-btn { position: fixed; top: 20px; right: 20px; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
+  .print-btn { position: fixed; top: 20px; right: 20px; z-index: 10; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
 </style>
 </head>
 <body>
@@ -509,7 +509,7 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
     display: flex; align-items: stretch; gap: 52px;
     padding: 60px 64px;
   }
-  .print-btn { position: fixed; top: 20px; right: 20px; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
+  .print-btn { position: fixed; top: 20px; right: 20px; z-index: 10; background: #0B7A54; color: #fff; border: none; border-radius: 12px; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 16px rgba(11,122,84,0.35); }
 </style>
 </head>
 <body>
