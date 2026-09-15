@@ -72,7 +72,55 @@ const FAQ = [
   },
 ];
 
-function AideModal({ posteNom, onClose }) {
+// ─── Guides pas-à-pas (15/09/2026) ──────────────────────────────────────────
+// Reprend le contenu des documents imprimables docs/guide-titulaire.html et
+// docs/guide-vendeur.html, adapté pour une lecture à l'écran dans ce module —
+// même source d'information, pas un doublon à maintenir séparément en pensée
+// (les deux évoluent ensemble). Le PDF imprimable reste utile pour la
+// formation initiale sur papier ; cet onglet couvre le besoin "je cherche
+// l'info tout de suite, sans quitter l'appli".
+const GUIDE_TITULAIRE = [
+  { titre: "Se connecter", texte: "Rendez-vous sur ordomail.fr et connectez-vous avec l'email et le mot de passe utilisés lors de votre inscription. En cas d'oubli, utilisez le lien \"Mot de passe oublié ?\" sur l'écran de connexion." },
+  { titre: "Paramétrer votre pharmacie", texte: "Dans Paramètres → Compte, vérifiez et complétez le nom, l'adresse et le logo (affichés sur les ordonnances imprimées et l'espace patient), le SIRET (obligatoire pour la génération de vos factures conformes — sans lui, l'abonnement ne peut pas être activé), et la couleur d'accent qui personnalise l'interface et l'espace patient." },
+  { titre: "Créer les postes et les codes PIN de l'équipe", texte: "Dans Paramètres → Postes, deux modes sont possibles : le mode multi-poste (par défaut), où chaque poste a son propre nom et son propre code à 4 chiffres affiché sur les ordonnances traitées ; ou le mode PIN unique, où un seul code sert à toute l'équipe, plus simple pour une petite équipe. Cliquez \"+ Ajouter un poste\" pour créer un accès par membre de l'équipe. Le nombre de postes actifs est limité selon votre plan.", tip: "Donnez à chaque membre de l'équipe l'onglet \"Guide vendeur\" de ce module d'aide — il couvre l'usage quotidien au poste." },
+  { titre: "Installer le point de contact patient", texte: "Vous avez reçu un sticker de sol et/ou une affiche avec un QR code unique à votre pharmacie. Vous pouvez aussi imprimer votre propre affiche à tout moment depuis Paramètres → QR code : choisissez le format (A4 ou A3) et l'orientation (portrait ou paysage), puis \"Enregistrer en PDF\". Placez le sticker et/ou l'affiche à hauteur des yeux, dans un endroit bien éclairé et facilement accessible (comptoir, vitrine, salle d'attente), en évitant les reflets directs de lumière. Le patient scanne le QR code avec l'appareil photo de son téléphone puis envoie le fichier de son ordonnance électronique reçue par email de son médecin — elle apparaît alors immédiatement dans votre onglet Ordonnances.", warn: "Sticker de sol perdu ou abîmé ? Réimprimez une affiche vous-même depuis Paramètres → QR code, ou posez la question ci-dessous pour un remplacement." },
+  { titre: "Traiter les ordonnances au quotidien", texte: "Chaque ordonnance reçue apparaît dans l'onglet Ordonnances, statut \"Nouveau\". Vous ou votre équipe l'ouvrez, vérifiez son contenu, puis cliquez Imprimer — elle passe alors au statut \"Imprimé\". Le détail complet de cette étape est couvert dans l'onglet \"Guide vendeur\"." },
+  { titre: "Rappels de renouvellement par SMS", badge: "plan Performance", texte: "Depuis l'onglet Rappels, créez un rappel pour un patient (nom, téléphone et date de renouvellement de son ordonnance) : le SMS avec le lien pour indiquer s'il souhaite renouveler part automatiquement environ 7 jours avant cette date — pas besoin de le déclencher vous-même. 200 SMS sont inclus chaque mois ; au-delà, un pack de 100 SMS supplémentaires (10 € TTC) peut être acheté directement depuis cet onglet, où votre consommation du mois est affichée en temps réel." },
+  { titre: "Offres et Stories du jour", badge: "plans Fluidité et Performance", texte: "Depuis l'onglet Offres, publiez une offre ou une information du jour (titre, emoji, image) visible par vos patients dans leur suivi." },
+  { titre: "Abonnement et facturation", texte: "Dans Paramètres → Compte : vos factures (PDF, avec votre SIRET) sont téléchargeables directement. Un changement de plan vers un plan supérieur prend effet immédiatement, vers un plan inférieur à la fin de la période en cours — un email de confirmation vous est envoyé à chaque fois. La résiliation se fait depuis le même espace (portail de paiement sécurisé) et prend effet à la fin de la période déjà payée ; vous pouvez l'annuler à tout moment avant l'échéance.", warn: "Une fois la résiliation effective, l'accès au tableau de bord est bloqué pour toute l'équipe jusqu'à ce que l'abonnement soit renouvelé." },
+];
+
+const GUIDE_VENDEUR = [
+  { titre: "Se connecter à votre poste", texte: "Sur l'écran de connexion, choisissez votre pharmacie puis entrez votre code à 4 chiffres (ou le code unique de la pharmacie, selon le mode configuré par le titulaire). Vous n'avez rien d'autre à saisir.", tip: "Code oublié ? Seul le titulaire peut consulter et modifier les codes, depuis Paramètres → Postes." },
+  { titre: "Comprendre l'écran principal", texte: "L'onglet Ordonnances liste toutes les ordonnances reçues, avec leur statut : NOUVEAU (vient d'arriver, à traiter) ou IMPRIMÉ (déjà traitée). Une nouvelle ordonnance apparaît automatiquement dès qu'un patient la dépose via le QR code — aucune action de votre part n'est nécessaire pour la recevoir." },
+  { titre: "Traiter une ordonnance reçue", texte: "Ouvrez la carte de l'ordonnance dans l'onglet Ordonnances, vérifiez le contenu (fichier joint par le patient), cliquez sur Imprimer, puis confirmez — elle passe au statut \"Imprimé\" et votre nom de poste est enregistré sur l'ordonnance." },
+  { titre: "Créer un rappel de renouvellement", badge: "si disponible sur votre pharmacie", texte: "Depuis une ordonnance ou l'onglet Rappels, cliquez sur \"+ Nouveau rappel\", renseignez le nom, le téléphone du patient et sa date de renouvellement. Le SMS avec le lien pour choisir de renouveler ou non part automatiquement environ 7 jours avant cette date." },
+  { titre: "Que faire si…", texte: "Un patient dit avoir envoyé son ordonnance mais rien n'apparaît : rafraîchissez la page, et si toujours rien après une minute, demandez-lui de renvoyer le fichier. Un patient dit ne pas avoir reçu le SMS de rappel : vérifiez le numéro saisi puis renvoyez le lien depuis la fiche du rappel. La page reste blanche ou ne charge pas : rafraîchissez (F5), et si le problème persiste, prévenez le titulaire. Toute autre question : posez-la ci-dessous.", warn: "Données de santé : les ordonnances contiennent des informations médicales des patients — ne les partagez jamais en dehors d'OrdoMail (email, messagerie personnelle, etc.)." },
+];
+
+function GuideSteps({ steps }) {
+  return (
+    <div>
+      {steps.map((s, i) => (
+        <div key={s.titre} style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#3b82f6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", marginBottom: 3 }}>
+              {s.titre}
+              {s.badge && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "none" }}>({s.badge})</span>}
+            </div>
+            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>{s.texte}</div>
+            {s.tip && <div style={{ marginTop: 8, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 9, padding: "8px 12px", fontSize: 12, color: "#1e40af" }}>💡 {s.tip}</div>}
+            {s.warn && <div style={{ marginTop: 8, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 9, padding: "8px 12px", fontSize: 12, color: "#9a3412" }}>⚠️ {s.warn}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AideModal({ posteNom, isAdmin = true, onClose }) {
+  const [view, setView] = useState("faq"); // faq | titulaire | vendeur
   const [search, setSearch] = useState("");
   const [openKey, setOpenKey] = useState(null);
   const [question, setQuestion] = useState("");
@@ -109,33 +157,50 @@ function AideModal({ posteNom, onClose }) {
             <div style={{ fontWeight: 900, fontSize: 18, color: "#0f172a" }}>❓ Aide</div>
             <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", lineHeight: 1 }}>✕</button>
           </div>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher (ex. PIN, SMS, facture…)"
-            style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {[["faq", "🔍 FAQ"], ...(isAdmin ? [["titulaire", "📘 Guide titulaire"]] : []), ["vendeur", "🧾 Guide vendeur"]].map(([k, l]) => (
+              <button key={k} onClick={() => setView(k)}
+                style={{ padding: "6px 12px", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12,
+                  fontWeight: view === k ? 700 : 500, background: view === k ? "#3b82f6" : "#f1f5f9", color: view === k ? "#fff" : "#64748b" }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {view === "faq" && (
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher (ex. PIN, SMS, facture…)"
+              style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 24px" }}>
-          {filtered.length === 0 && (
-            <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: "24px 0" }}>Aucun résultat — posez votre question ci-dessous.</div>
+          {view === "titulaire" && <GuideSteps steps={GUIDE_TITULAIRE} />}
+          {view === "vendeur" && <GuideSteps steps={GUIDE_VENDEUR} />}
+          {view === "faq" && (
+            <>
+              {filtered.length === 0 && (
+                <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: "24px 0" }}>Aucun résultat — posez votre question ci-dessous.</div>
+              )}
+              {filtered.map(cat => (
+                <div key={cat.categorie} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{cat.categorie}</div>
+                  {cat.items.map(it => {
+                    const key = cat.categorie + "|" + it.q;
+                    const open = openKey === key;
+                    return (
+                      <div key={key} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <button onClick={() => setOpenKey(open ? null : key)}
+                          style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "10px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
+                          <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>{it.q}</span>
+                          <span style={{ color: "#94a3b8", fontSize: 14, flexShrink: 0 }}>{open ? "−" : "+"}</span>
+                        </button>
+                        {open && <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, paddingBottom: 12 }}>{it.r}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </>
           )}
-          {filtered.map(cat => (
-            <div key={cat.categorie} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{cat.categorie}</div>
-              {cat.items.map(it => {
-                const key = cat.categorie + "|" + it.q;
-                const open = openKey === key;
-                return (
-                  <div key={key} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <button onClick={() => setOpenKey(open ? null : key)}
-                      style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "10px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>{it.q}</span>
-                      <span style={{ color: "#94a3b8", fontSize: 14, flexShrink: 0 }}>{open ? "−" : "+"}</span>
-                    </button>
-                    {open && <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, paddingBottom: 12 }}>{it.r}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
         </div>
 
         <div style={{ padding: "14px 24px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc", borderRadius: "0 0 20px 20px" }}>
