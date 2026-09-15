@@ -25,13 +25,20 @@ test('inscription — navigation jusqu\'au paiement, formulaire et récapitulati
   await page.getByPlaceholder('contact@pharmacie.fr').fill(`e2e-${Date.now()}@ordomail-test.invalid`);
   await page.getByPlaceholder('8 caractères minimum').fill('MotDePasseTest123');
   await page.getByPlaceholder('Pharmacie de la Paix').fill('Pharmacie E2E Test');
+  // adresse/SIRET requis à la validation (voir BillingModule.jsx isValidAddress
+  // + /^\d{14}$/) — absents ici jusqu'ici, le formulaire ne passait donc jamais
+  // à l'étape "card" et ce test échouait dès que le CI a pu s'exécuter jusque-là.
+  await page.getByPlaceholder('12 rue de la Paix, 75001 Paris').fill('12 rue de la Paix, 75001 Paris');
+  await page.getByPlaceholder('Rempli automatiquement via la sélection ci-dessus, ou à saisir').fill('12345678901234');
 
   await page.getByRole('button', { name: 'Continuer →' }).click();
 
   // Étape carte : récapitulatif du plan Standard (celui choisi via "Essai
-  // gratuit 30 jours", voir LandingPage.jsx: onGoToCheckout("standard","monthly")).
+  // gratuit 30 jours", voir LandingPage.jsx: onGoToCheckout("standard","monthly"))
+  // — le libellé commercial affiché est "Fluidité" (PLAN_LIMITS.standard.label
+  // dans src/lib/plans.js), pas l'id technique "Standard".
   await expect(page.getByRole('heading', { name: 'Paiement' })).toBeVisible();
-  await expect(page.getByText('OrdoMail Standard')).toBeVisible();
+  await expect(page.getByText('OrdoMail Fluidité')).toBeVisible();
   await expect(page.getByText('Mensuel', { exact: true })).toBeVisible();
   await expect(page.getByText('0 € — Gratuit')).toBeVisible();
 

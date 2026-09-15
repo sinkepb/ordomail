@@ -11,6 +11,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 // Ordre des plans — sert uniquement à détecter upgrade vs downgrade (§13),
 // pas les limites/fonctionnalités elles-mêmes (voir planFeatures.ts).
@@ -65,8 +66,22 @@ serve(async (req) => {
       if (!ph!.email) return;
       const { html, text } = wrapCustomerEmail(htmlBody, textBody);
       try {
-        await sendTransactionalEmail(ph!.email, sujet, html, text);
-      } catch { /* non bloquant */ }
+        // ⚠️ sendTransactionalEmail() ne lève jamais d'exception (erreurs Postmark
+        // capturées en interne et renvoyées dans {success,error}) — vérifier le
+        // résultat explicitement, sinon un échec d'envoi reste invisible partout.
+        const result = await sendTransactionalEmail(ph!.email, sujet, html, text);
+        if (!result.success) {
+          await reportAlert(supabase, {
+            source: "change-plan", severity: "warning",
+            message: `Email "${sujet}" non envoyé à ${ph!.email} — ${result.error}`,
+          });
+        }
+      } catch (e) {
+        await reportAlert(supabase, {
+          source: "change-plan", severity: "warning",
+          message: `Email "${sujet}" non envoyé à ${ph!.email} — ${(e as Error).message}`,
+        });
+      }
     }
 
     // Phase 6 tarification (§13) — un downgrade est programmé à la fin de la
@@ -80,7 +95,11 @@ serve(async (req) => {
     const isDowngrade = PLAN_ORDER.indexOf(newPlan) < PLAN_ORDER.indexOf(ph.plan);
     if (isDowngrade) {
       const sub = await stripe.subscriptions.retrieve(ph.stripe_subscription_id);
-      const effectiveAt = new Date(sub.current_period_end * 1000).toISOString();
+      // ⚠️ 15/09/2026 — current_period_end absent du niveau Subscription sur les
+      // endpoints webhook créés récemment (déplacé sur chaque item côté Stripe) —
+      // voir stripe-webhook/index.ts pour le détail. Repli défensif ici aussi.
+      const periodEnd = sub.current_period_end || sub.items.data[0]?.current_period_end;
+      const effectiveAt = new Date(periodEnd * 1000).toISOString();
       await supabase.from("pharmacies").update({
         plan_pending: newPlan, plan_pending_billing: billing, plan_pending_effective_at: effectiveAt,
       }).eq("id", pharmacieId);

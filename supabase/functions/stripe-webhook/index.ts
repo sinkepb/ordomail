@@ -75,7 +75,55 @@ serve(async (req) => {
         // nulle part côté OrdoMail avant l'événement customer.subscription.deleted
         // final — aucun moyen pour le pharmacien de savoir, depuis son Dashboard,
         // qu'une résiliation était déjà programmée.
-        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        // ⚠️ 15/09/2026 — current_period_end a disparu du niveau Subscription dans les
+        // API Stripe récentes (déplacé sur chaque item, sub.items.data[0].current_period_end)
+        // — l'endpoint webhook LIVE nouvellement créé reçoit par défaut la dernière
+        // version d'API du compte ("2026-07-29.dahlia" au moment du diagnostic), contrairement
+        // au TEST (créé plus tôt, resté sur une version antérieure où le champ existait
+        // encore au niveau racine). sub.current_period_end valait donc undefined ici,
+        // plantant tout le traitement de l'événement avec "Invalid time value" dès le
+        // premier .toISOString() — confirmé via la table alerts. Repli sur l'item pour
+        // rester compatible avec les deux formes de payload.
+        const periodEnd = sub.current_period_end || sub.items.data[0]?.current_period_end;
+        // Email de (dés)programmation de résiliation (15/09/2026) — jusqu'ici, une
+        // résiliation demandée via le Portail client Stripe (cancel_at_period_end
+        // true, abonnement encore actif jusqu'à la fin de la période) ne déclenchait
+        // AUCUN email — seule la résiliation finale (customer.subscription.deleted,
+        // bien plus tard) en envoyait un. Le client n'avait donc aucune confirmation
+        // immédiate de sa demande, ni de sa possible annulation avant échéance.
+        // Comparé à la valeur précédemment stockée (pas à un état en mémoire, qui ne
+        // survivrait pas à un redémarrage/une autre instance) pour détecter la
+        // transition, uniquement sur .updated (une création n'a pas de "avant").
+        let previousCancelAtPeriodEnd = false;
+        if (event.type === "customer.subscription.updated") {
+          const { data: prevAbo } = await supabase.from("abonnements").select("cancel_at_period_end").eq("stripe_sub_id", sub.id).maybeSingle();
+          previousCancelAtPeriodEnd = prevAbo?.cancel_at_period_end === true;
+        }
+        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(periodEnd*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        if (event.type === "customer.subscription.updated" && ph.email && sub.cancel_at_period_end !== previousCancelAtPeriodEnd) {
+          const label = PLAN_LABELS[plan] || plan;
+          const dateFin = new Date(periodEnd * 1000).toLocaleDateString("fr-FR");
+          const { subject, htmlBody, textBody } = sub.cancel_at_period_end
+            ? {
+                subject: `Résiliation programmée de votre abonnement OrdoMail ${label}`,
+                htmlBody: `<p>Votre abonnement OrdoMail <strong>${label}</strong> est programmé pour résiliation à la fin de votre période en cours, le <strong>${dateFin}</strong>.</p><p>Vous conservez toutes vos fonctionnalités jusqu'à cette date. Vous pouvez annuler cette résiliation à tout moment avant l'échéance depuis votre espace.</p>`,
+                textBody: `Votre abonnement OrdoMail ${label} est programmé pour résiliation le ${dateFin}. Vous conservez toutes vos fonctionnalités jusqu'à cette date. Vous pouvez annuler cette résiliation à tout moment avant l'échéance depuis votre espace.`,
+              }
+            : {
+                subject: `Votre résiliation a été annulée — OrdoMail ${label}`,
+                htmlBody: `<p>Votre demande de résiliation de l'abonnement OrdoMail <strong>${label}</strong> a bien été annulée.</p><p>Votre abonnement continue normalement, prochain prélèvement le <strong>${dateFin}</strong>.</p>`,
+                textBody: `Votre demande de résiliation de l'abonnement OrdoMail ${label} a bien été annulée. Votre abonnement continue normalement, prochain prélèvement le ${dateFin}.`,
+              };
+          const { html, text } = wrapCustomerEmail(htmlBody, textBody);
+          try {
+            const result = await sendTransactionalEmail(ph.email, subject, html, text);
+            if (!result.success) {
+              await reportAlert(supabase, { source: "stripe-webhook", severity: "warning", message: `Email "${subject}" non envoyé à ${ph.email} — ${result.error}`, meta: { subId: sub.id } });
+            }
+          } catch (e) {
+            await reportAlert(supabase, { source: "stripe-webhook", severity: "warning", message: `Email "${subject}" non envoyé à ${ph.email} — ${(e as Error).message}`, meta: { subId: sub.id } });
+          }
+        }
         // Un downgrade peut arriver ici sans jamais passer par UpgradeModal.jsx
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
@@ -93,7 +141,7 @@ serve(async (req) => {
           const priceItem = sub.items.data[0]?.price;
           const montant = Math.round((priceItem?.unit_amount || 0) / 100);
           const isAnnual = priceItem?.recurring?.interval === "year";
-          const prochainPrelevement = new Date((sub.trial_end || sub.current_period_end) * 1000).toLocaleDateString("fr-FR");
+          const prochainPrelevement = new Date((sub.trial_end || periodEnd) * 1000).toLocaleDateString("fr-FR");
           const { html, text } = wrapCustomerEmail(
             `<p>Votre abonnement OrdoMail <strong>${label}</strong> est confirmé.</p>
              <p><strong>Récapitulatif :</strong><br>
@@ -103,8 +151,25 @@ serve(async (req) => {
             `Votre abonnement OrdoMail ${label} est confirmé.\n\nRécapitulatif :\nPlan : ${label}\nPrix : ${montant} € TTC / ${isAnnual ? "an" : "mois"}\n${sub.trial_end ? `Essai gratuit jusqu'au ${prochainPrelevement}, date du premier prélèvement.` : `Prochain prélèvement le ${prochainPrelevement}.`}`,
           );
           try {
-            await sendTransactionalEmail(ph.email, `Confirmation de votre abonnement OrdoMail ${label}`, html, text);
-          } catch { /* non bloquant */ }
+            const result = await sendTransactionalEmail(ph.email, `Confirmation de votre abonnement OrdoMail ${label}`, html, text);
+            // ⚠️ sendTransactionalEmail() ne lève jamais d'exception (elle capture ses
+            // propres erreurs Postmark et les renvoie dans {success,error}) — ce
+            // try/catch seul ne détectait donc jamais un échec d'envoi réel, laissant
+            // des emails silencieusement non envoyés sans aucune trace nulle part.
+            if (!result.success) {
+              await reportAlert(supabase, {
+                source: "stripe-webhook", severity: "warning",
+                message: `Email de confirmation d'abonnement non envoyé à ${ph.email} — ${result.error}`,
+                meta: { subId: sub.id, plan },
+              });
+            }
+          } catch (e) {
+            await reportAlert(supabase, {
+              source: "stripe-webhook", severity: "warning",
+              message: `Email de confirmation d'abonnement non envoyé à ${ph.email} — ${(e as Error).message}`,
+              meta: { subId: sub.id, plan },
+            });
+          }
         }
 
         // Phase 4 tarification (§8) — une place promo n'est comptée QU'ICI,
@@ -174,8 +239,21 @@ serve(async (req) => {
             `Votre abonnement OrdoMail ${label} a bien été résilié, avec effet au ${dateFin}.\nAucun nouveau prélèvement ne sera effectué. Vous pouvez souscrire à nouveau à tout moment depuis votre espace.`,
           );
           try {
-            await sendTransactionalEmail(ph.email, "Confirmation de résiliation de votre abonnement OrdoMail", html, text);
-          } catch { /* non bloquant */ }
+            const result = await sendTransactionalEmail(ph.email, "Confirmation de résiliation de votre abonnement OrdoMail", html, text);
+            if (!result.success) {
+              await reportAlert(supabase, {
+                source: "stripe-webhook", severity: "warning",
+                message: `Email de résiliation non envoyé à ${ph.email} — ${result.error}`,
+                meta: { subId: sub.id },
+              });
+            }
+          } catch (e) {
+            await reportAlert(supabase, {
+              source: "stripe-webhook", severity: "warning",
+              message: `Email de résiliation non envoyé à ${ph.email} — ${(e as Error).message}`,
+              meta: { subId: sub.id },
+            });
+          }
         }
       }
     }

@@ -26,7 +26,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 15/09/2026 — Node 20 (npm ~10.8) plante sur `npm ci` avec ce lock
+          # file : EBADPLATFORM sur des paquets optionnels par plateforme
+          # d'esbuild pourtant correctement marqués optional (bug connu de
+          # l'arborist npm 10.x face au graphe de peer deps de vitest@4.x, qui
+          # ne se reproduit pas avec le npm 11 livré par Node 22). Le lock file
+          # lui-même est correct — vérifié avec npm ci sous npm 11 en local.
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -54,7 +60,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 15/09/2026 — Node 20 (npm ~10.8) plante sur `npm ci` avec ce lock
+          # file : EBADPLATFORM sur des paquets optionnels par plateforme
+          # d'esbuild pourtant correctement marqués optional (bug connu de
+          # l'arborist npm 10.x face au graphe de peer deps de vitest@4.x, qui
+          # ne se reproduit pas avec le npm 11 livré par Node 22). Le lock file
+          # lui-même est correct — vérifié avec npm ci sous npm 11 en local.
+          node-version: 22
           cache: npm
 
       - run: npm ci
