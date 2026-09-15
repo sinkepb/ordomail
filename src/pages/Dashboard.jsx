@@ -1210,7 +1210,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         style={{position:"fixed",right:16,bottom:84,width:48,height:48,borderRadius:"50%",border:"none",background:"#0f172a",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 6px 20px rgba(0,0,0,0.25)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center"}}>
         ❓
       </button>
-      {showAide&&<AideModal posteNom={posteNom} onClose={()=>setShowAide(false)}/>}
+      {showAide&&<AideModal posteNom={posteNom} isAdmin={canAdmin} onClose={()=>setShowAide(false)}/>}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}
