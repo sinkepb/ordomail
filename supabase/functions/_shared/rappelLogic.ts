@@ -34,14 +34,26 @@ export function buildRappelLien(appUrl: string, token: string): string {
 // Mise en forme (07/09/2026, retour direct) — un saut de ligne après le nom
 // du patient et après chaque phrase, plutôt qu'un seul bloc de texte, pour
 // une meilleure lisibilité sur petit écran. "M/Mme" ajouté devant le nom.
-export function buildRappelMessage(prenom: string, nom: string, lien: string, pharmacieNom: string): string {
-  return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que votre renouvellement d'ordonnance est prévu prochainement.\nCliquez sur le lien ci-dessous pour nous indiquer ce que vous voulez faire.\n${lien}`;
+//
+// Médecin prescripteur (15/09/2026) — un même patient peut avoir plusieurs
+// rappels actifs pour des traitements différents, et le destinataire du SMS
+// n'est pas forcément le patient lui-même (téléphone partagé, aidant…) :
+// mentionner le médecin permet de distinguer de quelle ordonnance il s'agit.
+// Optionnel (repli sur le message d'origine si absent) — tronqué à 30
+// caractères pour ne pas faire basculer le SMS sur un segment supplémentaire
+// (facturé en plus par l'opérateur).
+export function buildRappelMessage(prenom: string, nom: string, lien: string, pharmacieNom: string, medecin?: string | null): string {
+  const medecinTronque = medecin?.trim()?.slice(0, 30);
+  const objet = medecinTronque
+    ? `le renouvellement de votre ordonnance (${medecinTronque}) est prévu prochainement`
+    : `votre renouvellement d'ordonnance est prévu prochainement`;
+  return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que ${objet}.\nCliquez ici pour nous dire ce que vous souhaitez faire :\n${lien}`;
 }
 
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, pharmacies(nom)")
+    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
     .lte("date_prochaine_relance", new Date().toISOString());
@@ -53,7 +65,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
       const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur);
 
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 

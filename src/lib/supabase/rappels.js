@@ -41,7 +41,7 @@ export async function fetchRappelsStats() {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -50,7 +50,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     const rappel = {
       id: `r${Date.now()}`, pharmacie_id: pharmacieId,
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
-      commentaire: commentaire || null, consentement_sms: !!consentement,
+      commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, consentement_sms: !!consentement,
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
       created_at: new Date().toISOString(),
@@ -58,7 +58,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur });
 }
 
 export async function traiterRappel(rappelId, dateRappel = null) {
@@ -78,9 +78,9 @@ export async function reactiverRappel(rappelId, dateRappel = null) {
   return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
 }
 
-export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire }) {
+export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur }) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
+  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur });
 }
 
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le

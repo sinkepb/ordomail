@@ -470,7 +470,7 @@ Deno.serve(async (req) => {
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
@@ -504,6 +504,7 @@ Deno.serve(async (req) => {
         patient_prenom: prenom.trim(),
         patient_telephone: telephone.trim(),
         commentaire: commentaire?.trim() || null,
+        medecin_prescripteur: medecinPrescripteur?.trim() || null,
         consentement_sms: true,
         token: generateShortToken(),
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
@@ -745,7 +746,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, nom, prenom, telephone, dateRappel, commentaire } = params || {};
+      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -758,6 +759,7 @@ Deno.serve(async (req) => {
       if (prenom?.trim()) patch.patient_prenom = prenom.trim();
       if (telephone?.trim()) patch.patient_telephone = telephone.trim();
       if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
+      if (medecinPrescripteur !== undefined) patch.medecin_prescripteur = medecinPrescripteur?.trim() || null;
       if (dateRappel && existing.statut === "en_attente") {
         const parsed = new Date(dateRappel);
         if (Number.isNaN(parsed.getTime())) {
@@ -797,7 +799,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
       const { data: rappel } = await sb.from("rappels_ordonnance")
-        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, statut, pharmacies(nom)")
+        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, statut, pharmacies(nom)")
         .eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
@@ -809,7 +811,7 @@ Deno.serve(async (req) => {
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur);
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
