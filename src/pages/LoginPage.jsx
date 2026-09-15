@@ -69,8 +69,8 @@ function LoginTabContent({ onLogin, onNeedsSubscription }) {
     // abandonné/expiré) : avant ce contrôle, seul un refresh de page (effet de
     // restauration de session, App.jsx) bloquait ces comptes — une connexion
     // "fraîche" via ce formulaire laissait passer tout droit vers le dashboard.
-    if (result.needsSubscription) {
-      onNeedsSubscription?.(result.pharmacie.id);
+    if (result.needsSubscription || result.canceled) {
+      onNeedsSubscription?.(result.pharmacie.id, result.canceled);
       return;
     }
     const sb = getSupabaseClient();

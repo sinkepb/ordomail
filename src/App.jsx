@@ -246,9 +246,20 @@ function AppInner() {
           if (link) {
             const { data: ph } = await sb
               .from("pharmacies")
-              .select("stripe_subscription_id")
+              .select("stripe_subscription_id, plan_status")
               .eq("id", link.pharmacie_id)
               .maybeSingle();
+
+            if (ph && ph.plan_status === "canceled") {
+              // Abonnement résilié (webhook customer.subscription.deleted) :
+              // stripe_subscription_id reste renseigné (ancien abonnement), donc
+              // le contrôle ci-dessous ne suffit pas à bloquer ce cas — voir
+              // aussi authSignInEmail (lib/supabase/auth.js) pour la connexion "fraîche".
+              setResumeSubscription({ pharmacieId: link.pharmacie_id, email: session.user.email, canceled: true });
+              setRoute("finish-subscription");
+              setSessionLoading(false);
+              return;
+            }
 
             if (ph && !ph.stripe_subscription_id) {
               const pending = getPendingCheckout();
@@ -394,14 +405,14 @@ function AppInner() {
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
       {route==="finish-subscription"&&resumeSubscription&&(
-        <BillingModule initialView="pricing" resumePharmacieId={resumeSubscription.pharmacieId} resumeEmail={resumeSubscription.email} onBack={()=>setRoute("landing")}/>
+        <BillingModule initialView="pricing" resumePharmacieId={resumeSubscription.pharmacieId} resumeEmail={resumeSubscription.email} canceled={resumeSubscription.canceled} onBack={()=>setRoute("landing")}/>
       )}
       {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}
       {(route==="dashboard"||route==="admin")&&<AppLogin
           onBack={()=>setRoute("landing")}
           onLogout={()=>setRoute("landing")}
           onGoToPricing={()=>setRoute("pricing")}
-          onNeedsSubscription={(pharmacieId)=>{ setResumeSubscription({pharmacieId}); setRoute("finish-subscription"); }}
+          onNeedsSubscription={(pharmacieId, canceled)=>{ setResumeSubscription({pharmacieId, canceled}); setRoute("finish-subscription"); }}
           DashboardComponent={PharmacieDashboard}
         />}
     </Suspense>

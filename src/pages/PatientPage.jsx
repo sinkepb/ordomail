@@ -13,7 +13,7 @@ const HEALTH_STORIES = [
     emoji: "✅",
     bg: ["#1a6e3a", "#15803d"],
     title: "Ordonnance reçue !",
-    text: "Votre pharmacien prépare votre commande. Restez dans la file — nous vous appelons quand c'est prêt.",
+    text: "Votre pharmacien a bien reçu votre ordonnance. Veuillez rester dans la file et attendre votre tour.",
     type: "info",
   },
   {

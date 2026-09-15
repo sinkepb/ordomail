@@ -18,7 +18,7 @@ function isValidAddress(s) {
   return t.length >= 8 && /\d{5}/.test(t);
 }
 
-function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId, resumeEmail }) {
+function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId, resumeEmail, canceled }) {
   const [view, setView] = useState(initialView||"pricing");
   const [step, setStep] = useState("details");
   const [checkoutPlan, setCheckoutPlan] = useState(planId||"standard");
@@ -447,8 +447,8 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
       <PersistentNav onBack={onBack}/>
       <div style={{maxWidth:980,margin:"0 auto",padding:"40px 16px"}}>
         <div style={{textAlign:"center",marginBottom:36}}>
-          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>{resumePharmacieId ? "Finalisez votre abonnement" : "Choisissez votre plan"}</h1>
-          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>{resumePharmacieId ? "Votre compte est confirmé — choisissez votre plan pour activer votre essai gratuit de 30 jours." : "30 jours gratuits · Sans carte bancaire"}</p>
+          <h1 style={{fontSize:"clamp(24px,6vw,38px)",fontWeight:900,color:"#0f172a",marginBottom:12}}>{canceled ? "Votre abonnement a été résilié" : resumePharmacieId ? "Finalisez votre abonnement" : "Choisissez votre plan"}</h1>
+          <p style={{color:"#64748b",fontSize:16,marginBottom:20}}>{canceled ? "Réabonnez-vous pour retrouver l'accès à votre espace pharmacien." : resumePharmacieId ? "Votre compte est confirmé — choisissez votre plan pour activer votre essai gratuit de 30 jours." : "30 jours gratuits · Sans carte bancaire"}</p>
           <div style={{display:"inline-flex",background:"#fff",borderRadius:10,padding:4,gap:4,border:"1px solid #e2e8f0"}}>
             {[["monthly","Mensuel"],["annual","Annuel (2 mois offerts)"]].map(([k,l])=>(
               <button key={k} onClick={()=>setBillingTab(k)} style={{padding:"8px 18px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:billingTab===k?700:500,background:billingTab===k?"#1a3a6e":"transparent",color:billingTab===k?"#fff":"#94a3b8",transition:"all 0.15s"}}>{l}</button>

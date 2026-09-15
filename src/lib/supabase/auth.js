@@ -66,7 +66,10 @@ export async function authSignInEmail(email, password) {
   // (effet de restauration de session, App.jsx) bloquait ces comptes — une
   // connexion "fraîche" via ce formulaire laissait passer tout droit vers le
   // dashboard, sans jamais avoir payé.
-  return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id, needsSubscription: !pharmacie.stripe_subscription_id };
+  // canceled : abonnement résilié côté Stripe (webhook customer.subscription.deleted,
+  // voir stripe-webhook/index.ts) — stripe_subscription_id reste renseigné (c'est
+  // l'ancien abonnement résilié), donc needsSubscription seul ne bloque pas ce cas.
+  return { pharmacie, userRole: pharmacie?.userRole || 'admin', userId: data.user.id, needsSubscription: !pharmacie.stripe_subscription_id, canceled: pharmacie.plan_status === 'canceled' };
 }
 
 export async function authSignInPIN(pin, pharmacieId) {
