@@ -70,8 +70,22 @@ Deno.serve(async (req) => {
           `Comme programmé, votre abonnement OrdoMail est passé au plan ${label}.`,
         );
         try {
-          await sendTransactionalEmail(ph.email, `Votre abonnement OrdoMail est passé à ${label}`, html, text);
-        } catch { /* non bloquant */ }
+          // ⚠️ sendTransactionalEmail() ne lève jamais d'exception (erreurs Postmark
+          // capturées en interne, renvoyées dans {success,error}) — vérifier le
+          // résultat explicitement, sinon un échec d'envoi reste invisible partout.
+          const result = await sendTransactionalEmail(ph.email, `Votre abonnement OrdoMail est passé à ${label}`, html, text);
+          if (!result.success) {
+            await reportAlert(supabase, {
+              source: "apply-pending-downgrades", severity: "warning",
+              message: `Email de downgrade non envoyé à ${ph.email} — ${result.error}`,
+            });
+          }
+        } catch (e) {
+          await reportAlert(supabase, {
+            source: "apply-pending-downgrades", severity: "warning",
+            message: `Email de downgrade non envoyé à ${ph.email} — ${(e as Error).message}`,
+          });
+        }
       }
       applied++;
     } catch (e) {

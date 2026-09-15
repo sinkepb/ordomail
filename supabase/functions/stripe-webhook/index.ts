@@ -75,7 +75,17 @@ serve(async (req) => {
         // nulle part côté OrdoMail avant l'événement customer.subscription.deleted
         // final — aucun moyen pour le pharmacien de savoir, depuis son Dashboard,
         // qu'une résiliation était déjà programmée.
-        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(sub.current_period_end*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        // ⚠️ 15/09/2026 — current_period_end a disparu du niveau Subscription dans les
+        // API Stripe récentes (déplacé sur chaque item, sub.items.data[0].current_period_end)
+        // — l'endpoint webhook LIVE nouvellement créé reçoit par défaut la dernière
+        // version d'API du compte ("2026-07-29.dahlia" au moment du diagnostic), contrairement
+        // au TEST (créé plus tôt, resté sur une version antérieure où le champ existait
+        // encore au niveau racine). sub.current_period_end valait donc undefined ici,
+        // plantant tout le traitement de l'événement avec "Invalid time value" dès le
+        // premier .toISOString() — confirmé via la table alerts. Repli sur l'item pour
+        // rester compatible avec les deux formes de payload.
+        const periodEnd = sub.current_period_end || sub.items.data[0]?.current_period_end;
+        await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(periodEnd*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
         // Un downgrade peut arriver ici sans jamais passer par UpgradeModal.jsx
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
@@ -93,7 +103,7 @@ serve(async (req) => {
           const priceItem = sub.items.data[0]?.price;
           const montant = Math.round((priceItem?.unit_amount || 0) / 100);
           const isAnnual = priceItem?.recurring?.interval === "year";
-          const prochainPrelevement = new Date((sub.trial_end || sub.current_period_end) * 1000).toLocaleDateString("fr-FR");
+          const prochainPrelevement = new Date((sub.trial_end || periodEnd) * 1000).toLocaleDateString("fr-FR");
           const { html, text } = wrapCustomerEmail(
             `<p>Votre abonnement OrdoMail <strong>${label}</strong> est confirmé.</p>
              <p><strong>Récapitulatif :</strong><br>
@@ -103,8 +113,25 @@ serve(async (req) => {
             `Votre abonnement OrdoMail ${label} est confirmé.\n\nRécapitulatif :\nPlan : ${label}\nPrix : ${montant} € TTC / ${isAnnual ? "an" : "mois"}\n${sub.trial_end ? `Essai gratuit jusqu'au ${prochainPrelevement}, date du premier prélèvement.` : `Prochain prélèvement le ${prochainPrelevement}.`}`,
           );
           try {
-            await sendTransactionalEmail(ph.email, `Confirmation de votre abonnement OrdoMail ${label}`, html, text);
-          } catch { /* non bloquant */ }
+            const result = await sendTransactionalEmail(ph.email, `Confirmation de votre abonnement OrdoMail ${label}`, html, text);
+            // ⚠️ sendTransactionalEmail() ne lève jamais d'exception (elle capture ses
+            // propres erreurs Postmark et les renvoie dans {success,error}) — ce
+            // try/catch seul ne détectait donc jamais un échec d'envoi réel, laissant
+            // des emails silencieusement non envoyés sans aucune trace nulle part.
+            if (!result.success) {
+              await reportAlert(supabase, {
+                source: "stripe-webhook", severity: "warning",
+                message: `Email de confirmation d'abonnement non envoyé à ${ph.email} — ${result.error}`,
+                meta: { subId: sub.id, plan },
+              });
+            }
+          } catch (e) {
+            await reportAlert(supabase, {
+              source: "stripe-webhook", severity: "warning",
+              message: `Email de confirmation d'abonnement non envoyé à ${ph.email} — ${(e as Error).message}`,
+              meta: { subId: sub.id, plan },
+            });
+          }
         }
 
         // Phase 4 tarification (§8) — une place promo n'est comptée QU'ICI,
@@ -174,8 +201,21 @@ serve(async (req) => {
             `Votre abonnement OrdoMail ${label} a bien été résilié, avec effet au ${dateFin}.\nAucun nouveau prélèvement ne sera effectué. Vous pouvez souscrire à nouveau à tout moment depuis votre espace.`,
           );
           try {
-            await sendTransactionalEmail(ph.email, "Confirmation de résiliation de votre abonnement OrdoMail", html, text);
-          } catch { /* non bloquant */ }
+            const result = await sendTransactionalEmail(ph.email, "Confirmation de résiliation de votre abonnement OrdoMail", html, text);
+            if (!result.success) {
+              await reportAlert(supabase, {
+                source: "stripe-webhook", severity: "warning",
+                message: `Email de résiliation non envoyé à ${ph.email} — ${result.error}`,
+                meta: { subId: sub.id },
+              });
+            }
+          } catch (e) {
+            await reportAlert(supabase, {
+              source: "stripe-webhook", severity: "warning",
+              message: `Email de résiliation non envoyé à ${ph.email} — ${(e as Error).message}`,
+              meta: { subId: sub.id },
+            });
+          }
         }
       }
     }
