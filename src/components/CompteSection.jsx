@@ -409,7 +409,7 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
               ["📋", "Réception, impression et suivi des ordonnances", true],
               [plan.offresStories?"📊":"🚫", "Offres & Stories patients", !!plan.offresStories],
               [plan.sonnette?"🔔":"🚫", "Sonnette patient (\"C'est votre tour !\")", !!plan.sonnette],
-              [plan.rappels?"⏰":"🚫", "Rappels de renouvellement — 200 SMS inclus/mois", !!plan.rappels],
+              [plan.rappels?"⏰":"🚫", "Rappels de renouvellement — 100 SMS inclus/mois, puis 0,10 €/SMS", !!plan.rappels],
             ].map(([icon,label,included])=>(
               <div key={label} style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,color:included?"#1a1a1a":"#94a3b8"}}>
                 <span>{icon}</span><span>{label}</span>

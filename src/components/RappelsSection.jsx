@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation, acheterPackSms } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -427,8 +427,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [journalLoading, setJournalLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [smsQuota, setSmsQuota] = useState(null);
-  const [buyingPack, setBuyingPack] = useState(false);
-  const [buyPackError, setBuyPackError] = useState("");
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -447,17 +445,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     // stats : un chargement au montage suffit, pas besoin de temps réel.
     fetchSmsConsommation().then(setSmsQuota);
   }, [pharmacie?.id]);
-
-  async function handleAcheterPack() {
-    setBuyingPack(true); setBuyPackError("");
-    try {
-      const { url } = await acheterPackSms(window.location.origin);
-      window.location.href = url;
-    } catch (e) {
-      setBuyPackError(e.message || "Erreur lors de la création du paiement.");
-      setBuyingPack(false);
-    }
-  }
 
   // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
   // propre session (resolve-rappel), jamais celle du pharmacien : sans ça,
@@ -629,32 +616,26 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
         </div>
       )}
 
-      {/* Quota SMS mensuel (11/09/2026) — 200 SMS/mois inclus, packs de 100 à
-          10 € TTC au-delà. Silencieux tant qu'aucun SMS n'a été envoyé ce
-          mois-ci (comme les stats juste au-dessus), pour ne pas encombrer un
-          compte qui vient d'activer Performance. */}
+      {/* Quota SMS mensuel (15/09/2026) — 100 SMS/mois inclus, puis 0,10 €/SMS
+          facturés automatiquement en fin de mois (voir edge function
+          facturer-depassement-sms) : l'envoi n'est jamais bloqué et le
+          pharmacien n'a plus rien à acheter manuellement. Silencieux tant
+          qu'aucun SMS n'a été envoyé ce mois-ci (comme les stats juste
+          au-dessus), pour ne pas encombrer un compte qui vient d'activer
+          Performance. */}
       {smsQuota && smsQuota.smsEnvoyesMoisCourant > 0 && (
         <div style={{ background: smsQuota.depassement > 0 ? "#fef2f2" : "#f8fafc", border: `1.5px solid ${smsQuota.depassement > 0 ? "#fecaca" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              📊 SMS ce mois-ci : <span style={{ color: smsQuota.depassement > 0 ? "#dc2626" : "#15803d" }}>{smsQuota.smsEnvoyesMoisCourant} / {smsQuota.quotaTotal}</span>
-            </div>
-            {smsQuota.depassement > 0 && (
-              <button onClick={handleAcheterPack} disabled={buyingPack}
-                style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: buyingPack ? "default" : "pointer", fontFamily: "inherit", opacity: buyingPack ? 0.6 : 1 }}>
-                {buyingPack ? "…" : "Acheter un pack de 100 SMS (10 € TTC)"}
-              </button>
-            )}
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+            📊 SMS ce mois-ci : <span style={{ color: smsQuota.depassement > 0 ? "#dc2626" : "#15803d" }}>{smsQuota.smsEnvoyesMoisCourant} / {smsQuota.quotaInclus}</span>
           </div>
           <div style={{ height: 6, borderRadius: 20, background: "#e2e8f0", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.min(100, Math.round((smsQuota.smsEnvoyesMoisCourant / smsQuota.quotaTotal) * 100))}%`, background: smsQuota.depassement > 0 ? "#dc2626" : "#15803d", borderRadius: 20 }} />
+            <div style={{ height: "100%", width: `${Math.min(100, Math.round((smsQuota.smsEnvoyesMoisCourant / smsQuota.quotaInclus) * 100))}%`, background: smsQuota.depassement > 0 ? "#dc2626" : "#15803d", borderRadius: 20 }} />
           </div>
           <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 6 }}>
             {smsQuota.depassement > 0
-              ? `${smsQuota.depassement} SMS au-delà de votre quota — achetez un pack pour continuer à envoyer des rappels.`
+              ? `${smsQuota.depassement} SMS au-delà de votre quota (${(smsQuota.depassement * 0.10).toFixed(2)} € environ) seront ajoutés automatiquement à votre prochaine facture — rien à faire de votre côté.`
               : `${smsQuota.quotaRestant} SMS restants sur ${smsQuota.quotaInclus} inclus ce mois-ci.`}
           </div>
-          {buyPackError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{buyPackError}</div>}
         </div>
       )}
 
