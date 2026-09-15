@@ -1,14 +1,16 @@
-// OrdoMail — Quota SMS mensuel des rappels (11/09/2026)
+// OrdoMail — Quota SMS mensuel des rappels (11/09/2026, révisé 15/09/2026)
 //
-// Le plan Performance inclut SMS_INCLUS_MENSUEL SMS/mois ; au-delà, la
-// pharmacie achète des packs de PACK_SMS_QUANTITE SMS (voir sms_acheter_pack).
+// Le plan Performance inclut SMS_INCLUS_MENSUEL SMS/mois. Au-delà, l'envoi
+// n'est jamais bloqué (send-rappel-sms n'a aucune vérification de quota) —
+// le dépassement est facturé automatiquement en fin de mois par l'edge
+// function facturer-depassement-sms (0,10 €/SMS, ligne ajoutée à la
+// prochaine facture Stripe), sans action requise du pharmacien. Avant le
+// 15/09/2026, le dépassement nécessitait l'achat manuel d'un pack de 100 SMS
+// (sms_acheter_pack, supprimé) — sms_packs_achetes garde son rôle
+// d'historique : les packs achetés avant ce changement restent crédités.
 // La consommation se lit depuis rappels_evenements (jamais dupliquée dans un
-// compteur séparé, pour ne jamais désynchroniser deux sources de vérité) ;
-// seuls les packs achetés (sms_packs_achetes) sont une donnée propre, écrite
-// une seule fois à la confirmation du paiement Stripe.
-export const SMS_INCLUS_MENSUEL = 200;
-export const PACK_SMS_QUANTITE = 100;
-export const PACK_SMS_PRIX_TTC_CENTIMES = 1000; // 10,00 €
+// compteur séparé, pour ne jamais désynchroniser deux sources de vérité).
+export const SMS_INCLUS_MENSUEL = 100;
 
 function debutMoisCourantISO(): string {
   const d = new Date();
