@@ -85,7 +85,45 @@ serve(async (req) => {
         // premier .toISOString() — confirmé via la table alerts. Repli sur l'item pour
         // rester compatible avec les deux formes de payload.
         const periodEnd = sub.current_period_end || sub.items.data[0]?.current_period_end;
+        // Email de (dés)programmation de résiliation (15/09/2026) — jusqu'ici, une
+        // résiliation demandée via le Portail client Stripe (cancel_at_period_end
+        // true, abonnement encore actif jusqu'à la fin de la période) ne déclenchait
+        // AUCUN email — seule la résiliation finale (customer.subscription.deleted,
+        // bien plus tard) en envoyait un. Le client n'avait donc aucune confirmation
+        // immédiate de sa demande, ni de sa possible annulation avant échéance.
+        // Comparé à la valeur précédemment stockée (pas à un état en mémoire, qui ne
+        // survivrait pas à un redémarrage/une autre instance) pour détecter la
+        // transition, uniquement sur .updated (une création n'a pas de "avant").
+        let previousCancelAtPeriodEnd = false;
+        if (event.type === "customer.subscription.updated") {
+          const { data: prevAbo } = await supabase.from("abonnements").select("cancel_at_period_end").eq("stripe_sub_id", sub.id).maybeSingle();
+          previousCancelAtPeriodEnd = prevAbo?.cancel_at_period_end === true;
+        }
         await supabase.from("abonnements").upsert({ pharmacie_id:ph.id, stripe_sub_id:sub.id, plan, status:sub.status, current_period_end:new Date(periodEnd*1000).toISOString(), cancel_at_period_end: sub.cancel_at_period_end, mrr:Math.round((sub.items.data[0]?.price.unit_amount||0)/100), updated_at:new Date().toISOString() }, { onConflict:"stripe_sub_id" });
+        if (event.type === "customer.subscription.updated" && ph.email && sub.cancel_at_period_end !== previousCancelAtPeriodEnd) {
+          const label = PLAN_LABELS[plan] || plan;
+          const dateFin = new Date(periodEnd * 1000).toLocaleDateString("fr-FR");
+          const { subject, htmlBody, textBody } = sub.cancel_at_period_end
+            ? {
+                subject: `Résiliation programmée de votre abonnement OrdoMail ${label}`,
+                htmlBody: `<p>Votre abonnement OrdoMail <strong>${label}</strong> est programmé pour résiliation à la fin de votre période en cours, le <strong>${dateFin}</strong>.</p><p>Vous conservez toutes vos fonctionnalités jusqu'à cette date. Vous pouvez annuler cette résiliation à tout moment avant l'échéance depuis votre espace.</p>`,
+                textBody: `Votre abonnement OrdoMail ${label} est programmé pour résiliation le ${dateFin}. Vous conservez toutes vos fonctionnalités jusqu'à cette date. Vous pouvez annuler cette résiliation à tout moment avant l'échéance depuis votre espace.`,
+              }
+            : {
+                subject: `Votre résiliation a été annulée — OrdoMail ${label}`,
+                htmlBody: `<p>Votre demande de résiliation de l'abonnement OrdoMail <strong>${label}</strong> a bien été annulée.</p><p>Votre abonnement continue normalement, prochain prélèvement le <strong>${dateFin}</strong>.</p>`,
+                textBody: `Votre demande de résiliation de l'abonnement OrdoMail ${label} a bien été annulée. Votre abonnement continue normalement, prochain prélèvement le ${dateFin}.`,
+              };
+          const { html, text } = wrapCustomerEmail(htmlBody, textBody);
+          try {
+            const result = await sendTransactionalEmail(ph.email, subject, html, text);
+            if (!result.success) {
+              await reportAlert(supabase, { source: "stripe-webhook", severity: "warning", message: `Email "${subject}" non envoyé à ${ph.email} — ${result.error}`, meta: { subId: sub.id } });
+            }
+          } catch (e) {
+            await reportAlert(supabase, { source: "stripe-webhook", severity: "warning", message: `Email "${subject}" non envoyé à ${ph.email} — ${(e as Error).message}`, meta: { subId: sub.id } });
+          }
+        }
         // Un downgrade peut arriver ici sans jamais passer par UpgradeModal.jsx
         // (portail client Stripe, rétrogradage après échec de paiement…) : sans
         // ce trim, les postes excédentaires restaient actifs indéfiniment.
