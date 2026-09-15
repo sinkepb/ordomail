@@ -91,8 +91,11 @@ export async function envoyerTestRappel(rappelId, email) {
   return await callSecureData('rappels_envoyer_test', { rappelId, email });
 }
 
-// Quota SMS mensuel (11/09/2026) — voir _shared/smsQuota.ts pour le détail
-// du calcul (200 SMS/mois inclus dans Performance + packs de 100 achetés).
+// Quota SMS mensuel (15/09/2026) — voir _shared/smsQuota.ts pour le détail du
+// calcul (100 SMS/mois inclus dans Performance). Le dépassement n'est plus
+// acheté manuellement (pack) : il est facturé automatiquement en fin de mois
+// par l'edge function facturer-depassement-sms, à 0,10 €/SMS — cette fonction
+// reste purement informative.
 export async function fetchSmsConsommation() {
   if (IS_DEMO) return null;
   try {
@@ -101,11 +104,4 @@ export async function fetchSmsConsommation() {
     console.error('[fetchSmsConsommation]', e.message);
     return null;
   }
-}
-
-// Achat d'un pack de 100 SMS supplémentaires — retourne l'URL Stripe
-// Checkout (paiement ponctuel), voir secure-data:sms_acheter_pack.
-export async function acheterPackSms(appUrl) {
-  if (IS_DEMO) throw new Error('Achat de pack SMS indisponible en démo');
-  return await callSecureData('sms_acheter_pack', { appUrl });
 }
