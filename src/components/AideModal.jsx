@@ -31,7 +31,8 @@ const FAQ = [
   {
     categorie: "Rappels de renouvellement (SMS)",
     items: [
-      { q: "Comment créer un rappel de renouvellement pour un patient ?", r: "Dans l'onglet Rappels, cliquez sur \"+ Nouveau rappel\", renseignez le nom du patient et son téléphone. Le patient recevra un SMS avec un lien pour choisir de renouveler ou non son ordonnance." },
+      { q: "Comment créer un rappel de renouvellement pour un patient ?", r: "Dans l'onglet Rappels, cliquez sur \"+ Nouveau rappel\", renseignez le nom du patient, son téléphone et la date de renouvellement de son ordonnance. Le SMS avec le lien pour renouveler ou non part automatiquement environ 7 jours avant cette date." },
+      { q: "Quand exactement le SMS de rappel est-il envoyé ?", r: "Le SMS part automatiquement 7 jours avant la date de renouvellement que vous avez saisie à la création du rappel — pas besoin de le déclencher manuellement." },
       { q: "Le patient dit ne pas avoir reçu le SMS", r: "Vérifiez le numéro de téléphone saisi (format français à 10 chiffres). Depuis la fiche du rappel, vous pouvez renvoyer le lien. Si le souci persiste, contactez le support." },
       { q: "Qu'est-ce que le quota de SMS inclus et que se passe-t-il s'il est dépassé ?", r: "Le plan Performance inclut 200 SMS de rappel par mois. Au-delà, vous pouvez acheter un pack de 100 SMS supplémentaires (10 € TTC) directement depuis l'onglet Rappels, où votre consommation du mois est affichée en temps réel." },
       { q: "Pourquoi je ne vois pas l'onglet Rappels ?", r: "Les rappels de renouvellement sont réservés au plan Performance. Si votre plan est Essentiel ou Fluidité, un message d'upgrade s'affiche à la place — contactez-nous si vous souhaitez changer de plan." },
@@ -40,7 +41,8 @@ const FAQ = [
   {
     categorie: "QR code, sticker & affiche",
     items: [
-      { q: "Le sticker QR code de la pharmacie est abîmé ou ne scanne plus", r: "Contactez le support via ce module d'aide en précisant le code inscrit sur le sticker (format QR-XXXXXX) si vous l'avez encore : un nouveau sticker ou une nouvelle affiche vous sera envoyé(e)." },
+      { q: "Comment imprimer ou télécharger l'affiche QR code de ma pharmacie ?", r: "Depuis Paramètres → QR code (titulaire uniquement), choisissez le format (A4 ou A3) et l'orientation (portrait ou paysage), puis \"Enregistrer en PDF\" — l'affiche est générée avec le QR code unique de votre pharmacie, prête à imprimer vous-même." },
+      { q: "Le sticker QR code de la pharmacie est abîmé ou ne scanne plus", r: "Vous pouvez réimprimer une affiche vous-même depuis Paramètres → QR code (voir ci-dessus). Pour un sticker de sol abîmé, contactez le support via ce module d'aide en précisant le code inscrit dessus (format QR-XXXXXX) si vous l'avez encore : un remplacement vous sera envoyé." },
       { q: "Où placer le sticker ou l'affiche pour de meilleurs résultats ?", r: "À hauteur des yeux, dans un endroit bien éclairé et facilement accessible pour un patient qui patiente (comptoir, vitrine, salle d'attente). Évitez le reflet direct de la lumière sur le QR code." },
     ],
   },
@@ -55,7 +57,8 @@ const FAQ = [
     categorie: "Compte, abonnement & facturation",
     items: [
       { q: "Comment changer de plan (upgrade/downgrade) ?", r: "Dans Paramètres → Compte, section abonnement. Un passage à un plan supérieur est immédiat ; un passage à un plan inférieur prend effet à la fin de la période en cours (vous gardez les fonctionnalités actuelles jusque-là)." },
-      { q: "Comment résilier mon abonnement ?", r: "Dans Paramètres → Compte, bouton de gestion de l'abonnement (portail de paiement sécurisé). La résiliation prend effet à la fin de la période déjà payée — vous gardez l'accès jusqu'à cette date." },
+      { q: "Comment résilier mon abonnement ?", r: "Dans Paramètres → Compte, bouton de gestion de l'abonnement (portail de paiement sécurisé). La résiliation prend effet à la fin de la période déjà payée — vous gardez l'accès jusqu'à cette date, et un email de confirmation vous est envoyé. Vous pouvez annuler cette résiliation avant l'échéance depuis le même portail (email de confirmation également)." },
+      { q: "Mon abonnement est résilié, puis-je encore me connecter ?", r: "Non : une fois la résiliation effective (fin de la période déjà payée), l'accès au tableau de bord est bloqué. Reconnectez-vous et suivez l'écran de réabonnement pour retrouver l'accès à tout moment." },
       { q: "Où trouver mes factures ?", r: "Dans Paramètres → Compte, section Factures : toutes vos factures sont téléchargeables au format PDF, avec le SIRET de la pharmacie." },
       { q: "Pourquoi le SIRET est-il obligatoire ?", r: "Le SIRET est requis pour émettre des factures conformes (mentions légales obligatoires pour une pharmacie). Sans SIRET renseigné dans Paramètres → Compte, la souscription à un abonnement est bloquée." },
     ],
