@@ -35,17 +35,21 @@ export function buildRappelLien(appUrl: string, token: string): string {
 // du patient et après chaque phrase, plutôt qu'un seul bloc de texte, pour
 // une meilleure lisibilité sur petit écran. "M/Mme" ajouté devant le nom.
 //
-// Médecin prescripteur (15/09/2026) — un même patient peut avoir plusieurs
-// rappels actifs pour des traitements différents, et le destinataire du SMS
-// n'est pas forcément le patient lui-même (téléphone partagé, aidant…) :
-// mentionner le médecin permet de distinguer de quelle ordonnance il s'agit.
-// Optionnel (repli sur le message d'origine si absent) — tronqué à 30
-// caractères pour ne pas faire basculer le SMS sur un segment supplémentaire
-// (facturé en plus par l'opérateur).
-export function buildRappelMessage(prenom: string, nom: string, lien: string, pharmacieNom: string, medecin?: string | null): string {
-  const medecinTronque = medecin?.trim()?.slice(0, 30);
-  const objet = medecinTronque
-    ? `le renouvellement de votre ordonnance (${medecinTronque}) est prévu prochainement`
+// Médecin prescripteur + spécialité (15/09/2026) — un même patient peut avoir
+// plusieurs rappels actifs pour des traitements différents (ex. généraliste +
+// dentiste), et le destinataire du SMS n'est pas forcément le patient
+// lui-même (téléphone partagé, aidant…) : les deux, quand renseignés, aident
+// à distinguer de quelle ordonnance il s'agit. Tous deux optionnels (repli
+// sur le message d'origine si absents) — la combinaison des deux est tronquée
+// à 35 caractères pour ne pas faire basculer le SMS sur un segment
+// supplémentaire (facturé en plus par l'opérateur).
+export function buildRappelMessage(prenom: string, nom: string, lien: string, pharmacieNom: string, medecin?: string | null, specialite?: string | null): string {
+  const specialiteTrim = specialite?.trim();
+  const medecinTrim = medecin?.trim();
+  const detail = specialiteTrim && medecinTrim ? `${specialiteTrim}, ${medecinTrim}` : specialiteTrim || medecinTrim;
+  const detailTronque = detail?.slice(0, 35);
+  const objet = detailTronque
+    ? `le renouvellement de votre ordonnance (${detailTronque}) est prévu prochainement`
     : `votre renouvellement d'ordonnance est prévu prochainement`;
   return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que ${objet}.\nCliquez ici pour nous dire ce que vous souhaitez faire :\n${lien}`;
 }
@@ -53,7 +57,7 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, pharmacies(nom)")
+    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
     .lte("date_prochaine_relance", new Date().toISOString());
@@ -65,7 +69,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
       const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
 
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 
