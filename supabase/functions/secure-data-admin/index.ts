@@ -730,6 +730,159 @@ Deno.serve(async (req) => {
       }), { headers: CORS });
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Onglet "Gestion" (15/09/2026) — pilotage comptable/fiscal/juridique/SaaS.
+    // Uniquement branché côté frontend sur preview (voir GestionAdmin.jsx) —
+    // ces resources restent inertes/inutilisées en production tant que la
+    // migration gestion_entries n'y est pas appliquée, ce qui est volontaire.
+    //
+    // Principe : toute donnée affichée doit être réelle (abonnements/factures/
+    // Stripe) ou explicitement saisie manuellement par l'utilisateur — jamais
+    // inventée. Les obligations qui nécessitent des données absentes du système
+    // (paie, actionnariat détaillé, comptabilité en partie double) sont
+    // proposées comme registres à saisir manuellement ou repères réglementaires
+    // génériques, jamais comme documents officiels générés automatiquement —
+    // un brouillon FEC ou un PV d'AG inventé serait activement trompeur.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    if (resource === "admin_gestion_dashboard") {
+      const [{ data: abonnements }, { data: factures }] = await Promise.all([
+        sb.from("abonnements").select("status, mrr, plan, cancel_at_period_end, created_at, updated_at"),
+        sb.from("factures").select("montant_ttc, tva, statut, created_at"),
+      ]);
+      const actifs = (abonnements || []).filter((a: any) => a.status === "active" || a.status === "trialing");
+      const mrr = actifs.reduce((s: number, a: any) => s + (a.mrr || 0), 0);
+      const arr = mrr * 12;
+      const arpu = actifs.length ? mrr / actifs.length : 0;
+
+      const now = Date.now();
+      const since30 = new Date(now - 30 * 86400000).toISOString();
+      const actifsDebutPeriode = (abonnements || []).filter((a: any) => a.created_at < since30 && (a.status === "active" || a.status === "trialing" || a.updated_at >= since30)).length;
+      const churnedCe30j = (abonnements || []).filter((a: any) => a.status === "canceled" && a.updated_at >= since30).length;
+      const tauxChurnMensuel = actifsDebutPeriode > 0 ? (churnedCe30j / actifsDebutPeriode) * 100 : 0;
+      // LTV ≈ ARPU / taux de churn mensuel (formule standard SaaS) — non
+      // définie si le churn est nul sur la période (division par zéro) : dans
+      // ce cas on ne peut pas estimer de durée de vie moyenne, on retourne null
+      // plutôt qu'un chiffre arbitrairement gonflé.
+      const ltv = tauxChurnMensuel > 0 ? arpu / (tauxChurnMensuel / 100) : null;
+
+      const enCoursMois = (factures || []).filter((f: any) => f.created_at >= since30);
+      const ttcCollecte30j = enCoursMois.reduce((s: number, f: any) => s + (f.montant_ttc || 0), 0);
+      // Le champ `tva` de la table factures n'est pas systématiquement renseigné
+      // (dépend de l'appelant qui a créé la ligne) — repli sur le calcul TTC/1,20
+      // déjà utilisé ailleurs dans l'app (src/lib/plans.js:toHT) plutôt que de
+      // sommer des NULL et afficher 0 € de TVA de façon trompeuse.
+      const tvaCollectee30j = enCoursMois.reduce((s: number, f: any) => s + (f.tva || Math.round((f.montant_ttc || 0) - (f.montant_ttc || 0) / 1.20)), 0);
+
+      // Solde Stripe réel (disponible + en attente) — PAS la trésorerie totale
+      // de la société (comptes bancaires hors Stripe non connus du système) :
+      // libellé explicitement comme tel côté frontend pour ne pas induire en erreur.
+      let soldeStripeDisponible: number | null = null, soldeStripeAttente: number | null = null;
+      try {
+        const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
+        const balance = await stripe.balance.retrieve();
+        soldeStripeDisponible = balance.available.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
+        soldeStripeAttente = balance.pending.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
+      } catch { /* balance indisponible (clé test, permissions) — non bloquant */ }
+
+      const { data: parametres } = await sb.from("gestion_entries").select("data").eq("category", "parametre").maybeSingle();
+      const params = parametres?.data || {};
+      const depenseMarketingMensuelle = Number(params.depenseMarketingMensuelle) || 0;
+      const nouveauxClients30j = (abonnements || []).filter((a: any) => a.created_at >= since30).length;
+      const cac = nouveauxClients30j > 0 ? depenseMarketingMensuelle / nouveauxClients30j : null;
+
+      return new Response(JSON.stringify({
+        data: {
+          mrr: Math.round(mrr), arr: Math.round(arr), arpu: Math.round(arpu * 100) / 100,
+          clientsActifs: actifs.length,
+          tauxChurnMensuel: Math.round(tauxChurnMensuel * 10) / 10,
+          ltv: ltv !== null ? Math.round(ltv) : null,
+          cac: cac !== null ? Math.round(cac) : null,
+          resiliationsProgrammees: (abonnements || []).filter((a: any) => a.cancel_at_period_end).length,
+          ttcCollecte30j: Math.round(ttcCollecte30j) / 100, tvaCollectee30j: Math.round(tvaCollectee30j) / 100,
+          soldeStripeDisponible, soldeStripeAttente,
+          parametres: params,
+        },
+      }), { headers: CORS });
+    }
+
+    if (resource === "admin_gestion_set_parametre") {
+      const { cle, valeur } = params || {};
+      if (!cle) return new Response(JSON.stringify({ error: "cle requise" }), { status: 400, headers: CORS });
+      const { data: existing } = await sb.from("gestion_entries").select("id, data").eq("category", "parametre").maybeSingle();
+      const nextData = { ...(existing?.data || {}), [cle]: valeur };
+      if (existing) {
+        await sb.from("gestion_entries").update({ data: nextData, updated_at: new Date().toISOString() }).eq("id", existing.id);
+      } else {
+        await sb.from("gestion_entries").insert({ category: "parametre", data: nextData });
+      }
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Registres génériques (personnel / titres) — CRUD simple sur gestion_entries.
+    if (resource === "admin_gestion_registre_list") {
+      const { categorie } = params || {};
+      if (!["personnel", "titres"].includes(categorie)) {
+        return new Response(JSON.stringify({ error: "categorie invalide" }), { status: 400, headers: CORS });
+      }
+      const { data } = await sb.from("gestion_entries").select("id, data, created_at").eq("category", categorie).order("created_at", { ascending: true });
+      return new Response(JSON.stringify({ data: data || [] }), { headers: CORS });
+    }
+    if (resource === "admin_gestion_registre_save") {
+      const { categorie, id, entree } = params || {};
+      if (!["personnel", "titres"].includes(categorie) || !entree) {
+        return new Response(JSON.stringify({ error: "Paramètres invalides" }), { status: 400, headers: CORS });
+      }
+      if (id) {
+        await sb.from("gestion_entries").update({ data: entree, updated_at: new Date().toISOString() }).eq("id", id).eq("category", categorie);
+      } else {
+        await sb.from("gestion_entries").insert({ category: categorie, data: entree });
+      }
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+    if (resource === "admin_gestion_registre_delete") {
+      const { id } = params || {};
+      if (!id) return new Response(JSON.stringify({ error: "id requis" }), { status: 400, headers: CORS });
+      await sb.from("gestion_entries").delete().eq("id", id);
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Checklist de conformité — coché/annoté manuellement, les échéances
+    // elles-mêmes sont des repères réglementaires génériques (frontend).
+    if (resource === "admin_gestion_checklist_get") {
+      const { data } = await sb.from("gestion_entries").select("data").eq("category", "checklist").maybeSingle();
+      return new Response(JSON.stringify({ data: data?.data || {} }), { headers: CORS });
+    }
+    if (resource === "admin_gestion_checklist_set") {
+      const { itemId, done, note } = params || {};
+      if (!itemId) return new Response(JSON.stringify({ error: "itemId requis" }), { status: 400, headers: CORS });
+      const { data: existing } = await sb.from("gestion_entries").select("id, data").eq("category", "checklist").maybeSingle();
+      const nextData = { ...(existing?.data || {}), [itemId]: { done: !!done, note: note || "" } };
+      if (existing) {
+        await sb.from("gestion_entries").update({ data: nextData, updated_at: new Date().toISOString() }).eq("id", existing.id);
+      } else {
+        await sb.from("gestion_entries").insert({ category: "checklist", data: nextData });
+      }
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
+    // Export comptable — factures réelles, format CSV simple (utilisable tel
+    // quel par un tableur/comptable) ET brouillon FEC (structure de champs
+    // conforme à l'arrêté du 29/07/2013, généré à partir des factures réelles
+    // — DEUX lignes par facture : débit client 411 / crédit produit 706+TVA
+    // collectée 44571 — mais explicitement un BROUILLON : ce système ne tient
+    // pas de comptabilité en partie double complète (pas de charges, pas de
+    // rapprochement bancaire), donc ce fichier ne remplace pas une vraie
+        // extraction depuis un logiciel comptable et doit être revu par
+    // l'expert-comptable avant tout usage officiel — jamais présenté comme
+    // conforme/définitif dans l'UI.
+    if (resource === "admin_gestion_export_factures") {
+      const { data: factures } = await sb.from("factures")
+        .select("numero, montant_ttc, tva, statut, period_start, period_end, created_at, pharmacies(nom, siret)")
+        .order("created_at", { ascending: true });
+      return new Response(JSON.stringify({ data: factures || [] }), { headers: CORS });
+    }
+
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),
       { status: 400, headers: CORS });
 

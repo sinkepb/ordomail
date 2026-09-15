@@ -10,6 +10,7 @@ import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
+import { GestionAdmin } from "../components/GestionAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { RappelsMetricsAdmin } from "../components/RappelsMetricsAdmin.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
@@ -52,6 +53,14 @@ const DB = {
   admin: { email: "admin@ordomail.fr", password: "admin2025" },
 };
 
+
+// Onglet "Gestion" (15/09/2026) réservé à preview — outil de pilotage interne
+// (comptabilité/fiscalité/SaaS/juridique SAS), pas une fonctionnalité prête
+// pour un usage en production sans revue préalable des brouillons générés
+// (voir GestionAdmin.jsx). Détecté via l'URL Supabase plutôt qu'une variable
+// d'env dédiée — évite d'ajouter un nouveau secret juste pour ce garde-fou,
+// et reste correct même si le déploiement Vercel/preview change de nom.
+const IS_PREVIEW_PROJECT = (import.meta.env.VITE_SUPABASE_URL || "").includes("uygaqxruuxpfhvzjuksy");
 
 function BackofficeAdmin({ onBack }) {
   const [authed,     setAuthed]     = useState(() => !!readStoredAdminToken());
@@ -283,7 +292,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"]].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"],...(IS_PREVIEW_PROJECT ? [["gestion","🏛️ Gestion"]] : [])].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -382,6 +391,8 @@ function AdminDashboardLive({ adminToken } = {}) {
           <RgpdPanel adminToken={adminToken}/>
         ) : tab === "purge" ? (
           <PurgeAdmin adminToken={adminToken}/>
+        ) : tab === "gestion" && IS_PREVIEW_PROJECT ? (
+          <GestionAdmin adminToken={adminToken}/>
         ) : (
           selected ? (
             <ContratEditor
