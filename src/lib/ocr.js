@@ -157,11 +157,35 @@ const OCR_PARSERS = {
     return m ? ('Dr ' + m[1].trim().slice(0, 40)) : null;
   },
   nom(txt) {
-    const m = txt.match(/(?:Patient|Nom|Assuré)\s*[:]\s*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-záàâéèêëîïôùûüç\s-]{2,40})/i)
-           || txt.match(/^([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,}(?:\s+[A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-z]{1,20}){1,2})/m);
+    // @fix 16/09/2026 — "MEDICAL Ancien Interne" extrait comme nom patient sur
+    // une vraie ordonnance Doctolib (bloc de titres du médecin en en-tête,
+    // ex. "GYNECOLOGUE OBSTETRICIEN ET\nMEDICAL\nAncien Interne et Chef de
+    // clinique..."). Deux causes : (1) tous les motifs utilisaient \s, qui
+    // matche aussi le saut de ligne — "MEDICAL" (majuscules, fin d'une ligne)
+    // se retrouvait donc concaténé avec "Ancien Interne" (ligne suivante,
+    // Capitalisée) comme s'ils appartenaient à la même ligne ; remplacé
+    // partout par [^\S\n] (espace/tabulation, jamais \n) pour rester sur UNE
+    // seule ligne réelle, aussi bien entre le libellé et sa valeur qu'à
+    // l'intérieur de la valeur elle-même (sinon "Rosy NGAMENI TCHOKOTEU"
+    // continuait de capturer le début de la ligne suivante, "Né(e) le…").
+    // (2) le libellé réel de cette ordonnance est "Nom de naissance :"
+    // (variante Doctolib courante), pas juste "Nom :" — le motif explicite ne
+    // le reconnaissait pas et retombait donc sur le motif de repli fautif
+    // avant même d'atteindre la vraie ligne du patient, plus bas dans le texte.
+    const m = txt.match(/(?:Patient|Assuré)[^\S\n]*[:][^\S\n]*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,40})/i)
+           || txt.match(/Nom(?:[^\S\n]+de[^\S\n]+naissance|[^\S\n]+du[^\S\n]+patient|[^\S\n]+et[^\S\n]+pr[ée]nom)?[^\S\n]*[:][^\S\n]*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,40})/i)
+           || txt.match(/^([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,}(?:[^\S\n]+[A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-z]{1,20}){1,2})/m);
     if (!m) return null;
-    const excluded = ['ORDONNANCE','MEDICALE','PRESCRIPTION','REPUBLIQUE','CABINET','MEDECIN'];
-    return excluded.includes(m[1].trim().toUpperCase()) ? null : m[1].trim().slice(0, 50);
+    // Vérifié mot par mot (pas seulement la correspondance entière) : un
+    // faux positif composite comme "MEDICAL Ancien Interne" ne matchait
+    // aucune entrée de l'ancienne liste testée en égalité stricte, puisque
+    // celle-ci ne contenait que des mots isolés.
+    const excluded = new Set(['ORDONNANCE','MEDICALE','PRESCRIPTION','REPUBLIQUE','CABINET','MEDECIN',
+      'ANCIEN','INTERNE','CHEF','CLINIQUE','HOPITAUX','HÔPITAUX','PRATICIEN','HOSPITALIER',
+      'COORDINATEUR','MEMBRE','GROUPE','ETUDE','INSTITUT','CENTRE','FERTILITE','MATERNITE']);
+    const mots = m[1].trim().toUpperCase().split(/\s+/);
+    if (mots.some(w => excluded.has(w))) return null;
+    return m[1].trim().slice(0, 50);
   },
   date(txt) {
     const m = txt.match(/(\d{1,2})[/\-.·](\d{1,2})[/\-.·](\d{2,4})/);
