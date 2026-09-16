@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -448,7 +448,6 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // action du pharmacien, ça ne doit pas être noyé derrière "Tous" — sinon
   // "en attente" plutôt qu'un onglet vide (06/09/2026, retour direct).
   const [filtre, setFiltre] = useState("a_traiter");
-  const [showForm, setShowForm] = useState(false);
   const [editingRappel, setEditingRappel] = useState(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -513,12 +512,6 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   useEffect(() => {
     onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter").length);
   }, [rappels, onCountATraiter]);
-
-  async function handleCreated(payload) {
-    const rappel = await createRappel(pharmacie.id, payload);
-    if (rappel) setRappels(prev => [rappel, ...prev]);
-    setShowForm(false);
-  }
 
   async function handleUpdated(payload) {
     await updateRappel(editingRappel.id, payload);
@@ -629,6 +622,9 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
 
   return (
     <div>
+      {/* Bouton "+ Nouveau rappel" déplacé vers l'onglet Ordonnances
+          (16/09/2026, demande titulaire) — voir Dashboard.jsx, rendu au même
+          niveau que les filtres de statut. */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>
           🔔 Rappels
@@ -636,10 +632,6 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
             <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} à traiter</span>
           )}
         </div>
-        <button onClick={() => setShowForm(true)}
-          style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-          + Nouveau rappel
-        </button>
       </div>
 
       {/* Statistiques d'efficacité (08/09/2026) — silencieux si absent (démo,
@@ -809,7 +801,6 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         })}
       </div>
 
-      {showForm && <RappelForm onCancel={() => setShowForm(false)} onCreated={handleCreated} creating={creating} setCreating={setCreating} />}
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
