@@ -708,8 +708,24 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
     const interetsInterval = setInterval(() => {
       fetchInteretsDuJour(pharmacieId).then(i => setInteretsDuJour(i));
     }, 5000);
-    return () => { unsub(); clearInterval(interetsInterval); };
-  }, [pharmacieId]);
+    // Poste vendeur (16/09/2026) — subscribeToPharmacy utilise le client
+    // Supabase brut, qui pour un poste vendeur (jeton interne signé, PAS de
+    // session Supabase Auth réelle — voir client.js:_resolveAuthToken) tourne
+    // en rôle anon. Les policies RLS de `ordonnances` n'accordent SELECT
+    // qu'à `authenticated` (aucune ligne pour anon, par choix de sécurité) :
+    // le canal temps réel ne recevait donc jamais rien pour un vendeur,
+    // depuis toujours — seule la liste initiale (chargée via secure-data, clé
+    // de service) s'affichait. Repéré en testant en direct : le titulaire
+    // (vraie session Auth) reçoit bien les événements, un vendeur non. Même
+    // remède que MonitoringPanel.jsx pour la même raison (table sans accès
+    // anon) : un sondage périodique via secure-data en repli.
+    const vendeurPoll = userRole === "vendeur" ? setInterval(() => {
+      fetchOrdonnances(pharmacieId, 7).then(updatedOrdos => {
+        if (updatedOrdos) { setOrdonnances(updatedOrdos); triggerOcrOnNew(updatedOrdos, pharmacieId); }
+      });
+    }, 10000) : null;
+    return () => { unsub(); clearInterval(interetsInterval); if (vendeurPoll) clearInterval(vendeurPoll); };
+  }, [pharmacieId, userRole]);
 
   if (dashLoading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -867,7 +883,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       {tab==="rappels"&&canRappels&&(
         <ErrorBoundary compact label="Rappels">
         <div style={{flex:1,overflow:"auto",padding:16,paddingBottom:76}}>
-          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>
+          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter} userRole={userRole}/>
         </div>
         </ErrorBoundary>
       )}

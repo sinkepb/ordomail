@@ -440,7 +440,7 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
-function RappelsSection({ pharmacie, onCountATraiter }) {
+function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [rappels, setRappels] = useState([]);
   const [loading, setLoading] = useState(true);
   // Filtre par défaut décidé une fois les rappels chargés (voir l'effet de
@@ -482,7 +482,16 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     // Quota SMS mensuel (11/09/2026) — même logique de fraîcheur que les
     // stats : un chargement au montage suffit, pas besoin de temps réel.
     fetchSmsConsommation().then(setSmsQuota);
-  }, [pharmacie?.id]);
+    // Poste vendeur (16/09/2026) — même cause et même remède que dans
+    // Dashboard.jsx pour les ordonnances : subscribeToRappels tourne en rôle
+    // anon pour un poste vendeur (pas de session Supabase Auth réelle), et
+    // rappels_titulaire_read n'accorde SELECT qu'à authenticated — un vendeur
+    // ne recevait donc jamais de mise à jour temps réel sur cet onglet.
+    const vendeurPoll = userRole === "vendeur" ? setInterval(() => {
+      fetchRappels(pharmacie.id).then(data => { if (data) setRappels(data); });
+    }, 10000) : null;
+    return () => { if (vendeurPoll) clearInterval(vendeurPoll); };
+  }, [pharmacie?.id, userRole]);
 
   // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
   // propre session (resolve-rappel), jamais celle du pharmacien : sans ça,
