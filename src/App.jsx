@@ -181,6 +181,25 @@ function AppInner() {
   // et token court (voir _shared/shortToken.ts) : chaque caractère compte
   // dans un SMS (accents → encodage UCS-2, limite de segment à 70 caractères).
   const rappelToken = urlParams.get("r");
+  // Liens de connexion à mettre en favoris (16/09/2026) — jusqu'ici, la seule
+  // façon d'atteindre l'écran de connexion pharmacie ou admin était de
+  // cliquer depuis la page d'accueil (bouton "Connexion" / lien discret du
+  // pied de page) : aucune URL directe, donc rien à mettre en favoris malgré
+  // une demande explicite en ce sens. ?connexion et ?admin routent
+  // directement vers l'écran de connexion correspondant — indépendamment de
+  // toute session déjà stockée (contrairement à readStoredAdminToken() /
+  // storedVendeur ci-dessous, qui restaurent une session existante). Une
+  // pharmacie/un admin déjà connecté(e) qui visite ce lien direct atterrit
+  // donc quand même sur son dashboard (session restaurée normalement) — ce
+  // lien ne sert qu'à choisir où revenir en l'ABSENCE de session, notamment
+  // après une déconnexion (voir logoutDestination plus bas).
+  const connexionParam = urlParams.get("connexion");
+  const adminLoginParam = urlParams.get("admin");
+  // Après déconnexion, revenir sur CE lien plutôt que sur la page d'accueil
+  // générique — tout l'intérêt de l'avoir mis en favoris. Calculé une seule
+  // fois à l'arrivée (les paramètres d'URL ne changent jamais pendant la vie
+  // de cette session SPA), pas besoin d'un state dédié.
+  const logoutDestination = adminLoginParam ? "backoffice" : (connexionParam ? "dashboard" : "landing");
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");
@@ -209,7 +228,7 @@ function AppInner() {
       posteNom: storedVendeur.payload.poste_nom,
     };
   }
-  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : (storedVendeur ? "dashboard" : "landing")));
+  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : (storedVendeur ? "dashboard" : logoutDestination)));
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
@@ -428,10 +447,10 @@ function AppInner() {
       {route==="finish-subscription"&&resumeSubscription&&(
         <BillingModule initialView="pricing" resumePharmacieId={resumeSubscription.pharmacieId} resumeEmail={resumeSubscription.email} canceled={resumeSubscription.canceled} onBack={()=>setRoute("landing")}/>
       )}
-      {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute("landing")}/>}
+      {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute(logoutDestination)}/>}
       {(route==="dashboard"||route==="admin")&&<AppLogin
-          onBack={()=>setRoute("landing")}
-          onLogout={()=>setRoute("landing")}
+          onBack={()=>setRoute(logoutDestination)}
+          onLogout={()=>setRoute(logoutDestination)}
           onGoToPricing={()=>setRoute("pricing")}
           onNeedsSubscription={(pharmacieId, canceled)=>{ setResumeSubscription({pharmacieId, canceled}); setRoute("finish-subscription"); }}
           DashboardComponent={PharmacieDashboard}
