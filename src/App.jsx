@@ -7,6 +7,7 @@ import {
 } from "./supabase.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { readStoredAdminToken } from "./lib/adminSession.js";
+import { readStoredVendeurToken } from "./lib/vendeurSession.js";
 import { lazyWithReload as lazy } from "./lib/lazyWithReload.js";
 // Pages chargées à la demande (28/07/2026) — un patient qui scanne un QR code
 // ne doit pas télécharger le dashboard vendeur, le backoffice admin et Stripe
@@ -190,7 +191,25 @@ function AppInner() {
   // détourné vers "finish-subscription" par l'effet de restauration de
   // session pharmacie plus bas (qui ne vérifiait pas l'existence d'une
   // session admin avant de s'exécuter — voir son garde-fou juste en dessous).
-  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : "landing"));
+  //
+  // @fix 16/09/2026 — même principe pour un poste vendeur (jeton persisté en
+  // sessionStorage depuis ce jour, voir vendeurSession.js) : sans ceci, le
+  // jeton survivait bien au refresh (secure-data continuait de répondre),
+  // mais l'écran de connexion se réaffichait quand même faute de route/
+  // session restaurées ici — pas de bénéfice utilisateur réel à la
+  // persistance seule. window.__ordomailSession posé de façon synchrone
+  // (pas dans un effet) : AppLogin le lit à SON premier montage, qui a lieu
+  // dès ce rendu-ci si route="dashboard" d'emblée.
+  const storedVendeur = !isRecovery && !rappelToken && !mobileOffreToken && !checkoutReturn && !patientParam && !qrCodeParam && !readStoredAdminToken() ? readStoredVendeurToken() : null;
+  if (storedVendeur && typeof window !== "undefined" && !window.__ordomailSession) {
+    window.__ordomailSession = {
+      pharmacieId: storedVendeur.payload.pharmacie_id,
+      userRole: "vendeur",
+      userId: storedVendeur.payload.sub,
+      posteNom: storedVendeur.payload.poste_nom,
+    };
+  }
+  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : (storedVendeur ? "dashboard" : "landing")));
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
@@ -232,8 +251,10 @@ function AppInner() {
     // mais si le même navigateur a AUSSI une session Supabase Auth active
     // (ex. un compte pharmacie de test utilisé dans le même onglet), cet
     // effet s'exécutait quand même et pouvait détourner un admin en train de
-    // rafraîchir le backoffice vers "finish-subscription".
-    if (isDemoMode || isRecovery || patientParam || qrCodeParam || mobileOffreToken || rappelToken || checkoutReturn || readStoredAdminToken()) { setSessionLoading(false); return; }
+    // rafraîchir le backoffice vers "finish-subscription". Même exclusion
+    // pour storedVendeur (16/09/2026), même raison : un poste vendeur n'a pas
+    // non plus de session Supabase Auth réelle (voir vendeurSession.js).
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam || mobileOffreToken || rappelToken || checkoutReturn || readStoredAdminToken() || storedVendeur) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {
