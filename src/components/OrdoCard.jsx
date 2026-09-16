@@ -98,9 +98,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded,
   // URL signée Supabase Storage est cross-origin, où l'attribut download est
   // silencieusement ignoré par le navigateur (le fichier s'ouvre au lieu de
   // se télécharger). Un blob: (même origine que la page) le respecte toujours.
-  // Marque aussi l'ordonnance comme traitée (16/09/2026, retour titulaire) —
-  // au même titre que l'impression : une fois le fichier récupéré, plus de
-  // raison de la laisser "à traiter".
+  // onDownloaded déclenche une confirmation avant de marquer l'ordonnance
+  // comme traitée (16/09/2026, retour titulaire ; confirmation ajoutée le
+  // 17/09/2026 — voir DownloadConfirmModal dans Dashboard.jsx), au même
+  // titre que l'impression.
   async function handleDownload() {
     const att = ordo.attachments[0];
     if (!att || downloading) return;
@@ -474,7 +475,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onSonnette
           <button onClick={() => onCreateRappel(ordo)}
             style={{ padding: "6px 12px", border: "1.5px solid rgba(26,58,110,0.3)", borderRadius: 8,
               background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            ⏰ Rappel
+            ⏰ Créer son rappel
           </button>
         )}
         <button onClick={onPrint}
