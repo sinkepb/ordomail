@@ -117,7 +117,7 @@ function envoiVersRenouvellement(dateEnvoi) {
 // secure-data:rappels_update, même contrainte appliquée côté serveur). Le
 // consentement n'est PAS ré-éditable ici : c'est une donnée recueillie une
 // fois à la création, pas un champ de formulaire ordinaire.
-function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", editingRappel = null }) {
+function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", initialMedecin = "", editingRappel = null }) {
   const isEdit = !!editingRappel;
   const [nom, setNom] = useState(editingRappel?.patient_nom || initialNom);
   const [prenom, setPrenom] = useState(editingRappel?.patient_prenom || initialPrenom);
@@ -126,7 +126,11 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     ? envoiVersRenouvellement(editingRappel.date_prochaine_relance)
     : defaultDateRenouvellement());
   const [commentaire, setCommentaire] = useState(editingRappel?.commentaire || "");
-  const [medecinPrescripteur, setMedecinPrescripteur] = useState(editingRappel?.medecin_prescripteur || "");
+  // Préremplissage depuis l'OCR de l'ordonnance (17/09/2026, retour titulaire)
+  // — depuis une carte ordonnance, initialMedecin porte ordo.extracted.medecin
+  // (voir Dashboard.jsx, setRappelDraft) : gagne du temps quand l'OCR l'a
+  // déjà détecté, reste modifiable/effaçable si faux ou absent.
+  const [medecinPrescripteur, setMedecinPrescripteur] = useState(editingRappel?.medecin_prescripteur || initialMedecin || "");
   // "Autre" en repli texte libre (15/09/2026) — si la spécialité existante
   // n'est pas dans la liste fermée (donnée saisie avant l'ajout de cette
   // liste, ou via une future valeur non prévue), elle reste éditable au lieu

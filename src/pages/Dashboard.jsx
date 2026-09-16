@@ -6,7 +6,7 @@ import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
-import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
+import { PrintConfirmModal, ViewerModal, DownloadConfirmModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
@@ -556,6 +556,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [loadingId, setLoadingId] = useState(null);
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
+  const [downloadConfirm, setDownloadConfirm] = useState(null);
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
@@ -829,8 +830,11 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id,posteNom}).catch(()=>{}); }
   // Téléchargement direct = traitement de l'ordonnance au même titre que
   // l'impression (retour titulaire, 16/09/2026) : le fichier téléchargé est
-  // sensé être imprimé/traité depuis un autre poste, pas de raison de laisser
-  // la tâche "à traiter" une fois le fichier récupéré.
+  // sensé être imprimé/traité depuis un autre poste. Appelé uniquement depuis
+  // DownloadConfirmModal.onConfirm (17/09/2026) — marquer automatiquement dès
+  // le téléchargement, sans confirmation, risquait de faire disparaître une
+  // ordonnance de "À traiter" par erreur (double-clic, téléchargement pour
+  // simple vérification) — même logique de confirmation que pour Imprimer.
   function handleDownloadOrdo(id) { updateOrdo(id,{status:"imprime"}); addAuditLog({userId:userId2,userRole,pharmacieId,action:"download",ordonnanceId:id,posteNom}).catch(()=>{}); }
   async function handleFile(ordoId, file, dataUrl) {
     setLoadingId(ordoId);
@@ -1031,8 +1035,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                         if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
                       }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
-                      onDownloaded={(ordo)=>handleDownloadOrdo(ordo.id)}
-                      onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}/>;
+                      onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
+                      onCreateRappel={(group)=>setRappelDraft({...splitNomPrenom(group.extracted?.nom||group.fromName), medecin: group.extracted?.medecin || null})}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
@@ -1050,8 +1054,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
-                    onDownloaded={()=>handleDownloadOrdo(o.id)}
-                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}
+                    onDownloaded={()=>setDownloadConfirm(o)}
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}
                     loadingId={loadingId}/>;
                 })}
               </div>
@@ -1111,10 +1115,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                           )}
                           {/* Créer un rappel — manquait en vue liste groupée (04/09/2026),
                               déjà présent en vue grille (OrdoGroup). Un seul par patient. */}
-                          <button onClick={()=>setRappelDraft(splitNomPrenom(o.extracted?.nom||o.fromName))}
+                          <button onClick={()=>setRappelDraft({...splitNomPrenom(o.extracted?.nom||o.fromName), medecin: o.extracted?.medecin || null})}
                             style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",borderRadius:9,
                               background:"#f0f4ff",color:"#1a3a6e",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
-                            ⏰ Rappel
+                            ⏰ Créer son rappel
                           </button>
                         </div>
                           );
@@ -1181,7 +1185,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                   link.href = blobUrl; link.download = a.name || "ordonnance";
                                   document.body.appendChild(link); link.click(); link.remove();
                                   URL.revokeObjectURL(blobUrl);
-                                  handleDownloadOrdo(ord.id);
+                                  setDownloadConfirm(ord);
                                 }}
                                 title="Télécharger le fichier"
                                 style={{padding:"4px 8px",border:"1px solid rgba(26,58,110,0.3)",borderRadius:6,
@@ -1227,8 +1231,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
               }
             })();}}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
-                    onDownloaded={()=>handleDownloadOrdo(o.id)}
-                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}/>;
+                    onDownloaded={()=>setDownloadConfirm(o)}
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}/>;
                 })}
               </div>
             )}
@@ -1271,7 +1275,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
-      {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom}
+      {downloadConfirm&&<DownloadConfirmModal ordo={downloadConfirm} couleur={couleur}
+        onConfirm={()=>{handleDownloadOrdo(downloadConfirm.id);setDownloadConfirm(null);}}
+        onCancel={()=>setDownloadConfirm(null)}/>}
+      {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
         onCreated={async(payload)=>{await createRappel(pharmacieId,payload);setRappelDraft(null);}}/>}
