@@ -3,6 +3,7 @@
 // complet et la façade de compatibilité (ré-export unique conservé pour ne pas
 // avoir à modifier les ~30 sites d'import existants dans le reste de l'app).
 import { createClient } from '@supabase/supabase-js';
+import { readStoredVendeurToken, storeVendeurToken } from '../vendeurSession.js';
 
 const _DEMO_EXPLICIT = import.meta.env.VITE_DEMO_MODE === 'true';
 const _SUPABASE_URL_MISSING = !import.meta.env.VITE_SUPABASE_URL ||
@@ -84,12 +85,15 @@ export function registerDB(db) {
 // Auth réelle. Depuis le durcissement du 23/07/2026, verify-pin émet un jeton signé
 // de courte durée (voir supabase/functions/_shared/jwt.ts) qu'il faut présenter à
 // l'edge function secure-data pour lire les ordonnances/offres de sa pharmacie.
-// Volontairement non persisté (mémoire du module) : comme avant, un rechargement
-// complet de page déconnecte le poste vendeur, qui doit resaisir son PIN.
-let _vendeurToken = null;
+// Persisté en sessionStorage depuis le 16/09/2026 (voir vendeurSession.js) :
+// un rechargement de page ne déconnecte plus le poste vendeur tant que le
+// jeton n'a pas expiré (8h, voir VENDEUR_TOKEN_TTL_SECONDS dans verify-pin) —
+// initialisé directement depuis le stockage au chargement du module, pour que
+// _resolveAuthToken() fonctionne dès le tout premier appel après un refresh.
+let _vendeurToken = readStoredVendeurToken()?.token || null;
 
-export function setVendeurToken(token) { _vendeurToken = token || null; }
-export function clearVendeurToken() { _vendeurToken = null; }
+export function setVendeurToken(token) { _vendeurToken = token || null; storeVendeurToken(token); }
+export function clearVendeurToken() { _vendeurToken = null; storeVendeurToken(null); }
 export function getVendeurToken() { return _vendeurToken; }
 
 // Résout le jeton à présenter à secure-data : jeton vendeur en mémoire si présent,
