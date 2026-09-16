@@ -22,7 +22,6 @@
 // verify-admin et secure-data-admin — supabase secrets set ORDOMAIL_JWT_SECRET=...).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Stripe from "https://esm.sh/stripe@14.0.0";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
@@ -33,7 +32,7 @@ import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
-import { getSmsConsommation, PACK_SMS_QUANTITE, PACK_SMS_PRIX_TTC_CENTIMES } from "../_shared/smsQuota.ts";
+import { getSmsConsommation } from "../_shared/smsQuota.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -471,7 +470,7 @@ Deno.serve(async (req) => {
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
@@ -505,6 +504,8 @@ Deno.serve(async (req) => {
         patient_prenom: prenom.trim(),
         patient_telephone: telephone.trim(),
         commentaire: commentaire?.trim() || null,
+        medecin_prescripteur: medecinPrescripteur?.trim() || null,
+        specialite: specialite?.trim() || null,
         consentement_sms: true,
         token: generateShortToken(),
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
@@ -746,7 +747,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, nom, prenom, telephone, dateRappel, commentaire } = params || {};
+      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -759,6 +760,8 @@ Deno.serve(async (req) => {
       if (prenom?.trim()) patch.patient_prenom = prenom.trim();
       if (telephone?.trim()) patch.patient_telephone = telephone.trim();
       if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
+      if (medecinPrescripteur !== undefined) patch.medecin_prescripteur = medecinPrescripteur?.trim() || null;
+      if (specialite !== undefined) patch.specialite = specialite?.trim() || null;
       if (dateRappel && existing.statut === "en_attente") {
         const parsed = new Date(dateRappel);
         if (Number.isNaN(parsed.getTime())) {
@@ -798,7 +801,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
       const { data: rappel } = await sb.from("rappels_ordonnance")
-        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, statut, pharmacies(nom)")
+        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, statut, pharmacies(nom)")
         .eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
@@ -810,7 +813,7 @@ Deno.serve(async (req) => {
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom);
+      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
@@ -867,62 +870,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
-    // Quota SMS mensuel (11/09/2026) — 200 SMS/mois inclus dans Performance,
-    // packs de 100 au-delà (voir _shared/smsQuota.ts). Affiché sur le
-    // Dashboard pharmacien (RappelsSection.jsx) pour suivre la conso avant
-    // d'être surpris par un besoin de pack.
+    // Quota SMS mensuel (11/09/2026, révisé 15/09/2026) — 100 SMS/mois inclus
+    // dans Performance, dépassement facturé automatiquement en fin de mois
+    // (voir _shared/smsQuota.ts et facturer-depassement-sms). Affiché sur le
+    // Dashboard pharmacien (RappelsSection.jsx) pour suivre la conso en
+    // temps réel — purement informatif, l'envoi n'est jamais bloqué.
     if (resource === "sms_consommation") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
       const conso = await getSmsConsommation(sb, pharmacieId);
       return new Response(JSON.stringify({ data: conso }), { headers: CORS });
-    }
-
-    // Achat d'un pack de 100 SMS supplémentaires (11/09/2026) — paiement
-    // ponctuel (mode "payment", pas un abonnement) sur le Customer Stripe
-    // déjà associé à la pharmacie. La quantité n'est créditée qu'à la
-    // confirmation réelle du paiement (stripe-webhook, checkout.session.completed),
-    // jamais de façon optimiste ici — même logique que le kit matériel.
-    if (resource === "sms_acheter_pack") {
-      if (!pharmacieId) {
-        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
-      }
-      const { data: ph } = await sb.from("pharmacies").select("stripe_customer_id, plan").eq("id", pharmacieId).maybeSingle();
-      if (!ph?.stripe_customer_id) {
-        return new Response(JSON.stringify({ error: "Aucun moyen de paiement enregistré — complétez d'abord votre abonnement" }), { status: 400, headers: CORS });
-      }
-      if (!(await planHasFeature(sb, ph.plan, "rappels"))) {
-        return new Response(JSON.stringify({ error: "Les rappels SMS ne sont disponibles que sur le plan Performance" }), { status: 403, headers: CORS });
-      }
-      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
-      const ALLOWED_APP_ORIGINS = [Deno.env.get("APP_URL"), "https://ordomail.fr", "http://localhost:5173", "http://127.0.0.1:5173"];
-      const base = resolveAppOrigin(params?.appUrl, ALLOWED_APP_ORIGINS, Deno.env.get("APP_URL") || "https://ordomail.fr");
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        customer: ph.stripe_customer_id,
-        client_reference_id: pharmacieId,
-        locale: "fr",
-        line_items: [{
-          price_data: {
-            currency: "eur",
-            unit_amount: PACK_SMS_PRIX_TTC_CENTIMES,
-            product_data: { name: `Pack ${PACK_SMS_QUANTITE} SMS OrdoMail` },
-            tax_behavior: "inclusive",
-          },
-          quantity: 1,
-        }],
-        metadata: { pharmacie_id: pharmacieId, type: "pack_sms", quantite: String(PACK_SMS_QUANTITE) },
-        // Pas de paramètre ?checkout=... en retour (contrairement à
-        // create-checkout-session) : ce paramètre route vers BillingModule en
-        // vue "checkout" (l'étape carte bancaire de l'inscription), pas un
-        // écran de confirmation — inadapté ici. Un retour à la racine suffit :
-        // la session titulaire déjà active renvoie directement au Dashboard,
-        // où le quota SMS se rafraîchit tout seul au montage de l'onglet Rappels.
-        success_url: base,
-        cancel_url: base,
-      });
-      return new Response(JSON.stringify({ data: { url: session.url } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),

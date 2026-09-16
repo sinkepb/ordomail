@@ -6,7 +6,7 @@ import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
-import { PrintConfirmModal, ViewerModal } from "../components/PrintModal.jsx";
+import { PrintConfirmModal, ViewerModal, DownloadConfirmModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
@@ -556,6 +556,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [loadingId, setLoadingId] = useState(null);
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
+  const [downloadConfirm, setDownloadConfirm] = useState(null);
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
@@ -708,8 +709,24 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
     const interetsInterval = setInterval(() => {
       fetchInteretsDuJour(pharmacieId).then(i => setInteretsDuJour(i));
     }, 5000);
-    return () => { unsub(); clearInterval(interetsInterval); };
-  }, [pharmacieId]);
+    // Poste vendeur (16/09/2026) — subscribeToPharmacy utilise le client
+    // Supabase brut, qui pour un poste vendeur (jeton interne signé, PAS de
+    // session Supabase Auth réelle — voir client.js:_resolveAuthToken) tourne
+    // en rôle anon. Les policies RLS de `ordonnances` n'accordent SELECT
+    // qu'à `authenticated` (aucune ligne pour anon, par choix de sécurité) :
+    // le canal temps réel ne recevait donc jamais rien pour un vendeur,
+    // depuis toujours — seule la liste initiale (chargée via secure-data, clé
+    // de service) s'affichait. Repéré en testant en direct : le titulaire
+    // (vraie session Auth) reçoit bien les événements, un vendeur non. Même
+    // remède que MonitoringPanel.jsx pour la même raison (table sans accès
+    // anon) : un sondage périodique via secure-data en repli.
+    const vendeurPoll = userRole === "vendeur" ? setInterval(() => {
+      fetchOrdonnances(pharmacieId, 7).then(updatedOrdos => {
+        if (updatedOrdos) { setOrdonnances(updatedOrdos); triggerOcrOnNew(updatedOrdos, pharmacieId); }
+      });
+    }, 10000) : null;
+    return () => { unsub(); clearInterval(interetsInterval); if (vendeurPoll) clearInterval(vendeurPoll); };
+  }, [pharmacieId, userRole]);
 
   if (dashLoading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -811,6 +828,14 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   }
   function handleViewOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"view",ordonnanceId:id,posteNom}).catch(()=>{}); }
   function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id,posteNom}).catch(()=>{}); }
+  // Téléchargement direct = traitement de l'ordonnance au même titre que
+  // l'impression (retour titulaire, 16/09/2026) : le fichier téléchargé est
+  // sensé être imprimé/traité depuis un autre poste. Appelé uniquement depuis
+  // DownloadConfirmModal.onConfirm (17/09/2026) — marquer automatiquement dès
+  // le téléchargement, sans confirmation, risquait de faire disparaître une
+  // ordonnance de "À traiter" par erreur (double-clic, téléchargement pour
+  // simple vérification) — même logique de confirmation que pour Imprimer.
+  function handleDownloadOrdo(id) { updateOrdo(id,{status:"imprime"}); addAuditLog({userId:userId2,userRole,pharmacieId,action:"download",ordonnanceId:id,posteNom}).catch(()=>{}); }
   async function handleFile(ordoId, file, dataUrl) {
     setLoadingId(ordoId);
     addAuditLog({userId:userId2,userRole,pharmacieId,action:"upload",ordonnanceId:ordoId,posteNom}).catch(()=>{});
@@ -867,7 +892,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       {tab==="rappels"&&canRappels&&(
         <ErrorBoundary compact label="Rappels">
         <div style={{flex:1,overflow:"auto",padding:16,paddingBottom:76}}>
-          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter}/>
+          <RappelsSection pharmacie={pharmacie} onCountATraiter={setRappelsATraiter} userRole={userRole}/>
         </div>
         </ErrorBoundary>
       )}
@@ -954,13 +979,27 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
               </div>
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-              {[["nouveau","🔔 À traiter",ordonnancesJour.filter(o=>o.status==="nouveau").length],["imprime","✓ Imprimées",ordonnancesJour.filter(o=>o.status==="imprime").length],["tous","Toutes",ordonnancesJour.length]].map(([k,l,count])=>(
+              {[["nouveau","🔔 À traiter",ordonnancesJour.filter(o=>o.status==="nouveau").length],["imprime","✓ Traitées",ordonnancesJour.filter(o=>o.status==="imprime").length],["tous","Toutes",ordonnancesJour.length]].map(([k,l,count])=>(
                 <button key={k} onClick={()=>setFilterStatus(k)}
                   style={{padding:"5px 12px",borderRadius:16,border:`1.5px solid ${filterStatus===k?couleur:"#e0e0e0"}`,background:filterStatus===k?couleur:"#fff",color:filterStatus===k?"#fff":"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
                   {l}<span style={{background:filterStatus===k?"rgba(255,255,255,0.25)":"#f0f0f0",borderRadius:10,padding:"0 6px",fontSize:11}}>{count}</span>
                 </button>
               ))}
               <span style={{fontSize:12,color:"#bbb",marginLeft:4}}>{filteredOrdos.length} ordonnance{filteredOrdos.length!==1?"s":""}</span>
+              {/* Nouveau rappel — déplacé depuis l'onglet Rappels (16/09/2026,
+                  demande titulaire) : accessible directement depuis l'onglet
+                  Ordonnances, au même niveau que les filtres de statut mais
+                  poussé tout à droite (marginLeft:"auto"). Réutilise le même
+                  mécanisme que le bouton "Créer son rappel" des cartes
+                  ordonnance (rappelDraft + RappelForm rendu plus bas,
+                  indépendant de l'onglet actif) plutôt que le showForm local
+                  de RappelsSection, qui est démontée quand cet onglet est actif. */}
+              {canRappels && (
+                <button onClick={()=>setRappelDraft({nom:"",prenom:""})}
+                  style={{marginLeft:"auto",padding:"5px 14px",borderRadius:16,border:"none",background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  + Nouveau rappel
+                </button>
+              )}
             </div>
           </div>
           <div style={{flex:1,overflow:"auto",padding:"12px 12px 80px"}}>
@@ -996,7 +1035,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                         if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
                       }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
-                      onCreateRappel={(group)=>setRappelDraft(splitNomPrenom(group.extracted?.nom||group.fromName))}/>;
+                      onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
+                      onCreateRappel={(group)=>setRappelDraft({...splitNomPrenom(group.extracted?.nom||group.fromName), medecin: group.extracted?.medecin || null})}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
@@ -1014,7 +1054,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
             })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
-                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}
+                    onDownloaded={()=>setDownloadConfirm(o)}
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}
                     loadingId={loadingId}/>;
                 })}
               </div>
@@ -1034,11 +1075,27 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                           const allImprime = o.ordonnances.every(ord=>ord.status==="imprime");
                           return (
                         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
-                          <div style={{
-                            fontSize:22,fontWeight:900,padding:"4px 14px",borderRadius:10,
-                            background: allImprime ? "#475569" : "#1a3a6e",
-                            color:"#fff",fontFamily:"monospace",letterSpacing:4,flexShrink:0,
-                          }}>{o.code_patient}</div>
+                          {/* Avatar circulaire — corrigé (17/09/2026) : ce badge
+                              rectangulaire à lettres espacées (fontSize:22,
+                              letterSpacing:4) était le seul endroit de l'app à
+                              afficher le code patient hors d'un avatar rond,
+                              et ignorait la couleur d'accent du patient
+                              (couleurs #1a3a6e/#475569 codées en dur) —
+                              incohérent avec OrdoRow (vue liste, ordonnance
+                              seule) qui affiche le même code dans un avatar
+                              rond de 44px aux couleurs accent.*, signalé par
+                              le titulaire comme un affichage cassé. */}
+                          <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
+                            background: allImprime ? accent.bg : accent.bandeau,
+                            border: `2px solid ${accent.border}`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            color: allImprime ? accent.avatar : "#fff", fontWeight: 900,
+                            fontSize: 17, fontFamily: "inherit",
+                          }}>
+                            {o.code_patient
+                              ? <span style={{fontSize:11,fontWeight:900,fontFamily:"monospace"}}>{o.code_patient}</span>
+                              : (o.extracted?.nom||o.fromName)?.charAt(0)?.toUpperCase() || "?"}
+                          </div>
                           <div style={{flex:1}}>
                             <div style={{fontWeight:800,fontSize:15,color: allImprime?"#64748b":"#1a1a1a"}}>
                               {o.extracted?.nom||o.fromName||"Patient"}
@@ -1058,10 +1115,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                           )}
                           {/* Créer un rappel — manquait en vue liste groupée (04/09/2026),
                               déjà présent en vue grille (OrdoGroup). Un seul par patient. */}
-                          <button onClick={()=>setRappelDraft(splitNomPrenom(o.extracted?.nom||o.fromName))}
+                          <button onClick={()=>setRappelDraft({...splitNomPrenom(o.extracted?.nom||o.fromName), medecin: o.extracted?.medecin || null})}
                             style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",borderRadius:9,
                               background:"#f0f4ff",color:"#1a3a6e",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
-                            ⏰ Rappel
+                            ⏰ Créer son rappel
                           </button>
                         </div>
                           );
@@ -1128,6 +1185,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                   link.href = blobUrl; link.download = a.name || "ordonnance";
                                   document.body.appendChild(link); link.click(); link.remove();
                                   URL.revokeObjectURL(blobUrl);
+                                  setDownloadConfirm(ord);
                                 }}
                                 title="Télécharger le fichier"
                                 style={{padding:"4px 8px",border:"1px solid rgba(26,58,110,0.3)",borderRadius:6,
@@ -1173,7 +1231,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
               }
             })();}}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
-                    onCreateRappel={(ordo)=>setRappelDraft(splitNomPrenom(ordo.extracted?.nom||ordo.fromName))}/>;
+                    onDownloaded={()=>setDownloadConfirm(o)}
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}/>;
                 })}
               </div>
             )}
@@ -1210,13 +1269,16 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         style={{position:"fixed",right:16,bottom:84,width:48,height:48,borderRadius:"50%",border:"none",background:"#0f172a",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 6px 20px rgba(0,0,0,0.25)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center"}}>
         ❓
       </button>
-      {showAide&&<AideModal posteNom={posteNom} onClose={()=>setShowAide(false)}/>}
+      {showAide&&<AideModal posteNom={posteNom} isAdmin={canAdmin} onClose={()=>setShowAide(false)}/>}
 
       {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
-      {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom}
+      {downloadConfirm&&<DownloadConfirmModal ordo={downloadConfirm} couleur={couleur}
+        onConfirm={()=>{handleDownloadOrdo(downloadConfirm.id);setDownloadConfirm(null);}}
+        onCancel={()=>setDownloadConfirm(null)}/>}
+      {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
         onCreated={async(payload)=>{await createRappel(pharmacieId,payload);setRappelDraft(null);}}/>}

@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, createRappel, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation, acheterPackSms } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation } from "../supabase.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -10,6 +10,15 @@ const STATUT_INFO = {
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
   termine:    { label: "Terminé",    bg: "#f0fdf4", fg: "#15803d" },
 };
+
+// Spécialités proposées (15/09/2026) — liste fermée + repli "Autre" en texte
+// libre : couvre les cas les plus fréquents de renouvellement en pharmacie
+// sans prétendre à l'exhaustivité de toutes les spécialités médicales.
+const SPECIALITES = [
+  "Médecin généraliste", "Dentiste", "Ophtalmologue", "Cardiologue", "Dermatologue",
+  "Gynécologue", "Pédiatre", "Psychiatre", "Endocrinologue / Diabétologue", "Rhumatologue",
+  "Pneumologue", "Gastro-entérologue", "Neurologue", "ORL", "Urologue", "Néphrologue", "Allergologue",
+];
 
 const CHOIX_LABEL = {
   tout_renouveler: "✅ Tout renouveler",
@@ -108,7 +117,7 @@ function envoiVersRenouvellement(dateEnvoi) {
 // secure-data:rappels_update, même contrainte appliquée côté serveur). Le
 // consentement n'est PAS ré-éditable ici : c'est une donnée recueillie une
 // fois à la création, pas un champ de formulaire ordinaire.
-function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", editingRappel = null }) {
+function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", initialMedecin = "", editingRappel = null }) {
   const isEdit = !!editingRappel;
   const [nom, setNom] = useState(editingRappel?.patient_nom || initialNom);
   const [prenom, setPrenom] = useState(editingRappel?.patient_prenom || initialPrenom);
@@ -117,6 +126,21 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     ? envoiVersRenouvellement(editingRappel.date_prochaine_relance)
     : defaultDateRenouvellement());
   const [commentaire, setCommentaire] = useState(editingRappel?.commentaire || "");
+  // Préremplissage depuis l'OCR de l'ordonnance (17/09/2026, retour titulaire)
+  // — depuis une carte ordonnance, initialMedecin porte ordo.extracted.medecin
+  // (voir Dashboard.jsx, setRappelDraft) : gagne du temps quand l'OCR l'a
+  // déjà détecté, reste modifiable/effaçable si faux ou absent.
+  const [medecinPrescripteur, setMedecinPrescripteur] = useState(editingRappel?.medecin_prescripteur || initialMedecin || "");
+  // "Autre" en repli texte libre (15/09/2026) — si la spécialité existante
+  // n'est pas dans la liste fermée (donnée saisie avant l'ajout de cette
+  // liste, ou via une future valeur non prévue), elle reste éditable au lieu
+  // d'être silencieusement perdue.
+  const specialiteExistanteConnue = editingRappel?.specialite && SPECIALITES.includes(editingRappel.specialite);
+  const [specialiteChoix, setSpecialiteChoix] = useState(() => {
+    if (!editingRappel?.specialite) return "";
+    return specialiteExistanteConnue ? editingRappel.specialite : "__autre__";
+  });
+  const [specialiteAutre, setSpecialiteAutre] = useState(() => specialiteExistanteConnue ? "" : (editingRappel?.specialite || ""));
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
   const canEditDate = !isEdit || editingRappel.statut === "en_attente";
@@ -142,7 +166,8 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     }
     setCreating(true);
     try {
-      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim() };
+      const specialite = specialiteChoix === "__autre__" ? specialiteAutre.trim() : specialiteChoix;
+      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim(), specialite };
       if (canEditDate) payload.dateRappel = renouvellementVersEnvoi(dateRappel);
       if (!isEdit) payload.consentement = consentement;
       await onCreated(payload);
@@ -169,6 +194,23 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
         <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Spécialité / type d'ordonnance (optionnel)</label>
+        <select value={specialiteChoix} onChange={e => setSpecialiteChoix(e.target.value)}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: specialiteChoix === "__autre__" ? 8 : 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", background: "#fff" }}>
+          <option value="">— Non précisé —</option>
+          {SPECIALITES.map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="__autre__">Autre…</option>
+        </select>
+        {specialiteChoix === "__autre__" && (
+          <input value={specialiteAutre} onChange={e => setSpecialiteAutre(e.target.value)} placeholder="Précisez la spécialité"
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        )}
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4, marginTop: 12 }}>Médecin prescripteur (optionnel)</label>
+        <input value={medecinPrescripteur} onChange={e => setMedecinPrescripteur(e.target.value)} placeholder="Dr Martin"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>Les deux sont repris dans le SMS pour distinguer les traitements si le patient a plusieurs rappels actifs.</div>
 
         {canEditDate ? (
           <>
@@ -402,7 +444,7 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
-function RappelsSection({ pharmacie, onCountATraiter }) {
+function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [rappels, setRappels] = useState([]);
   const [loading, setLoading] = useState(true);
   // Filtre par défaut décidé une fois les rappels chargés (voir l'effet de
@@ -410,7 +452,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   // action du pharmacien, ça ne doit pas être noyé derrière "Tous" — sinon
   // "en attente" plutôt qu'un onglet vide (06/09/2026, retour direct).
   const [filtre, setFiltre] = useState("a_traiter");
-  const [showForm, setShowForm] = useState(false);
   const [editingRappel, setEditingRappel] = useState(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -427,8 +468,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
   const [journalLoading, setJournalLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [smsQuota, setSmsQuota] = useState(null);
-  const [buyingPack, setBuyingPack] = useState(false);
-  const [buyPackError, setBuyPackError] = useState("");
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -446,18 +485,16 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     // Quota SMS mensuel (11/09/2026) — même logique de fraîcheur que les
     // stats : un chargement au montage suffit, pas besoin de temps réel.
     fetchSmsConsommation().then(setSmsQuota);
-  }, [pharmacie?.id]);
-
-  async function handleAcheterPack() {
-    setBuyingPack(true); setBuyPackError("");
-    try {
-      const { url } = await acheterPackSms(window.location.origin);
-      window.location.href = url;
-    } catch (e) {
-      setBuyPackError(e.message || "Erreur lors de la création du paiement.");
-      setBuyingPack(false);
-    }
-  }
+    // Poste vendeur (16/09/2026) — même cause et même remède que dans
+    // Dashboard.jsx pour les ordonnances : subscribeToRappels tourne en rôle
+    // anon pour un poste vendeur (pas de session Supabase Auth réelle), et
+    // rappels_titulaire_read n'accorde SELECT qu'à authenticated — un vendeur
+    // ne recevait donc jamais de mise à jour temps réel sur cet onglet.
+    const vendeurPoll = userRole === "vendeur" ? setInterval(() => {
+      fetchRappels(pharmacie.id).then(data => { if (data) setRappels(data); });
+    }, 10000) : null;
+    return () => { if (vendeurPoll) clearInterval(vendeurPoll); };
+  }, [pharmacie?.id, userRole]);
 
   // Temps réel (04/09/2026, retour direct) — un patient répond depuis sa
   // propre session (resolve-rappel), jamais celle du pharmacien : sans ça,
@@ -480,18 +517,14 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
     onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter").length);
   }, [rappels, onCountATraiter]);
 
-  async function handleCreated(payload) {
-    const rappel = await createRappel(pharmacie.id, payload);
-    if (rappel) setRappels(prev => [rappel, ...prev]);
-    setShowForm(false);
-  }
-
   async function handleUpdated(payload) {
     await updateRappel(editingRappel.id, payload);
     setRappels(prev => prev.map(r => r.id === editingRappel.id ? {
       ...r,
       patient_nom: payload.nom, patient_prenom: payload.prenom, patient_telephone: normalizeTel(payload.telephone),
       commentaire: payload.commentaire || null,
+      medecin_prescripteur: payload.medecinPrescripteur || null,
+      specialite: payload.specialite || null,
       ...(payload.dateRappel ? { date_prochaine_relance: new Date(payload.dateRappel).toISOString() } : {}),
     } : r));
     setEditingRappel(null);
@@ -593,6 +626,9 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
 
   return (
     <div>
+      {/* Bouton "+ Nouveau rappel" déplacé vers l'onglet Ordonnances
+          (16/09/2026, demande titulaire) — voir Dashboard.jsx, rendu au même
+          niveau que les filtres de statut. */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>
           🔔 Rappels
@@ -600,10 +636,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
             <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} à traiter</span>
           )}
         </div>
-        <button onClick={() => setShowForm(true)}
-          style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-          + Nouveau rappel
-        </button>
       </div>
 
       {/* Statistiques d'efficacité (08/09/2026) — silencieux si absent (démo,
@@ -629,32 +661,26 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
         </div>
       )}
 
-      {/* Quota SMS mensuel (11/09/2026) — 200 SMS/mois inclus, packs de 100 à
-          10 € TTC au-delà. Silencieux tant qu'aucun SMS n'a été envoyé ce
-          mois-ci (comme les stats juste au-dessus), pour ne pas encombrer un
-          compte qui vient d'activer Performance. */}
+      {/* Quota SMS mensuel (15/09/2026) — 100 SMS/mois inclus, puis 0,10 €/SMS
+          facturés automatiquement en fin de mois (voir edge function
+          facturer-depassement-sms) : l'envoi n'est jamais bloqué et le
+          pharmacien n'a plus rien à acheter manuellement. Silencieux tant
+          qu'aucun SMS n'a été envoyé ce mois-ci (comme les stats juste
+          au-dessus), pour ne pas encombrer un compte qui vient d'activer
+          Performance. */}
       {smsQuota && smsQuota.smsEnvoyesMoisCourant > 0 && (
         <div style={{ background: smsQuota.depassement > 0 ? "#fef2f2" : "#f8fafc", border: `1.5px solid ${smsQuota.depassement > 0 ? "#fecaca" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              📊 SMS ce mois-ci : <span style={{ color: smsQuota.depassement > 0 ? "#dc2626" : "#15803d" }}>{smsQuota.smsEnvoyesMoisCourant} / {smsQuota.quotaTotal}</span>
-            </div>
-            {smsQuota.depassement > 0 && (
-              <button onClick={handleAcheterPack} disabled={buyingPack}
-                style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: buyingPack ? "default" : "pointer", fontFamily: "inherit", opacity: buyingPack ? 0.6 : 1 }}>
-                {buyingPack ? "…" : "Acheter un pack de 100 SMS (10 € TTC)"}
-              </button>
-            )}
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+            📊 SMS ce mois-ci : <span style={{ color: smsQuota.depassement > 0 ? "#dc2626" : "#15803d" }}>{smsQuota.smsEnvoyesMoisCourant} / {smsQuota.quotaInclus}</span>
           </div>
           <div style={{ height: 6, borderRadius: 20, background: "#e2e8f0", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.min(100, Math.round((smsQuota.smsEnvoyesMoisCourant / smsQuota.quotaTotal) * 100))}%`, background: smsQuota.depassement > 0 ? "#dc2626" : "#15803d", borderRadius: 20 }} />
+            <div style={{ height: "100%", width: `${Math.min(100, Math.round((smsQuota.smsEnvoyesMoisCourant / smsQuota.quotaInclus) * 100))}%`, background: smsQuota.depassement > 0 ? "#dc2626" : "#15803d", borderRadius: 20 }} />
           </div>
           <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 6 }}>
             {smsQuota.depassement > 0
-              ? `${smsQuota.depassement} SMS au-delà de votre quota — achetez un pack pour continuer à envoyer des rappels.`
+              ? `${smsQuota.depassement} SMS au-delà de votre quota (${(smsQuota.depassement * 0.10).toFixed(2)} € environ) seront ajoutés automatiquement à votre prochaine facture — rien à faire de votre côté.`
               : `${smsQuota.quotaRestant} SMS restants sur ${smsQuota.quotaInclus} inclus ce mois-ci.`}
           </div>
-          {buyPackError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{buyPackError}</div>}
         </div>
       )}
 
@@ -693,7 +719,7 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
             <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}</div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}{[r.specialite, r.medecin_prescripteur].filter(Boolean).length > 0 ? ` · ${[r.specialite, r.medecin_prescripteur].filter(Boolean).join(", ")}` : ""}</div>
                 {r.statut === "en_attente" && r.date_prochaine_relance && (
                   <div style={{ fontSize: 12, color: "#4338ca", marginTop: 2 }}>
                     Rappel prévu le {new Date(r.date_prochaine_relance).toLocaleDateString("fr-FR")}
@@ -779,7 +805,6 @@ function RappelsSection({ pharmacie, onCountATraiter }) {
         })}
       </div>
 
-      {showForm && <RappelForm onCancel={() => setShowForm(false)} onCreated={handleCreated} creating={creating} setCreating={setCreating} />}
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}

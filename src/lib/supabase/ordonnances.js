@@ -94,12 +94,20 @@ function normOrdo(row) {
     fromName: row.from_name, fromEmail: row.from_email,
     receivedAt: row.received_at, printedAt: row.printed_at,
     code_patient: row.code_patient || null,
+    // ⚠️ carteVitale/medecin/medicaments étaient codés en dur à null/[] ici
+    // jusqu'au 17/09/2026 alors que updateOrdoExtracted() les persiste bien
+    // en base (colonnes patient_cv/medecin/medicaments, select("*") côté
+    // secure-data) — l'OCR écrivait la donnée mais elle n'était jamais relue
+    // au chargement suivant (nouvel onglet, autre poste, simple refresh).
+    // Repéré en voulant préremplir "Médecin prescripteur" depuis l'ordonnance
+    // à la création d'un rappel : la valeur était là en base mais toujours
+    // vide côté client.
     extracted: {
       nom:         row.patient_nom   || null,
-      carteVitale: null,
-      medecin:     null,
-      date:        null,
-      medicaments: [],
+      carteVitale: row.patient_cv    || null,
+      medecin:     row.medecin       || null,
+      date:        row.date_prescription || null,
+      medicaments: row.medicaments   || [],
       _confidence: row.ocr_confidence || 0,
       _ocrSuccess: !!row.patient_nom,
     },

@@ -3,7 +3,8 @@
 // garde son objectif d'origine (visibilité sur le volume avant que ça
 // devienne une facture, retour direct de l'utilisateur : "le coût
 // supplémentaire des sms que je ne peux maîtriser") mais suit désormais
-// aussi le quota mensuel Performance (200 SMS inclus + packs de 100, voir
+// aussi le quota mensuel Performance (100 SMS inclus, dépassement facturé
+// automatiquement en fin de mois — voir facturer-depassement-sms et
 // _shared/smsQuota.ts) via admin_sms_consommation, en plus des tendances
 // réseau d'admin_rappels_metrics (qui exclut déjà les envois de test par
 // email du comptage, meta.canal === "email_test").

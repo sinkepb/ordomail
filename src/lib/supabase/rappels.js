@@ -41,7 +41,7 @@ export async function fetchRappelsStats() {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -50,7 +50,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     const rappel = {
       id: `r${Date.now()}`, pharmacie_id: pharmacieId,
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
-      commentaire: commentaire || null, consentement_sms: !!consentement,
+      commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, specialite: specialite || null, consentement_sms: !!consentement,
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
       created_at: new Date().toISOString(),
@@ -58,7 +58,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite });
 }
 
 export async function traiterRappel(rappelId, dateRappel = null) {
@@ -78,9 +78,9 @@ export async function reactiverRappel(rappelId, dateRappel = null) {
   return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
 }
 
-export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire }) {
+export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite }) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire });
+  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite });
 }
 
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le
@@ -91,8 +91,11 @@ export async function envoyerTestRappel(rappelId, email) {
   return await callSecureData('rappels_envoyer_test', { rappelId, email });
 }
 
-// Quota SMS mensuel (11/09/2026) — voir _shared/smsQuota.ts pour le détail
-// du calcul (200 SMS/mois inclus dans Performance + packs de 100 achetés).
+// Quota SMS mensuel (15/09/2026) — voir _shared/smsQuota.ts pour le détail du
+// calcul (100 SMS/mois inclus dans Performance). Le dépassement n'est plus
+// acheté manuellement (pack) : il est facturé automatiquement en fin de mois
+// par l'edge function facturer-depassement-sms, à 0,10 €/SMS — cette fonction
+// reste purement informative.
 export async function fetchSmsConsommation() {
   if (IS_DEMO) return null;
   try {
@@ -101,11 +104,4 @@ export async function fetchSmsConsommation() {
     console.error('[fetchSmsConsommation]', e.message);
     return null;
   }
-}
-
-// Achat d'un pack de 100 SMS supplémentaires — retourne l'URL Stripe
-// Checkout (paiement ponctuel), voir secure-data:sms_acheter_pack.
-export async function acheterPackSms(appUrl) {
-  if (IS_DEMO) throw new Error('Achat de pack SMS indisponible en démo');
-  return await callSecureData('sms_acheter_pack', { appUrl });
 }

@@ -84,7 +84,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
@@ -98,6 +98,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
   // URL signée Supabase Storage est cross-origin, où l'attribut download est
   // silencieusement ignoré par le navigateur (le fichier s'ouvre au lieu de
   // se télécharger). Un blob: (même origine que la page) le respecte toujours.
+  // onDownloaded déclenche une confirmation avant de marquer l'ordonnance
+  // comme traitée (16/09/2026, retour titulaire ; confirmation ajoutée le
+  // 17/09/2026 — voir DownloadConfirmModal dans Dashboard.jsx), au même
+  // titre que l'impression.
   async function handleDownload() {
     const att = ordo.attachments[0];
     if (!att || downloading) return;
@@ -115,6 +119,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
       a.click();
       a.remove();
       URL.revokeObjectURL(blobUrl);
+      onDownloaded?.();
     } catch (e) {
       console.error("[handleDownload]", e.message);
     }
@@ -261,7 +266,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
             cursor: "pointer", fontFamily: "inherit",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
           }}>
-            ⏰ Créer un rappel
+            ⏰ Créer son rappel
           </button>
         )}
         {/* Voir/sonnette/téléchargement doivent tenir sur la MÊME ligne
@@ -351,7 +356,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, loadingId, on
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -380,6 +385,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
       a.click();
       a.remove();
       URL.revokeObjectURL(blobUrl);
+      onDownloaded?.();
     } catch (e) {
       console.error("[handleDownload]", e.message);
     }
@@ -469,7 +475,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
           <button onClick={() => onCreateRappel(ordo)}
             style={{ padding: "6px 12px", border: "1.5px solid rgba(26,58,110,0.3)", borderRadius: 8,
               background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            ⏰ Rappel
+            ⏰ Créer son rappel
           </button>
         )}
         <button onClick={onPrint}
@@ -492,12 +498,43 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onSonnette, sonnetteActi
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
   const nom    = group.extracted?.nom || group.fromName || "Patient";
   const accent = getOrdoAccent(group.id, accentUnique);
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  // Téléchargement direct par ordonnance du groupe (16/09/2026, retour
+  // titulaire) — manquait ici alors que déjà présent en vue liste groupée
+  // (Dashboard.jsx) et en vue grille sans groupe (OrdoCard) : un patient avec
+  // plusieurs ordonnances actives n'avait aucun moyen de télécharger
+  // individuellement un fichier sans passer par Imprimer. Même logique
+  // fetch+blob que OrdoCard.handleDownload.
+  async function handleDownload(ord) {
+    const att = ord.attachments?.[0];
+    if (!att || downloadingId) return;
+    setDownloadingId(ord.id);
+    try {
+      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      if (!url) return;
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.name || "ordonnance";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      onDownloaded?.(ord);
+    } catch (e) {
+      console.error("[handleDownload]", e.message);
+    }
+    setDownloadingId(null);
+  }
   const count  = group.ordonnances.length;
 
   return (
@@ -627,6 +664,15 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
                     👁
                   </button>
                 )}
+                {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && (
+                  <button onClick={() => handleDownload(o)} disabled={downloadingId === o.id} title="Télécharger le fichier"
+                    style={{ padding: "3px 6px", border: "1px solid rgba(26,58,110,0.3)", borderRadius: 5,
+                      background: "#f0f4ff", color: "#1a3a6e", fontSize: 8,
+                      cursor: downloadingId === o.id ? "default" : "pointer", opacity: downloadingId === o.id ? 0.6 : 1,
+                      fontFamily: "inherit" }}>
+                    {downloadingId === o.id ? "…" : "⬇️"}
+                  </button>
+                )}
                 {!ordImprime ? (
                   <button onClick={() => onPrint(o)}
                     style={{ padding: "3px 8px", border: "none", borderRadius: 5,
@@ -663,7 +709,7 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, interets = [], onSonn
             cursor: "pointer", fontFamily: "inherit",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
           }}>
-            ⏰ Créer un rappel
+            ⏰ Créer son rappel
           </button>
         )}
         <div style={{ display: "flex", gap: 6 }}>
