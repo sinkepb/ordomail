@@ -41,6 +41,20 @@ export async function updateOrdoStatus(ordoId, pharmacieId, status) {
   });
 }
 
+// Suppression définitive d'une ordonnance (18/09/2026, demande titulaire) —
+// toujours précédée d'une confirmation côté UI (DeleteConfirmModal). Route
+// via secure-data comme le reste : supprime le fichier Storage puis la ligne,
+// après vérification que l'ordonnance appartient bien à l'appelant.
+export async function deleteOrdonnance(ordoId, pharmacieId) {
+  if (IS_DEMO) {
+    const db = getDB();
+    const ph = db.pharmacies.find(p => p.id === pharmacieId);
+    if (ph) ph.ordonnances = (ph.ordonnances || []).filter(o => o.id !== ordoId);
+    return;
+  }
+  await callSecureData('ordonnances_delete', { ordoId });
+}
+
 export async function updateOrdoExtracted(ordoId, pharmacieId, extracted) {
   if (IS_DEMO) {
     const db = getDB();

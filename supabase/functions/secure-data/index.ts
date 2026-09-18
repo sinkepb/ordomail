@@ -134,6 +134,40 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    // Suppression définitive d'une ordonnance (18/09/2026, demande titulaire) —
+    // fichier Storage ET ligne en base, jamais l'un sans l'autre. Toujours
+    // précédée d'une confirmation côté client (DeleteConfirmModal) : aucune
+    // suppression accidentelle possible depuis l'UI, mais le serveur reste la
+    // seule autorité — même vérification d'appartenance que ordonnances_update.
+    if (resource === "ordonnances_delete") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),
+          { status: 403, headers: CORS });
+      }
+      const { ordoId } = params || {};
+      if (!ordoId) {
+        return new Response(JSON.stringify({ error: "ordoId requis" }),
+          { status: 400, headers: CORS });
+      }
+      const { data: existing, error: findErr } = await sb
+        .from("ordonnances")
+        .select("id, pharmacie_id, fichier_url")
+        .eq("id", ordoId)
+        .maybeSingle();
+      if (findErr || !existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Ordonnance introuvable" }),
+          { status: 404, headers: CORS });
+      }
+      if (existing.fichier_url) {
+        // Best-effort : un fichier déjà absent (ou une erreur de storage) ne doit
+        // pas empêcher la suppression de la ligne elle-même.
+        await sb.storage.from("ordonnances-files").remove([existing.fichier_url]).catch(() => {});
+      }
+      const { error: delErr } = await sb.from("ordonnances").delete().eq("id", ordoId);
+      if (delErr) throw new Error(delErr.message);
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     if (resource === "pharmacie_info") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }),

@@ -6,7 +6,7 @@ import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
-import { PrintConfirmModal, ViewerModal, DownloadConfirmModal } from "../components/PrintModal.jsx";
+import { PrintConfirmModal, ViewerModal, TraiterConfirmModal, DeleteConfirmModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
@@ -26,6 +26,7 @@ import {
   updateOrdoStatus,
   updateOrdoExtracted,
   uploadOrdoFile,
+  deleteOrdonnance,
   subscribeToPharmacy,
   addAuditLog,
   changePlan,
@@ -557,6 +558,9 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
   const [downloadConfirm, setDownloadConfirm] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
@@ -853,6 +857,25 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   // ordonnance de "À traiter" par erreur (double-clic, téléchargement pour
   // simple vérification) — même logique de confirmation que pour Imprimer.
   function handleDownloadOrdo(id) { updateOrdo(id,{status:"imprime"}); addAuditLog({userId:userId2,userRole,pharmacieId,action:"download",ordonnanceId:id,posteNom}).catch(()=>{}); }
+  // Suppression définitive (18/09/2026, demande titulaire) — toujours
+  // appelée depuis DeleteConfirmModal.onConfirm, jamais directement au clic
+  // sur 🗑️ (voir onDelete={()=>setDeleteConfirm(ordo)} plus bas). Retrait
+  // optimiste de la liste locale une fois le serveur confirmé (pas avant :
+  // contrairement à updateOrdo, une suppression ratée ne doit pas faire
+  // disparaître la carte alors que la ligne existe toujours en base).
+  async function handleDeleteOrdo(ordo) {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteOrdonnance(ordo.id, pharmacieId);
+      setOrdonnances(prev => prev.filter(o => o.id !== ordo.id));
+      addAuditLog({userId:userId2,userRole,pharmacieId,action:"delete",ordonnanceId:ordo.id,posteNom}).catch(()=>{});
+      setDeleteConfirm(null);
+    } catch (e) {
+      setDeleteError(e.message || "Échec de la suppression.");
+    }
+    setDeleting(false);
+  }
   async function handleFile(ordoId, file, dataUrl) {
     setLoadingId(ordoId);
     addAuditLog({userId:userId2,userRole,pharmacieId,action:"upload",ordonnanceId:ordoId,posteNom}).catch(()=>{});
@@ -1053,6 +1076,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                       }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
+                      onDelete={(ordo)=>setDeleteConfirm(ordo)}
                       onCreateRappel={(group)=>setRappelDraft({...splitNomPrenom(group.extracted?.nom||group.fromName), medecin: group.extracted?.medecin || null})}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
@@ -1072,6 +1096,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
+                    onDelete={()=>setDeleteConfirm(o)}
                     onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}
                     loadingId={loadingId}/>;
                 })}
@@ -1227,6 +1252,12 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 ✓ ↩ Remettre à traiter
                               </button>
                             )}
+                            <button onClick={()=>setDeleteConfirm(ord)} title="Supprimer l'ordonnance"
+                              style={{padding:"4px 8px",border:"1px solid #fecaca",borderRadius:6,
+                                background:"#fef2f2",color:"#b91c1c",fontSize:11,
+                                cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                              🗑️
+                            </button>
                           </div>
                           );
                         })}
@@ -1249,6 +1280,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
             })();}}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
+                    onDelete={()=>setDeleteConfirm(o)}
                     onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}/>;
                 })}
               </div>
@@ -1292,9 +1324,12 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
-      {downloadConfirm&&<DownloadConfirmModal ordo={downloadConfirm} couleur={couleur}
+      {downloadConfirm&&<TraiterConfirmModal ordo={downloadConfirm} couleur={couleur}
         onConfirm={()=>{handleDownloadOrdo(downloadConfirm.id);setDownloadConfirm(null);}}
         onCancel={()=>setDownloadConfirm(null)}/>}
+      {deleteConfirm&&<DeleteConfirmModal ordo={deleteConfirm} couleur={couleur} deleting={deleting} error={deleteError}
+        onConfirm={()=>handleDeleteOrdo(deleteConfirm)}
+        onCancel={()=>{setDeleteConfirm(null);setDeleteError("");}}/>}
       {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
