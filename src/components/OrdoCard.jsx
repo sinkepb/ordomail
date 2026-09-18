@@ -559,7 +559,14 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, interet
             color: allImprime ? "#15803d" : isNew ? "#fff" : accent.avatar }}>
             {allImprime ? "✓ TOUTES IMPRIMÉES" : isNew ? "NOUVEAU" : "EN COURS"}
           </span>
-          <span style={{ fontSize: 9 }}>📱</span>
+          {/* Icône source — codée en dur à 📱 jusqu'au 18/09/2026 (un groupe
+              n'était à l'origine formé que par des dépôts QR code successifs
+              du même patient) : un patient avec le même code_patient peut
+              aussi recevoir une ordonnance par email le même jour, affichant
+              alors à tort l'icône QR. Représentative du groupe via la
+              première ordonnance (comme nom/fromName juste au-dessus, déjà
+              hérités du spread ...o dans groupedOrdos). */}
+          <span style={{ fontSize: 9 }} title={group.source}>{group.source === "email" ? "✉️" : group.source === "qrcode" ? "📱" : "⬇️"}</span>
           {/* Code patient */}
           {group.code_patient && (
             <div style={{
