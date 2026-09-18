@@ -196,10 +196,17 @@ function AppInner() {
   const connexionParam = urlParams.get("connexion");
   const adminLoginParam = urlParams.get("admin");
   // Après déconnexion, revenir sur CE lien plutôt que sur la page d'accueil
-  // générique — tout l'intérêt de l'avoir mis en favoris. Calculé une seule
-  // fois à l'arrivée (les paramètres d'URL ne changent jamais pendant la vie
-  // de cette session SPA), pas besoin d'un state dédié.
-  const logoutDestination = adminLoginParam ? "backoffice" : (connexionParam ? "dashboard" : "landing");
+  // générique — tout l'intérêt de l'avoir mis en favoris.
+  // @fix 18/09/2026 — un state, pas juste un const dérivé des paramètres
+  // d'URL au chargement : un titulaire qui clique "Connexion" depuis la page
+  // d'accueil (donc sans être jamais passé par ?connexion=1) se retrouvait
+  // avec un logoutDestination toujours figé sur "landing", même après que le
+  // clic sur "Connexion" a lui-même réécrit l'URL en ?connexion=1 (voir plus
+  // bas) — l'URL devenait favorisable, mais une déconnexion renvoyait quand
+  // même vers la page d'accueil au lieu de cet écran de connexion.
+  const [logoutDestination, setLogoutDestination] = useState(
+    () => adminLoginParam ? "backoffice" : (connexionParam ? "dashboard" : "landing")
+  );
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");
@@ -439,7 +446,26 @@ function AppInner() {
         <PatientPage pharmacie={patientPharmacieQR} onBack={()=>{ window.history.replaceState({},"",window.location.pathname); setRoute("landing"); setPatientPharmacieQR(null); }}/>
       )}
       {route==="landing"&&(
-        <LandingPage onGoToPricing={()=>setRoute("pricing")} onGoToApp={()=>setRoute("dashboard")} onGoToCheckout={goToCheckout} onGoToAdmin={()=>setRoute("backoffice")} onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>
+        <LandingPage onGoToPricing={()=>setRoute("pricing")}
+          onGoToApp={()=>{
+            // @fix 18/09/2026 — cliquer "Connexion" ne changeait jusque-là que
+            // le state React (route), jamais l'URL affichée : impossible de
+            // mettre l'écran de connexion en favoris sans être déjà passé par
+            // ?connexion=1 au préalable. replaceState (pas pushState) pour ne
+            // pas ajouter une entrée d'historique que le bouton précédent du
+            // navigateur ne saurait pas réconcilier avec route (pas d'écoute
+            // popstate dans cette SPA).
+            window.history.replaceState({}, "", "?connexion=1");
+            setLogoutDestination("dashboard");
+            setRoute("dashboard");
+          }}
+          onGoToCheckout={goToCheckout}
+          onGoToAdmin={()=>{
+            window.history.replaceState({}, "", "?admin=1");
+            setLogoutDestination("backoffice");
+            setRoute("backoffice");
+          }}
+          onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>
       )}
       {route==="legal"&&<LegalPage doc={legalDoc} onBack={()=>setRoute("landing")}/>}
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
