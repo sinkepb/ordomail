@@ -107,8 +107,6 @@ function ViewerModal({ att, onClose }) {
 }
 
 function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
-  const nom    = ordo.extracted?.nom || ordo.fromName;
-  const email  = ordo.fromEmail || "";
   const medecin = ordo.extracted?.medecin || "";
   const date    = ordo.extracted?.date    || "";
   const medicaments = ordo.extracted?.medicaments || [];
@@ -250,6 +248,16 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
     return () => clearTimeout(t);
   }, []);
 
+  // @fix 18/09/2026 — l'étape de confirmation délègue entièrement à
+  // TraiterConfirmModal (overlay + carte incluses), popup désormais partagée
+  // avec le téléchargement direct (retour titulaire : une seule et même
+  // confirmation pour toute action qui marque une ordonnance comme traitée,
+  // plutôt qu'un texte/bouton différent par action). Le bouton "Réimprimer"
+  // disparaît à cette occasion — cliquer de nouveau sur "Imprimer" sur la
+  // carte relance le même flux depuis le début.
+  if (step !== "ready") {
+    return <TraiterConfirmModal ordo={ordo} couleur={couleur} onConfirm={onConfirm} onCancel={onCancel}/>;
+  }
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: 24 }}>
       <div style={{ position: "relative", background: "#fff", borderRadius: 20, padding: 32, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", animation: "popIn 0.2s ease" }}>
@@ -259,58 +267,28 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
             ✕
           </button>
         )}
-        {step === "ready" ? (
-          <div style={{ textAlign: "center", padding: "16px 0" }}>
-            <div style={{ fontSize: 56, marginBottom: 16, display: "inline-block", animation: "pulse 0.7s ease infinite" }}>🖨️</div>
-            <div style={{ fontWeight: 800, fontSize: 18, color: "#1a1a1a", marginBottom: 6 }}>Ouverture de l'impression…</div>
-            <div style={{ fontSize: 14, color: "#888" }}>La boîte de sélection d'imprimante va s'ouvrir</div>
-          </div>
-        ) : (
-          <>
-            <div style={{ textAlign: "center", marginBottom: 24 }}>
-              <div style={{ fontSize: 48, marginBottom: 10 }}>🖨️</div>
-              <div style={{ fontWeight: 800, fontSize: 20, color: "#1a1a1a", marginBottom: 6 }}>L'impression est-elle réussie ?</div>
-              <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Confirmez que l'ordonnance a bien été imprimée pour la marquer comme traitée.</div>
-            </div>
-            <div style={{ background: "#f8f9ff", border: `1.5px solid ${couleur}44`, borderRadius: 12, padding: "14px 18px", marginBottom: 24 }}>
-              <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Ordonnance de</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 46, height: 46, borderRadius: "50%", background: couleur, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900, fontSize: 20, flexShrink: 0 }}>
-                  {nom?.charAt(0) || "?"}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 20, color: "#1a1a1a" }}>{nom}</div>
-                  {email && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>✉️ {email}</div>}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={doPrint} style={{ flex: 1, padding: "12px", border: "1.5px solid #e0e0e0", borderRadius: 10, background: "#fff", color: "#555", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                🔄 Réimprimer
-              </button>
-              <button onClick={onConfirm} style={{ flex: 2, padding: "12px", border: "none", borderRadius: 10, background: "#2e7d32", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 12px rgba(46,125,50,0.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                ✅ Oui, bien imprimée
-              </button>
-            </div>
-          </>
-        )}
+        <div style={{ textAlign: "center", padding: "16px 0" }}>
+          <div style={{ fontSize: 56, marginBottom: 16, display: "inline-block", animation: "pulse 0.7s ease infinite" }}>🖨️</div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: "#1a1a1a", marginBottom: 6 }}>Ouverture de l'impression…</div>
+          <div style={{ fontSize: 14, color: "#888" }}>La boîte de sélection d'imprimante va s'ouvrir</div>
+        </div>
       </div>
     </div>
   );
 }
 
-
-// Confirmation après téléchargement direct (17/09/2026) — le fichier est déjà
-// sur le disque du poste à ce stade (téléchargement synchrone, voir
-// OrdoCard/OrdoRow/OrdoGroup.handleDownload) : contrairement à
-// PrintConfirmModal, pas d'action à déclencher au montage, juste une
-// confirmation avant de faire passer la tâche à "traitée" — même retour
-// titulaire que pour Imprimer : marquer automatiquement sans confirmation
-// risquait de faire disparaître une ordonnance de "À traiter" par erreur
-// (double-clic, téléchargement pour vérification sans intention de la
-// traiter) sans possibilité de revenir en arrière autrement qu'en cherchant
-// le bouton "Remettre à traiter" dans l'onglet Traitées.
-function DownloadConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
+// Popup de confirmation unifiée (18/09/2026) — affichée à l'issue de chaque
+// action qui marque une ordonnance comme traitée (impression, téléchargement
+// direct…), à l'exclusion de la suppression (DeleteConfirmModal, dédiée,
+// distincte par nature — toujours sa propre confirmation, jamais celle-ci).
+// Fusionne les deux popups qui coexistaient jusque-là (texte et bouton
+// propres à Imprimer d'un côté, à Télécharger de l'autre, pour un même
+// résultat côté données) — source de confusion signalée par le titulaire.
+// Entièrement autonome (overlay + carte) : ne déclenche elle-même aucune
+// action, contrairement à PrintConfirmModal qui imprime avant de l'afficher
+// — le fichier est déjà imprimé/téléchargé au moment où elle apparaît, elle
+// ne fait que confirmer le changement de statut.
+function TraiterConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   const nom   = ordo.extracted?.nom || ordo.fromName;
   const email = ordo.fromEmail || "";
   return (
@@ -321,9 +299,9 @@ function DownloadConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
           ✕
         </button>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 48, marginBottom: 10 }}>⬇️</div>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>✅</div>
           <div style={{ fontWeight: 800, fontSize: 20, color: "#1a1a1a", marginBottom: 6 }}>Marquer cette ordonnance comme traitée ?</div>
-          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Le fichier vient d'être téléchargé. Confirmez pour la faire passer de "À traiter" à "Traitées".</div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Confirmez pour la faire passer de "À traiter" à "Traitées".</div>
         </div>
         <div style={{ background: "#f8f9ff", border: `1.5px solid ${couleur}44`, borderRadius: 12, padding: "14px 18px", marginBottom: 24 }}>
           <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Ordonnance de</div>
@@ -350,4 +328,52 @@ function DownloadConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   );
 }
 
-export { ViewerModal, PrintConfirmModal, DownloadConfirmModal };
+// Confirmation de suppression (18/09/2026) — toujours affichée avant de
+// supprimer une ordonnance, jamais de suppression directe au clic (demande
+// explicite du titulaire). Distincte de TraiterConfirmModal par nature (issue
+// destructive et irréversible : fichier ET ligne en base définitivement
+// supprimés, contrairement à un simple changement de statut) — habillage
+// rouge dédié pour ne jamais pouvoir la confondre visuellement avec les
+// popups "traitée" au moment de cliquer.
+function DeleteConfirmModal({ ordo, couleur, onConfirm, onCancel, deleting, error }) {
+  const nom   = ordo.extracted?.nom || ordo.fromName;
+  const email = ordo.fromEmail || "";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: 24 }}>
+      <div style={{ position: "relative", background: "#fff", borderRadius: 20, padding: 32, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", animation: "popIn 0.2s ease" }}>
+        <button onClick={onCancel} title="Fermer sans action"
+          style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, border: "none", background: "#f1f5f9", borderRadius: "50%", color: "#64748b", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>
+          ✕
+        </button>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>🗑️</div>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#b91c1c", marginBottom: 6 }}>Supprimer définitivement cette ordonnance ?</div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Le fichier et toutes les informations associées seront supprimés sans retour possible.</div>
+        </div>
+        <div style={{ background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 12, padding: "14px 18px", marginBottom: 24 }}>
+          <div style={{ fontSize: 10, color: "#b91c1c", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Ordonnance de</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 46, height: 46, borderRadius: "50%", background: couleur, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900, fontSize: 20, flexShrink: 0 }}>
+              {nom?.charAt(0) || "?"}
+            </div>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 20, color: "#1a1a1a" }}>{nom}</div>
+              {email && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>✉️ {email}</div>}
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ fontSize: 12, color: "#dc2626", marginBottom: 12, textAlign: "center" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancel} disabled={deleting} style={{ flex: 1, padding: "12px", border: "1.5px solid #e0e0e0", borderRadius: 10, background: "#fff", color: "#555", fontWeight: 700, fontSize: 14, cursor: deleting ? "default" : "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} disabled={deleting} style={{ flex: 2, padding: "12px", border: "none", borderRadius: 10, background: "#b91c1c", color: "#fff", fontWeight: 800, fontSize: 15, cursor: deleting ? "default" : "pointer", fontFamily: "inherit", boxShadow: "0 3px 12px rgba(185,28,28,0.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: deleting ? 0.7 : 1 }}>
+            {deleting ? "Suppression…" : "🗑️ Supprimer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { ViewerModal, PrintConfirmModal, TraiterConfirmModal, DeleteConfirmModal };

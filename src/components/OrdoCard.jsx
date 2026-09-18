@@ -84,7 +84,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded, onDelete, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
@@ -351,12 +351,26 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded,
             ↩ Remettre à traiter
           </button>
         )}
+        {/* Supprimer (18/09/2026, demande titulaire) — toujours disponible,
+            quel que soit le statut ; onDelete ouvre la confirmation
+            (DeleteConfirmModal, Dashboard.jsx), jamais de suppression directe
+            au clic. Discret (texte seul, pas de fond) pour ne pas rivaliser
+            visuellement avec les actions courantes de la carte. */}
+        {onDelete && (
+          <button onClick={() => onDelete(ordo)} style={{
+            width: "100%", padding: "4px", border: "none", background: "transparent",
+            color: "#b91c1c", fontWeight: 600, fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+          }}>
+            🗑️ Supprimer
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onDelete, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -490,6 +504,12 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onSonnette
               background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 11,
               cursor: "pointer", fontFamily: "inherit" }}>↩</button>
         )}
+        {onDelete && (
+          <button onClick={() => onDelete(ordo)} title="Supprimer l'ordonnance"
+            style={{ padding: "6px 9px", border: "1.5px solid #fecaca", borderRadius: 8,
+              background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 11,
+              cursor: "pointer", fontFamily: "inherit" }}>🗑️</button>
+        )}
       </div>
     </div>
   );
@@ -498,7 +518,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onSonnette
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -693,6 +713,14 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, interet
                       background: "#fffbf0", color: "#92400e", fontSize: 8, fontWeight: 700,
                       cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 2 }}>
                     ✓ ↩
+                  </button>
+                )}
+                {onDelete && (
+                  <button onClick={() => onDelete(o)} title="Supprimer l'ordonnance"
+                    style={{ padding: "3px 6px", border: "1px solid #fecaca", borderRadius: 5,
+                      background: "#fef2f2", color: "#b91c1c", fontSize: 8,
+                      cursor: "pointer", fontFamily: "inherit" }}>
+                    🗑️
                   </button>
                 )}
               </div>
