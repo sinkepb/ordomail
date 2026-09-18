@@ -601,8 +601,17 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   // au même niveau que le badge "Admin", donc rendues par un composant qui
   // n'a pas accès à cet état local. onBadges est le setState d'AppLogin :
   // référence stable, aucune boucle malgré sa présence en dépendance.
+  // @fix 18/09/2026 — comptait toutes les ordonnances "nouveau" des 7 derniers
+  // jours (fetchOrdonnances(pharmacieId, 7)), pas seulement celles du jour :
+  // la pastille pouvait afficher un total qui n'avait rien à voir avec ce
+  // qu'il restait réellement à traiter aujourd'hui. Filtrée sur la date du
+  // jour, indépendamment de selectedDate (qui sert à parcourir le calendrier
+  // dans l'onglet Ordonnances) — cette pastille doit toujours représenter
+  // "aujourd'hui", même quand le titulaire consulte un autre jour.
   useEffect(() => {
-    onBadges?.({ rappels: rappelsATraiter, ordonnances: ordonnances.filter(o => o.status === "nouveau").length });
+    const aujourdhui = new Date();
+    const nouveauxDuJour = ordonnances.filter(o => o.status === "nouveau" && isSameDay(o.receivedAt, aujourdhui)).length;
+    onBadges?.({ rappels: rappelsATraiter, ordonnances: nouveauxDuJour });
   }, [rappelsATraiter, ordonnances, onBadges]);
   const [filterStatus, setFilterStatus] = useState("nouveau");
   const [showCalendar, setShowCalendar] = useState(false);
@@ -657,8 +666,16 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         });
         if (extracted?._ocrSuccess) {
           if (sb && !isDemoMode) {
+            // @fix 18/09/2026 — medecin n'était pas persisté ici (seuls
+            // patient_nom/ocr_confidence l'étaient), contrairement au chemin
+            // d'upload manuel (handleFile → updateOrdo → updateOrdoExtracted,
+            // qui envoie bien medecin). Le préremplissage "Médecin
+            // prescripteur" du rappel ne survivait donc pas à un rechargement
+            // pour une ordonnance reçue automatiquement (email/QR), seulement
+            // pour celles uploadées manuellement.
             await sb.from("ordonnances").update({
               patient_nom:    extracted.nom        || null,
+              medecin:        extracted.medecin    || null,
               ocr_confidence: extracted._confidence || 0,
             }).eq("id", ordo.id);
           }
