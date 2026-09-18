@@ -217,14 +217,20 @@ function AdminDashboardLive({ adminToken } = {}) {
     setLoading(false);
   }
 
+  // Exclut les comptes de test (18/09/2026, demande titulaire) — un compte
+  // interne comme "Pharmacie TEST", souvent sur un plan payant pour tester
+  // les fonctionnalités réservées, faussait sinon MRR/ARR/volume traité/etc.
+  // Reste dans `data`/`clients` (visible dans le tableau, badge "TEST" —
+  // voir plus bas), seulement écarté du calcul des métriques agrégées.
   function computeGlobalMetrics(data) {
-    const actifs = data.filter(c => (c.ordos_mois||0) > 0);
-    const mrr    = data.reduce((s,c) => s + (PLANS[c.plan]?.prix||0), 0);
+    const reels = data.filter(c => !c.compte_test);
+    const actifs = reels.filter(c => (c.ordos_mois||0) > 0);
+    const mrr    = reels.reduce((s,c) => s + (PLANS[c.plan]?.prix||0), 0);
     const arr    = mrr * 12;
-    const total_ordos_mois = data.reduce((s,c) => s + (c.ordos_mois||0), 0);
-    const churn_risk = data.filter(c => (c.score_activite||0) < 30).length;
-    const upsell     = data.filter(c => c.plan === "starter" && (c.ordos_mois||0) > 150).length;
-    setMetrics({ mrr, arr, total_ordos_mois, churn_risk, upsell, actifs: actifs.length, total: data.length });
+    const total_ordos_mois = reels.reduce((s,c) => s + (c.ordos_mois||0), 0);
+    const churn_risk = reels.filter(c => (c.score_activite||0) < 30).length;
+    const upsell     = reels.filter(c => c.plan === "starter" && (c.ordos_mois||0) > 150).length;
+    setMetrics({ mrr, arr, total_ordos_mois, churn_risk, upsell, actifs: actifs.length, total: reels.length });
   }
 
   function scoreColor(s) { return s>=70?"#15803d":s>=40?"#f59e0b":"#dc2626"; }
@@ -323,6 +329,14 @@ function AdminDashboardLive({ adminToken } = {}) {
                         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
                           <span style={{fontWeight:800,fontSize:15,color:"#fff"}}>{ph.nom}</span>
                           <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:PLANS[ph.plan]?.color||"#334155",color:"#fff"}}>{PLANS[ph.plan]?.label||ph.plan}</span>
+                          {/* Compte de test (18/09/2026) — exclu des métriques agrégées
+                              (computeGlobalMetrics), mais toujours visible ici pour que
+                              le titulaire garde la main dessus (gestion, suppression…). */}
+                          {ph.compte_test && (
+                            <span title="Exclu des métriques agrégées" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#334155",color:"#94a3b8",border:"1px dashed #475569"}}>
+                              🧪 TEST
+                            </span>
+                          )}
                           {ph.trial_ends_at && new Date(ph.trial_ends_at)>new Date() && (
                             <span style={{fontSize:10,background:"#fef3c7",color:"#92400e",borderRadius:20,padding:"2px 8px",fontWeight:700}}>
                               Trial · {Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000)}j
