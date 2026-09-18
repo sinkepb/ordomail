@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
       const { data: pharmacies, error: phErr } = await sb
         .from("pharmacies")
-        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
+        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, compte_test, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
         .order("created_at", { ascending: false });
       if (phErr) throw new Error(phErr.message);
 
@@ -746,10 +746,21 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════════════════════════════
 
     if (resource === "admin_gestion_dashboard") {
-      const [{ data: abonnements }, { data: factures }] = await Promise.all([
-        sb.from("abonnements").select("status, mrr, plan, cancel_at_period_end, created_at, updated_at"),
-        sb.from("factures").select("montant_ttc, tva, statut, created_at"),
+      // Exclut les comptes de test (18/09/2026, demande titulaire) — un compte
+      // interne comme "Pharmacie TEST", souvent sur un plan payant pour tester
+      // les fonctionnalités réservées, ne doit pas fausser MRR/ARR/ARPU/churn/
+      // CAC ni la trésorerie collectée. abonnements/factures n'ont qu'un
+      // pharmacie_id (pas le flag directement) — on récupère d'abord la liste
+      // des comptes marqués, puis on filtre les deux ensembles.
+      const { data: comptesTest } = await sb.from("pharmacies").select("id").eq("compte_test", true);
+      const idsTest = new Set((comptesTest || []).map((p: any) => p.id));
+
+      const [{ data: abonnementsRaw }, { data: facturesRaw }] = await Promise.all([
+        sb.from("abonnements").select("pharmacie_id, status, mrr, plan, cancel_at_period_end, created_at, updated_at"),
+        sb.from("factures").select("pharmacie_id, montant_ttc, tva, statut, created_at"),
       ]);
+      const abonnements = (abonnementsRaw || []).filter((a: any) => !idsTest.has(a.pharmacie_id));
+      const factures    = (facturesRaw || []).filter((f: any) => !idsTest.has(f.pharmacie_id));
       const actifs = (abonnements || []).filter((a: any) => a.status === "active" || a.status === "trialing");
       const mrr = actifs.reduce((s: number, a: any) => s + (a.mrr || 0), 0);
       const arr = mrr * 12;
