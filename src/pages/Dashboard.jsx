@@ -666,8 +666,16 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         });
         if (extracted?._ocrSuccess) {
           if (sb && !isDemoMode) {
+            // @fix 18/09/2026 — medecin n'était pas persisté ici (seuls
+            // patient_nom/ocr_confidence l'étaient), contrairement au chemin
+            // d'upload manuel (handleFile → updateOrdo → updateOrdoExtracted,
+            // qui envoie bien medecin). Le préremplissage "Médecin
+            // prescripteur" du rappel ne survivait donc pas à un rechargement
+            // pour une ordonnance reçue automatiquement (email/QR), seulement
+            // pour celles uploadées manuellement.
             await sb.from("ordonnances").update({
               patient_nom:    extracted.nom        || null,
+              medecin:        extracted.medecin    || null,
               ocr_confidence: extracted._confidence || 0,
             }).eq("id", ordo.id);
           }

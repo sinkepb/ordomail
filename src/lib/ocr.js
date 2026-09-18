@@ -152,8 +152,15 @@ const OCR_PARSERS = {
     return r.replace(/^(\d)(\d{2})(\d{2})(\d{2})(\d{3})(\d{3})(\d{2})$/, '$1 $2 $3 $4 $5 $6 $7') || null;
   },
   medecin(txt) {
-    const m = txt.match(/(?:Dr\.?|Docteur)\s+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-záàâéèêëîïôùûüç\s-]{2,30})/i)
-           || txt.match(/Prescripteur\s*[:]\s*(.+)/i);
+    // @fix 18/09/2026 — jamais réellement testée avant ce jour (fonction
+    // définie mais jamais appelée par extractFromFile, voir plus bas) :
+    // utilisait \s comme le motif nom() avant son propre correctif du
+    // 16/09/2026, avec le même bug — "Dr Panagiota BOUGATSOU\nOphtalmologiste"
+    // capturait "Panagiota BOUGATSOU\nOphtalmolog" (tronqué à 30 caractères),
+    // le saut de ligne étant avalé par \s. Même correctif : [^\S\n] pour
+    // rester sur la ligne du médecin.
+    const m = txt.match(/(?:Dr\.?|Docteur)[^\S\n]+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,30})/i)
+           || txt.match(/Prescripteur[^\S\n]*[:][^\S\n]*(.+)/i);
     return m ? ('Dr ' + m[1].trim().slice(0, 40)) : null;
   },
   nom(txt) {
@@ -172,8 +179,18 @@ const OCR_PARSERS = {
     // (variante Doctolib courante), pas juste "Nom :" — le motif explicite ne
     // le reconnaissait pas et retombait donc sur le motif de repli fautif
     // avant même d'atteindre la vraie ligne du patient, plus bas dans le texte.
+    // @fix 18/09/2026 — certaines ordonnances de spécialiste (ex. ophtalmologue)
+    // n'ont aucun label "Nom :"/"Patient :" : le nom apparaît en formule
+    // d'adresse ("Madame Gloria NGO"), sans deux-points. Sans ce motif, ça
+    // retombait directement sur le repli générique (dernier recours), qui
+    // accroche plus volontiers un fragment de tampon/cachet en bas de page
+    // (lui aussi en MAJUSCULES + mot Capitalisé) que le vrai nom du patient.
+    // Une seule ligne comme les autres motifs (voir plus haut) — un nom qui
+    // continue sur la ligne suivante (repli à la marge) reste tronqué plutôt
+    // que de risquer de capturer une ligne sans rapport.
     const m = txt.match(/(?:Patient|Assuré)[^\S\n]*[:][^\S\n]*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,40})/i)
            || txt.match(/Nom(?:[^\S\n]+de[^\S\n]+naissance|[^\S\n]+du[^\S\n]+patient|[^\S\n]+et[^\S\n]+pr[ée]nom)?[^\S\n]*[:][^\S\n]*([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,40})/i)
+           || txt.match(/(?:Madame|Monsieur|Mme)[^\S\n]+([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][A-Za-zÁÀÂÉÈÊËÎÏÔÙÛÜÇáàâéèêëîïôùûüç -]{2,40})/i)
            || txt.match(/^([A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,}(?:[^\S\n]+[A-ZÁÀÂÉÈÊËÎÏÔÙÛÜÇ][a-z]{1,20}){1,2})/m);
     if (!m) return null;
     // Vérifié mot par mot (pas seulement la correspondance entière) : un
@@ -237,12 +254,21 @@ async function extractFromFile(base64, mimeType, { fallbackName = null } = {}) {
       return { nom: fallbackName, carteVitale: null, medecin: null, date: null, medicaments: [], _ocrSuccess: false, _confidence: Math.round(confidence || 0) };
     }
 
-    // OCR simplifié : extraire uniquement nom + prénom du patient
+    // Le médecin prescripteur est rebranché le 18/09/2026 — jusque-là,
+    // OCR_PARSERS.medecin existait mais n'était jamais appelé ici ("OCR
+    // simplifié : extraire uniquement nom + prénom du patient") : le champ
+    // "Médecin prescripteur" du rappel de renouvellement (RappelsSection.jsx)
+    // ne pouvait donc jamais se préremplir depuis l'OCR en usage réel, malgré
+    // le mécanisme déjà en place côté rappel. La carte Vitale reste, elle,
+    // volontairement non extraite (minimisation RGPD d'un numéro de sécurité
+    // sociale) — le médecin prescripteur n'est pas une donnée de même
+    // sensibilité et figure déjà, non masqué, sur l'ordonnance imprimée.
     const nomExtrait = OCR_PARSERS.nom(text) || fallbackName || null;
+    const medecinExtrait = OCR_PARSERS.medecin(text);
     const result = {
       nom:          nomExtrait,
       carteVitale:  null,  // non extrait (conformité RGPD)
-      medecin:      null,
+      medecin:      medecinExtrait,
       date:         null,
       medicaments:  [],
       _confidence:  Math.round(confidence),
