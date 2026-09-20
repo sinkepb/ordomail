@@ -1,0 +1,12 @@
+-- ORDOMAIL — Marqueur "compte de test" sur pharmacies — 18/09/2026
+--
+-- Demande titulaire : un compte de test/démo interne (ex. "Pharmacie TEST",
+-- souvent sur un plan payant pour tester les fonctionnalités réservées) ne
+-- doit pas fausser les métriques agrégées du backoffice (MRR/ARR, volume
+-- d'ordonnances traité, etc.) — voir AdminPage.jsx:computeGlobalMetrics et
+-- secure-data-admin:admin_gestion_dashboard, qui somment/comptent
+-- actuellement TOUTES les pharmacies sans distinction.
+--
+-- Par défaut false : aucun changement de comportement pour les pharmacies
+-- existantes tant que le flag n'est pas explicitement positionné.
+ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS compte_test BOOLEAN NOT NULL DEFAULT false;

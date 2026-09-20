@@ -207,6 +207,16 @@ function AppInner() {
   const [logoutDestination, setLogoutDestination] = useState(
     () => adminLoginParam ? "backoffice" : (connexionParam ? "dashboard" : "landing")
   );
+  // @fix 20/09/2026 — "Retour au site" depuis un écran atteint via
+  // ?connexion=1/?admin=1 ramenait bien à la page d'accueil (voir plus bas)
+  // mais laissait l'URL affichée inchangée : revenir ensuite sur ce même
+  // favori via le bouton "précédent" du navigateur rechargeait directement
+  // l'écran de connexion au lieu de la page d'accueil qu'on venait de voir.
+  // Même correctif que PatientPage.onBack (déjà en place plus haut).
+  function goToLanding() {
+    window.history.replaceState({}, "", window.location.pathname);
+    setRoute("landing");
+  }
   // Retour depuis Stripe Checkout (succès ou annulation) — BillingModule lit ce même
   // paramètre pour afficher l'écran adapté (voir son useEffect de montage).
   const checkoutReturn = urlParams.get("checkout");
@@ -473,9 +483,18 @@ function AppInner() {
       {route==="finish-subscription"&&resumeSubscription&&(
         <BillingModule initialView="pricing" resumePharmacieId={resumeSubscription.pharmacieId} resumeEmail={resumeSubscription.email} canceled={resumeSubscription.canceled} onBack={()=>setRoute("landing")}/>
       )}
-      {route==="backoffice"&&<BackofficeAdmin onBack={()=>setRoute(logoutDestination)}/>}
+      {/* @fix 20/09/2026 — onBack ("← Retour au site"/"← Site") réutilisait par
+          erreur logoutDestination, pensé pour onLogout uniquement : arrivé via
+          ?connexion=1/?admin=1 (ou après un clic depuis la page d'accueil,
+          voir onGoToApp/onGoToAdmin plus haut), logoutDestination valait déjà
+          la route courante ("dashboard"/"backoffice") — cliquer "Retour au
+          site" rappelait donc setRoute() avec la MÊME valeur, sans aucun
+          changement visible, comme si le bouton ne faisait rien. onBack doit
+          toujours ramener à la page d'accueil ; seul onLogout (vraie
+          déconnexion) doit revenir sur le lien favorisé. */}
+      {route==="backoffice"&&<BackofficeAdmin onBack={goToLanding}/>}
       {(route==="dashboard"||route==="admin")&&<AppLogin
-          onBack={()=>setRoute(logoutDestination)}
+          onBack={goToLanding}
           onLogout={()=>setRoute(logoutDestination)}
           onGoToPricing={()=>setRoute("pricing")}
           onNeedsSubscription={(pharmacieId, canceled)=>{ setResumeSubscription({pharmacieId, canceled}); setRoute("finish-subscription"); }}
