@@ -16,6 +16,8 @@
   "dependencies": {
     "@sentry/react": "^10.67.0",
     "@supabase/supabase-js": "^2.45.4",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.4",
