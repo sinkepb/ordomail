@@ -333,7 +333,7 @@ function CTASection({ onCTA }) {
         </div>
         <div style={{ marginTop:20, fontSize:13, color:"rgba(255,255,255,0.4)", display:"flex", gap:18, justifyContent:"center", flexWrap:"wrap" }}>
           <span>✓ Sans engagement</span>
-          <span>✓ Données hébergées en France</span>
+          <span>✓ Données chiffrées</span>
           <span>✓ Support inclus</span>
         </div>
       </div>
@@ -441,7 +441,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
               </button>
             </div>
             <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
-              {[["30j","Essai gratuit"],["<1min","Installation"],["🇫🇷","Données en France"]].map(([v,l])=>(
+              {[["30j","Essai gratuit"],["<1min","Installation"],["🔐","Données chiffrées"]].map(([v,l])=>(
                 <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
                   <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
                   <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
