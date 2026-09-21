@@ -608,23 +608,36 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
   // en testant le même contenu directement dans le document principal (rendu
   // correct au pixel près) : html2canvas ne capture pas fidèlement les
   // @font-face externes ni les métriques de texte d'un document ENFANT
-  // cross-document (iframe), même same-origin. Un Shadow DOM encapsule tout
-  // aussi bien le HTML/CSS généré, mais reste dans le document principal —
-  // html2canvas y retrouve les polices et les espaces correctement.
+  // cross-document (iframe), même same-origin.
+  //
+  // @fix 21/09/2026 (bis) — le passage à un Shadow DOM seul ne suffisait pas
+  // encore : un <link rel="stylesheet"> Google Fonts posé DANS le shadow root
+  // charge bien la feuille de style (son onload se déclenche), mais les
+  // @font-face qu'elle déclare ne s'enregistrent PAS dans document.fonts —
+  // attendre document.fonts.ready ne voit donc jamais ces polices et se
+  // résout immédiatement, avant que les fichiers de police (chargés en
+  // différé, seulement une fois qu'un texte les réclame) n'aient fini
+  // d'arriver. Le fix : charger la feuille Google Fonts dans le document
+  // PRINCIPAL (où document.fonts la suit correctement — les polices ne sont
+  // pas cloisonnées par shadow root, seules les règles CSS le sont), et
+  // construire le contenu du shadow root AVANT d'attendre fonts.ready, pour
+  // que le texte qu'il contient déclenche bien le chargement paresseux des
+  // polices avant qu'on ne l'attende.
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const fontLinkHref = parsed.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]')?.getAttribute("href");
+  if (fontLinkHref && !document.head.querySelector(`link[rel="stylesheet"][href="${fontLinkHref}"]`)) {
+    const fontLink = document.createElement("link");
+    fontLink.rel = "stylesheet";
+    fontLink.href = fontLinkHref;
+    document.head.appendChild(fontLink);
+    await new Promise((resolve) => { fontLink.onload = resolve; fontLink.onerror = resolve; });
+  }
+
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;left:-99999px;top:0;";
   document.body.appendChild(host);
   const shadow = host.attachShadow({ mode: "open" });
   try {
-    const parsed = new DOMParser().parseFromString(html, "text/html");
-    const fontLinkHref = parsed.querySelector('link[href*="fonts.googleapis.com"]')?.getAttribute("href");
-    if (fontLinkHref) {
-      const fontLink = document.createElement("link");
-      fontLink.rel = "stylesheet";
-      fontLink.href = fontLinkHref;
-      shadow.appendChild(fontLink);
-      await new Promise((resolve) => { fontLink.onload = resolve; fontLink.onerror = resolve; });
-    }
     const styleEl = document.createElement("style");
     styleEl.textContent = parsed.querySelector("style")?.textContent || "";
     shadow.appendChild(styleEl);
@@ -632,10 +645,9 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
     wrapper.innerHTML = parsed.body.innerHTML;
     shadow.appendChild(wrapper);
 
-    // Le chargement des polices d'un shadow root reste suivi par
-    // document.fonts (contrairement à un iframe, qui a son propre contexte) —
-    // sans cette attente, html2canvas peut capturer avant leur arrivée et
-    // rendre le PDF avec la police de secours du navigateur.
+    // Doit venir APRÈS la construction du contenu ci-dessus (voir note plus
+    // haut) : c'est le texte du shadow root qui déclenche le chargement
+    // paresseux des polices que cette attente doit suivre.
     try { await document.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
     const pageEl = shadow.querySelector(".page");
     if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
