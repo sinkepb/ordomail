@@ -16,7 +16,7 @@ import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
 import { AideModal } from "../components/AideModal.jsx";
-import { generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML } from "../lib/print.jsx";
+import { generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../lib/print.jsx";
 import {
   fetchPharmacie,
   savePharmacie,
@@ -100,6 +100,7 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
   const [posterHtmlPaysage, setPosterHtmlPaysage] = useState(null);
   const [posterHtmlPaysageA3, setPosterHtmlPaysageA3] = useState(null);
   const [posterLoading, setPosterLoading] = useState(false);
+  const [posterDownloading, setPosterDownloading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
 
   useEffect(() => {
@@ -115,13 +116,26 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
-  function handleDownloadPoster() {
+  async function handleDownloadPoster() {
     const map = { A4: { portrait: posterHtml, paysage: posterHtmlPaysage }, A3: { portrait: posterHtmlA3, paysage: posterHtmlPaysageA3 } };
     const html = map[posterFormat][posterOrientation];
     if (!html) return;
     setPosterErr("");
-    const win = openPosterPDFFromHTML(html);
-    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+    setPosterDownloading(true);
+    const isA3 = posterFormat === "A3";
+    const isPortrait = posterOrientation === "portrait";
+    const [widthMm, heightMm] = isA3
+      ? (isPortrait ? [297, 420] : [420, 297])
+      : (isPortrait ? [210, 297] : [297, 210]);
+    try {
+      await downloadPosterPDF(html, {
+        filename: `affiche-qr-${sanitizePdfFilenamePart(pharmacie.nom)}-${posterFormat}-${posterOrientation}.pdf`,
+        widthMm, heightMm,
+      });
+    } catch (e) {
+      setPosterErr("Échec de l'export PDF : " + e.message);
+    }
+    setPosterDownloading(false);
   }
 
   async function addPoste() {
@@ -447,9 +461,9 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
                     </div>
                   );
                 })()}
-                <button onClick={handleDownloadPoster} disabled={posterLoading}
-                  style={{width:"100%",padding:"11px 16px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:13,cursor:posterLoading?"default":"pointer",fontFamily:"inherit",opacity:posterLoading?0.6:1}}>
-                  {posterLoading ? "Préparation…" : `🖨️ Enregistrer en PDF (${posterFormat} ${posterOrientation==="portrait"?"portrait":"paysage"})`}
+                <button onClick={handleDownloadPoster} disabled={posterLoading||posterDownloading}
+                  style={{width:"100%",padding:"11px 16px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:13,cursor:(posterLoading||posterDownloading)?"default":"pointer",fontFamily:"inherit",opacity:(posterLoading||posterDownloading)?0.6:1}}>
+                  {posterLoading ? "Préparation…" : posterDownloading ? "Génération du PDF…" : `⬇️ Télécharger le PDF (${posterFormat} ${posterOrientation==="portrait"?"portrait":"paysage"})`}
                 </button>
                 {posterErr && <div style={{marginTop:10,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",color:"#b91c1c",fontSize:12}}>{posterErr}</div>}
               </>

@@ -5,7 +5,7 @@
 // StoriesContentAdmin.jsx (callSecureData local, styles inline, palette
 // sombre #0f172a/#1e293b/#334155).
 import { useState, useEffect, useRef } from "react";
-import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML } from "../lib/print.jsx";
+import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 import { NfcWriter } from "./NfcWriter.jsx";
 
@@ -47,6 +47,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [posterHtmlPaysage, setPosterHtmlPaysage] = useState(null);
   const [posterHtmlPaysageA3, setPosterHtmlPaysageA3] = useState(null);
   const [posterLoading, setPosterLoading] = useState(false);
+  const [posterDownloading, setPosterDownloading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
 
   async function callSecureData(resource, params) {
@@ -186,36 +187,40 @@ function QrCodesAdmin({ adminToken } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewingQr, viewTab]);
 
-  function handleDownloadPoster() {
-    // Pas de await avant window.open() (voir openPosterPDFFromHTML) : posterHtml
-    // est déjà prêt (généré par l'effet ci-dessus pour l'aperçu), donc on l'ouvre
-    // tel quel, dans le même tick que le clic, pour ne pas perdre l'activation
-    // utilisateur et se faire bloquer silencieusement comme popup.
-    if (!viewingQr || !posterHtml) return;
+  // @fix 21/09/2026 — l'ancien openPosterPDFFromHTML (fenêtre + bouton
+  // window.print() intégré) ouvrait bien une fenêtre mais le bouton
+  // "Imprimer" à l'intérieur ne déclenchait rien pour un titulaire en usage
+  // réel (voir downloadPosterPDF dans lib/print.jsx). Plus de fenêtre ni de
+  // window.print() : export PDF réel généré et téléchargé directement.
+  async function runPosterDownload(html, widthMm, heightMm, orientationLabel, format) {
+    if (!viewingQr || !html) return;
     setPosterErr("");
-    const win = openPosterPDFFromHTML(posterHtml);
-    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+    setPosterDownloading(true);
+    try {
+      await downloadPosterPDF(html, {
+        filename: `affiche-qr-${sanitizePdfFilenamePart(viewingQr.pharmacies?.nom || viewingQr.code)}-${format}-${orientationLabel}.pdf`,
+        widthMm, heightMm,
+      });
+    } catch (e) {
+      setPosterErr("Échec de l'export PDF : " + e.message);
+    }
+    setPosterDownloading(false);
+  }
+
+  function handleDownloadPoster() {
+    return runPosterDownload(posterHtml, 210, 297, "portrait", "A4");
   }
 
   function handleDownloadPosterA3() {
-    if (!viewingQr || !posterHtmlA3) return;
-    setPosterErr("");
-    const win = openPosterPDFFromHTML(posterHtmlA3);
-    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+    return runPosterDownload(posterHtmlA3, 297, 420, "portrait", "A3");
   }
 
   function handleDownloadPosterPaysage() {
-    if (!viewingQr || !posterHtmlPaysage) return;
-    setPosterErr("");
-    const win = openPosterPDFFromHTML(posterHtmlPaysage);
-    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+    return runPosterDownload(posterHtmlPaysage, 297, 210, "paysage", "A4");
   }
 
   function handleDownloadPosterPaysageA3() {
-    if (!viewingQr || !posterHtmlPaysageA3) return;
-    setPosterErr("");
-    const win = openPosterPDFFromHTML(posterHtmlPaysageA3);
-    if (!win) setPosterErr("La fenêtre a été bloquée par le navigateur — autorisez les popups pour ce site et réessayez.");
+    return runPosterDownload(posterHtmlPaysageA3, 420, 297, "paysage", "A3");
   }
 
   // Un onglet Affiche par format papier (A4/A3, 14/09/2026) — chacun propose
@@ -262,9 +267,9 @@ function QrCodesAdmin({ adminToken } = {}) {
               style={{ width: dims.w, height: dims.h, border: "none", flexShrink: 0, transform: `scale(${scale})`, transformOrigin: "top left" }} />
           )}
         </div>
-        <button onClick={download} disabled={!html}
-          style={{ width: "100%", padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: !html ? "default" : "pointer", fontFamily: "inherit", opacity: !html ? 0.6 : 1 }}>
-          {posterLoading ? "Préparation…" : `🖨️ Enregistrer en PDF (${format} ${isPortrait ? "portrait" : "paysage"})`}
+        <button onClick={download} disabled={!html || posterDownloading}
+          style={{ width: "100%", padding: "10px 16px", border: "none", borderRadius: 10, background: "#3b82f6", color: "#fff", fontWeight: 800, fontSize: 13, cursor: (!html || posterDownloading) ? "default" : "pointer", fontFamily: "inherit", opacity: (!html || posterDownloading) ? 0.6 : 1 }}>
+          {posterLoading ? "Préparation…" : posterDownloading ? "Génération du PDF…" : `⬇️ Télécharger le PDF (${format} ${isPortrait ? "portrait" : "paysage"})`}
         </button>
         {posterErr && <div style={{ marginTop: 10, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 12px", color: "#fca5a5", fontSize: 12 }}>{posterErr}</div>}
       </>

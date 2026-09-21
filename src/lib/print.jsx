@@ -577,6 +577,65 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
 </html>`;
 }
 
+// ─── Export PDF réel de l'affiche QR (21/09/2026) ─────────────────────────────
+// @fix — signalé en usage réel : le bouton "Enregistrer en PDF" (ci-dessous,
+// openPosterPDFFromHTML) ouvre bien une fenêtre, mais le bouton "Imprimer"
+// intégré à cette fenêtre (window.print()) ne déclenche rien chez ce
+// pharmacien — popup issue de window.open() + blob: URL, cas connu où
+// certains navigateurs n'activent pas correctement window.print() dans ce
+// contexte. Plutôt que de dépendre du dialogue d'impression du navigateur,
+// cette fonction génère un vrai fichier .pdf téléchargeable directement :
+// rendu de l'affiche dans un iframe caché, capture en image (html2canvas),
+// assemblage en PDF aux dimensions physiques réelles (jsPDF), puis
+// téléchargement — aucune fenêtre, aucun window.print(). Import dynamique de
+// jsPDF/html2canvas : ~300 Ko à eux deux, inutile dans le bundle principal
+// pour les pharmacies qui n'utilisent jamais cette affiche.
+function sanitizePdfFilenamePart(s) {
+  return String(s || "ordomail").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "ordomail";
+}
+
+async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:1px;height:1px;border:0;visibility:hidden;";
+  document.body.appendChild(iframe);
+  try {
+    await new Promise((resolve, reject) => {
+      iframe.onload = resolve;
+      iframe.onerror = () => reject(new Error("Échec du rendu de l'affiche."));
+      iframe.srcdoc = html;
+    });
+    const idoc = iframe.contentDocument;
+    // Attendre les polices Google Fonts (chargées de manière asynchrone dans le
+    // HTML généré) — sans ça, html2canvas peut capturer avant leur arrivée et
+    // rendre le PDF avec la police de secours du navigateur.
+    try { await idoc.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
+    const pageEl = idoc.querySelector(".page");
+    if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
+    const canvas = await html2canvas(pageEl, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      // Le bouton "Imprimer" intégré au HTML (.no-print) n'a pas sa place dans
+      // le PDF exporté — html2canvas ignore les styles @media print par
+      // défaut, donc on le retire explicitement de la capture.
+      ignoreElements: (el) => el.classList?.contains("no-print"),
+    });
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const orientation = widthMm > heightMm ? "l" : "p";
+    const pdf = new jsPDF({ orientation, unit: "mm", format: [widthMm, heightMm] });
+    pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
+    pdf.save(filename);
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
 // Ouvre un HTML d'affiche déjà généré, sans aucun await avant window.open() —
 // séparée de generatePosterHTML (25/08/2026) : un appelant qui régénère le
 // HTML (import "qrcode", nouvel appel QR.toString) entre le clic et
@@ -597,4 +656,4 @@ function openPosterPDFFromHTML(html) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML, downloadPosterPDF, sanitizePdfFilenamePart };
