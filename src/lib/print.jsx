@@ -601,21 +601,43 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
     import("jspdf"),
   ]);
 
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:1px;height:1px;border:0;visibility:hidden;";
-  document.body.appendChild(iframe);
+  // @fix 21/09/2026 — la première version de cette fonction rendait l'affiche
+  // dans un <iframe srcDoc> avant capture. Résultat en usage réel : PDF avec
+  // police de secours (serif) à la place de Bricolage Grotesque/Manrope, ET
+  // espaces entre les mots disparus ("ENVOYEZ VOTRE ORDONNANCE" collé). Isolé
+  // en testant le même contenu directement dans le document principal (rendu
+  // correct au pixel près) : html2canvas ne capture pas fidèlement les
+  // @font-face externes ni les métriques de texte d'un document ENFANT
+  // cross-document (iframe), même same-origin. Un Shadow DOM encapsule tout
+  // aussi bien le HTML/CSS généré, mais reste dans le document principal —
+  // html2canvas y retrouve les polices et les espaces correctement.
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-99999px;top:0;";
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
   try {
-    await new Promise((resolve, reject) => {
-      iframe.onload = resolve;
-      iframe.onerror = () => reject(new Error("Échec du rendu de l'affiche."));
-      iframe.srcdoc = html;
-    });
-    const idoc = iframe.contentDocument;
-    // Attendre les polices Google Fonts (chargées de manière asynchrone dans le
-    // HTML généré) — sans ça, html2canvas peut capturer avant leur arrivée et
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const fontLinkHref = parsed.querySelector('link[href*="fonts.googleapis.com"]')?.getAttribute("href");
+    if (fontLinkHref) {
+      const fontLink = document.createElement("link");
+      fontLink.rel = "stylesheet";
+      fontLink.href = fontLinkHref;
+      shadow.appendChild(fontLink);
+      await new Promise((resolve) => { fontLink.onload = resolve; fontLink.onerror = resolve; });
+    }
+    const styleEl = document.createElement("style");
+    styleEl.textContent = parsed.querySelector("style")?.textContent || "";
+    shadow.appendChild(styleEl);
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = parsed.body.innerHTML;
+    shadow.appendChild(wrapper);
+
+    // Le chargement des polices d'un shadow root reste suivi par
+    // document.fonts (contrairement à un iframe, qui a son propre contexte) —
+    // sans cette attente, html2canvas peut capturer avant leur arrivée et
     // rendre le PDF avec la police de secours du navigateur.
-    try { await idoc.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
-    const pageEl = idoc.querySelector(".page");
+    try { await document.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
+    const pageEl = shadow.querySelector(".page");
     if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
     const canvas = await html2canvas(pageEl, {
       scale: 3,
@@ -632,7 +654,7 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
     pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
     pdf.save(filename);
   } finally {
-    document.body.removeChild(iframe);
+    document.body.removeChild(host);
   }
 }
 
