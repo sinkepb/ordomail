@@ -1,10 +1,42 @@
 // Extrait de AdminPage.jsx (phase 4) — composant autonome (props uniquement).
 // Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
+import { useEffect, useState } from "react";
 import { snapshotMetriquesJournalieres } from "../supabase.js";
 import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
 
-function ClientDetail({ client: ph, plans, onClose }) {
+// Statistiques d'usage (scans QR, connexions, dépôts du jour) chargées à la
+// demande (22/09/2026, demande titulaire) — volontairement PAS incluses dans
+// la liste des pharmacies (admin_pharmacies, coûteuse pour N pharmacies) :
+// un admin n'ouvre qu'une fiche à la fois, donc un fetch dédié ici plutôt
+// qu'un calcul pour toute la liste à chaque chargement de l'onglet Clients.
+async function callSecureData(resource, params, adminToken) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
+    body: JSON.stringify({ resource, params }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
+  return body;
+}
+
+function ClientDetail({ client: ph, plans, adminToken, onClose }) {
   const planInfo = plans[ph.plan] || {};
+  const [usage, setUsage] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUsage(null);
+    setUsageLoading(true);
+    callSecureData("admin_pharmacie_usage", { pharmacieId: ph.id }, adminToken)
+      .then(({ data }) => { if (!cancelled) setUsage(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setUsageLoading(false); });
+    return () => { cancelled = true; };
+  }, [ph.id, adminToken]);
   const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
   const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
   const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
@@ -93,25 +125,31 @@ function ClientDetail({ client: ph, plans, onClose }) {
               déjà tracées mais jamais agrégées avant ce jour). */}
           <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
             <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>📊 Statistiques d'usage</div>
-            <div style={{display:"flex",fontSize:10,color:"#64748b",fontWeight:700,padding:"4px 0 6px",borderBottom:"1px solid #1e293b"}}>
-              <span style={{flex:1}}></span>
-              <span style={{width:40,textAlign:"center"}}>Jour</span>
-              <span style={{width:48,textAlign:"center"}}>Sem.</span>
-              <span style={{width:40,textAlign:"center"}}>Mois</span>
-            </div>
-            {[
-              ["📥 Dépôts d'ordonnances", ph.ordos_jour, ph.ordos_semaine, ph.ordos_mois, "#4ade80"],
-              ["📱 Scans QR code", ph.scans_jour, ph.scans_semaine, ph.scans_mois, "#60a5fa"],
-              ["👑 Connexions email", ph.connexions_email_jour, ph.connexions_email_semaine, ph.connexions_email_mois, "#a78bfa"],
-              ["🔢 Connexions PIN", ph.connexions_pin_jour, ph.connexions_pin_semaine, ph.connexions_pin_mois, "#fbbf24"],
-            ].map(([label, j, s, m, color]) => (
-              <div key={label} style={{display:"flex",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
-                <span style={{flex:1,fontSize:12,color:"#94a3b8"}}>{label}</span>
-                <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{j||0}</span>
-                <span style={{width:48,textAlign:"center",fontSize:14,fontWeight:900,color}}>{s||0}</span>
-                <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{m||0}</span>
-              </div>
-            ))}
+            {usageLoading ? (
+              <div style={{fontSize:12,color:"#64748b",padding:"8px 0"}}>⏳ Chargement…</div>
+            ) : (
+              <>
+                <div style={{display:"flex",fontSize:10,color:"#64748b",fontWeight:700,padding:"4px 0 6px",borderBottom:"1px solid #1e293b"}}>
+                  <span style={{flex:1}}></span>
+                  <span style={{width:40,textAlign:"center"}}>Jour</span>
+                  <span style={{width:48,textAlign:"center"}}>Sem.</span>
+                  <span style={{width:40,textAlign:"center"}}>Mois</span>
+                </div>
+                {[
+                  ["📥 Dépôts d'ordonnances", usage?.ordos_jour, ph.ordos_semaine, ph.ordos_mois, "#4ade80"],
+                  ["📱 Scans QR code", usage?.scans_jour, usage?.scans_semaine, usage?.scans_mois, "#60a5fa"],
+                  ["👑 Connexions email", usage?.connexions_email_jour, usage?.connexions_email_semaine, usage?.connexions_email_mois, "#a78bfa"],
+                  ["🔢 Connexions PIN", usage?.connexions_pin_jour, usage?.connexions_pin_semaine, usage?.connexions_pin_mois, "#fbbf24"],
+                ].map(([label, j, s, m, color]) => (
+                  <div key={label} style={{display:"flex",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
+                    <span style={{flex:1,fontSize:12,color:"#94a3b8"}}>{label}</span>
+                    <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{j||0}</span>
+                    <span style={{width:48,textAlign:"center",fontSize:14,fontWeight:900,color}}>{s||0}</span>
+                    <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{m||0}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
