@@ -575,6 +575,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
   const [rappelCreating, setRappelCreating] = useState(false);
@@ -885,6 +886,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       setOrdonnances(prev => prev.filter(o => o.id !== ordo.id));
       addAuditLog({userId:userId2,userRole,pharmacieId,action:"delete",ordonnanceId:ordo.id,posteNom}).catch(()=>{});
       setDeleteConfirm(null);
+      setDeleteSuccess(true);
+      setTimeout(()=>setDeleteSuccess(false), 2500);
     } catch (e) {
       setDeleteError(e.message || "Échec de la suppression.");
     }
@@ -1344,6 +1347,11 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       {deleteConfirm&&<DeleteConfirmModal ordo={deleteConfirm} couleur={couleur} deleting={deleting} error={deleteError}
         onConfirm={()=>handleDeleteOrdo(deleteConfirm)}
         onCancel={()=>{setDeleteConfirm(null);setDeleteError("");}}/>}
+      {deleteSuccess&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#15803d",color:"#fff",padding:"12px 22px",borderRadius:12,fontWeight:700,fontSize:13.5,boxShadow:"0 8px 24px rgba(21,128,61,0.35)",zIndex:9999,display:"flex",alignItems:"center",gap:8}}>
+          ✅ Ordonnance supprimée
+        </div>
+      )}
       {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
