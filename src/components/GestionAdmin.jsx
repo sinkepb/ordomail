@@ -12,6 +12,9 @@
 // Voir secure-data-admin/index.ts (ressources admin_gestion_*) pour le détail
 // des calculs et de ce qui est volontairement laissé en saisie manuelle.
 import { useState, useEffect } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const ROWS_PER_PAGE = 10;
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -166,6 +169,7 @@ function OverviewSection({ dashboard, onRefresh }) {
 function FacturationSection({ adminToken }) {
   const [factures, setFactures] = useState(null);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     callSecureData("admin_gestion_export_factures", {}, adminToken)
@@ -206,6 +210,11 @@ function FacturationSection({ adminToken }) {
     downloadTextFile(`brouillon-fec-ordomail-${new Date().toISOString().slice(0, 10)}.txt`, lines.join("\n"), "text/plain;charset=utf-8");
   }
 
+  const facturesList = factures || [];
+  const pageCount = Math.max(1, Math.ceil(facturesList.length / ROWS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedFactures = facturesList.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
+
   return (
     <div>
       {error && <div style={{ color: "#fca5a5", marginBottom: 12 }}>{error}</div>}
@@ -220,8 +229,8 @@ function FacturationSection({ adminToken }) {
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 14, lineHeight: 1.6 }}>
         {factures ? `${factures.length} facture(s) réelle(s) trouvée(s).` : "Chargement…"} Le brouillon FEC ne couvre que les ventes (pas les charges/rapprochement bancaire) — c'est un point de départ, pas un fichier réglementaire complet.
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 420, overflowY: "auto" }}>
-        {(factures || []).map((f, i) => {
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {paginatedFactures.map((f, i) => {
           const ttc = (f.montant_ttc || 0) / 100;
           return (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 12px", fontSize: 12 }}>
@@ -233,6 +242,7 @@ function FacturationSection({ adminToken }) {
           );
         })}
       </div>
+      <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={facturesList.length} itemLabel="facture"/>
     </div>
   );
 }
@@ -242,6 +252,7 @@ function RegistresSection({ adminToken }) {
   const [entries, setEntries] = useState([]);
   const [form, setForm] = useState({});
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
 
   const FIELDS = {
     personnel: [["nom", "Nom"], ["prenom", "Prénom"], ["poste", "Poste"], ["typeContrat", "Type de contrat (CDI/CDD/Président assimilé-salarié…)"], ["dateEntree", "Date d'entrée"], ["dateSortie", "Date de sortie (si applicable)"]],
@@ -255,7 +266,7 @@ function RegistresSection({ adminToken }) {
       setEntries(data || []);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); setForm({}); /* eslint-disable-next-line */ }, [categorie]);
+  useEffect(() => { load(); setForm({}); setPage(1); /* eslint-disable-next-line */ }, [categorie]);
 
   async function save() {
     if (!Object.values(form).some(v => v)) return;
@@ -269,6 +280,10 @@ function RegistresSection({ adminToken }) {
     try { await callSecureData("admin_gestion_registre_delete", { id }, adminToken); load(); }
     catch (e) { setError(e.message); }
   }
+
+  const entriesPageCount = Math.max(1, Math.ceil(entries.length / ROWS_PER_PAGE));
+  const entriesCurrentPage = Math.min(page, entriesPageCount);
+  const paginatedEntries = entries.slice((entriesCurrentPage - 1) * ROWS_PER_PAGE, entriesCurrentPage * ROWS_PER_PAGE);
 
   return (
     <div>
@@ -292,7 +307,7 @@ function RegistresSection({ adminToken }) {
         <button onClick={save} style={{ padding: "8px 14px", border: "none", borderRadius: 7, background: "#22c55e", color: "#052e16", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", height: 32 }}>+ Ajouter</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {entries.map(e => (
+        {paginatedEntries.map(e => (
           <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 12px", fontSize: 12 }}>
             <span style={{ color: "#e2e8f0" }}>{FIELDS[categorie].map(([k]) => e.data[k]).filter(Boolean).join(" · ")}</span>
             <button onClick={() => remove(e.id)} style={{ border: "none", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: 12 }}>🗑️ Supprimer</button>
@@ -300,6 +315,7 @@ function RegistresSection({ adminToken }) {
         ))}
         {entries.length === 0 && <div style={{ color: "#475569", fontSize: 12, fontStyle: "italic" }}>Aucune entrée pour l'instant.</div>}
       </div>
+      <PaginationControls page={entriesCurrentPage} setPage={setPage} pageCount={entriesPageCount} totalCount={entries.length} itemLabel="entrée"/>
     </div>
   );
 }

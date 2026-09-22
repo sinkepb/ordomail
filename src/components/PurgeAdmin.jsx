@@ -5,6 +5,9 @@
 // Anciennement une section de RgpdPanel.jsx, sortie en onglet à part entière
 // à la demande de l'utilisateur.
 import { useState, useEffect } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const HISTORY_PER_PAGE = 10;
 
 const FREQ_LABELS = {
   hourly:   "Toutes les heures",
@@ -39,6 +42,7 @@ function PurgeAdmin({ adminToken } = {}) {
   const [msg, setMsg]                 = useState(null);
   const [history, setHistory]         = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyPage, setHistoryPage] = useState(1);
 
   async function load() {
     setLoading(true);
@@ -59,6 +63,7 @@ function PurgeAdmin({ adminToken } = {}) {
 
   async function loadHistory() {
     setHistoryLoading(true);
+    setHistoryPage(1);
     try {
       const { data } = await callSecureData("admin_alerts", { includeResolved: true, limit: 50 }, adminToken);
       setHistory((data || []).filter(a => a.source === "purge-ordonnances"));
@@ -117,6 +122,10 @@ function PurgeAdmin({ adminToken } = {}) {
     }
     setRunning(false);
   }
+
+  const historyPageCount = Math.max(1, Math.ceil(history.length / HISTORY_PER_PAGE));
+  const historyCurrentPage = Math.min(historyPage, historyPageCount);
+  const paginatedHistory = history.slice((historyCurrentPage - 1) * HISTORY_PER_PAGE, historyCurrentPage * HISTORY_PER_PAGE);
 
   const cardStyle = { background: "#1e293b", border: "1px solid #334155", borderRadius: 12, padding: 20, marginBottom: 20 };
   const selectStyle = { padding: "9px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#fff", fontSize: 14, outline: "none", fontFamily: "inherit" };
@@ -206,7 +215,7 @@ function PurgeAdmin({ adminToken } = {}) {
               <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Aucune purge exécutée pour l'instant.</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {history.map(h => (
+                {paginatedHistory.map(h => (
                   <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px" }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: "#e2e8f0" }}>{h.message}</div>
@@ -219,6 +228,7 @@ function PurgeAdmin({ adminToken } = {}) {
                 ))}
               </div>
             )}
+            <PaginationControls page={historyCurrentPage} setPage={setHistoryPage} pageCount={historyPageCount} totalCount={history.length} itemLabel="purge"/>
           </div>
         </>
       )}

@@ -13,6 +13,7 @@ import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { GestionAdmin } from "../components/GestionAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { RappelsMetricsAdmin } from "../components/RappelsMetricsAdmin.jsx";
+import { PaginationControls } from "../components/PaginationControls.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
 
@@ -392,19 +393,7 @@ function AdminDashboardLive({ adminToken } = {}) {
                   </div>
                 ))}
               </div>
-              {pageCount > 1 && (
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginTop:20}}>
-                  <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={currentPage<=1}
-                    style={{padding:"6px 14px",border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:currentPage<=1?"#475569":"#e2e8f0",fontSize:12,cursor:currentPage<=1?"default":"pointer",fontFamily:"inherit"}}>
-                    ← Précédent
-                  </button>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>Page {currentPage} / {pageCount} · {filtered.length} pharmacie{filtered.length>1?"s":""}</span>
-                  <button onClick={()=>setPage(p=>Math.min(pageCount,p+1))} disabled={currentPage>=pageCount}
-                    style={{padding:"6px 14px",border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:currentPage>=pageCount?"#475569":"#e2e8f0",fontSize:12,cursor:currentPage>=pageCount?"default":"pointer",fontFamily:"inherit"}}>
-                    Suivant →
-                  </button>
-                </div>
-              )}
+              <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={filtered.length} itemLabel="pharmacie"/>
             </div>
           )
         ) : tab === "carte" ? (
@@ -462,18 +451,21 @@ function AdminDashboardLive({ adminToken } = {}) {
               onClearMsg={()=>setMsg("")}
             />
           ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {filtered.map(ph=>(
-                <div key={ph.id} onClick={()=>setSelected(ph)}
-                  style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
-                  <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💊</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,color:"#fff"}}>{ph.nom}</div>
-                    <div style={{fontSize:12,color:"#64748b"}}>{ph.email} · {PLANS[ph.plan]?.label||ph.plan} · {PLANS[ph.plan]?.prix||0}€/mois</div>
+            <div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {paginated.map(ph=>(
+                  <div key={ph.id} onClick={()=>setSelected(ph)}
+                    style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💊</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,color:"#fff"}}>{ph.nom}</div>
+                      <div style={{fontSize:12,color:"#64748b"}}>{ph.email} · {PLANS[ph.plan]?.label||ph.plan} · {PLANS[ph.plan]?.prix||0}€/mois</div>
+                    </div>
+                    <div style={{fontSize:11,color:"#475569"}}>Modifier →</div>
                   </div>
-                  <div style={{fontSize:11,color:"#475569"}}>Modifier →</div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={filtered.length} itemLabel="pharmacie"/>
             </div>
           )
         )}

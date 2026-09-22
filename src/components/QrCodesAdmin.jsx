@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 import { NfcWriter } from "./NfcWriter.jsx";
+import { PaginationControls } from "./PaginationControls.jsx";
 
 const STICKER_TOP_TEXT = "GAGNEZ DU TEMPS";
 const STICKER_BOTTOM_TEXT = "ENVOYEZ VOTRE ORDONNANCE";
@@ -32,6 +33,8 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [listStatus, setListStatus] = useState("");
   const [listSearch, setListSearch] = useState("");
   const [listErr, setListErr] = useState("");
+  const [listPage, setListPage] = useState(1);
+  const LIST_PER_PAGE = 10;
   const [viewingQr, setViewingQr] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [unassigningId, setUnassigningId] = useState(null);
@@ -65,6 +68,7 @@ function QrCodesAdmin({ adminToken } = {}) {
 
   async function loadList() {
     setListLoading(true);
+    setListPage(1);
     try {
       const { data } = await callSecureData("admin_qrcodes_list", { status: listStatus || undefined, search: listSearch || undefined });
       setList(data || []);
@@ -282,6 +286,10 @@ function QrCodesAdmin({ adminToken } = {}) {
         p.email?.toLowerCase().includes(pharmaSearch.toLowerCase()))
     : [];
 
+  const listPageCount = Math.max(1, Math.ceil(list.length / LIST_PER_PAGE));
+  const listCurrentPage = Math.min(listPage, listPageCount);
+  const paginatedList = list.slice((listCurrentPage - 1) * LIST_PER_PAGE, listCurrentPage * LIST_PER_PAGE);
+
   const cardStyle = { background: "#1e293b", borderRadius: 14, padding: 20, border: "1px solid #334155" };
   const inputStyle = { background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none" };
   const labelStyle = { fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, display: "block" };
@@ -390,7 +398,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                 </tr>
               </thead>
               <tbody>
-                {list.map(r => (
+                {paginatedList.map(r => (
                   <tr key={r.id} style={{ borderBottom: "1px solid #1e293b" }}>
                     <td style={{ padding: "8px 10px", fontFamily: "monospace", color: "#e2e8f0" }}>{r.code}</td>
                     <td style={{ padding: "8px 10px" }}>
@@ -421,6 +429,7 @@ function QrCodesAdmin({ adminToken } = {}) {
                 ))}
               </tbody>
             </table>
+            <PaginationControls page={listCurrentPage} setPage={setListPage} pageCount={listPageCount} totalCount={list.length} itemLabel="code"/>
           </div>
         )}
       </div>
