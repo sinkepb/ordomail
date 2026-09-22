@@ -155,7 +155,9 @@ function AdminDashboardLive({ adminToken } = {}) {
   const [clients,  setClients]  = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState("");
+  const [page,     setPage]     = useState(1);
   const [selected, setSelected] = useState(null);
+  const CLIENTS_PER_PAGE = 10;
   const [saving,   setSaving]   = useState(false);
   const [msg,      setMsg]      = useState("");
   const [metrics,  setMetrics]  = useState(null); // métriques globales
@@ -249,6 +251,13 @@ function AdminDashboardLive({ adminToken } = {}) {
     c.email?.toLowerCase().includes(search.toLowerCase()) ||
     c.titulaire?.toLowerCase().includes(search.toLowerCase())
   );
+  // Pagination (22/09/2026, demande titulaire) — 10 pharmacies par page max.
+  // Purement côté client : la liste complète est déjà chargée d'un coup pour
+  // computeGlobalMetrics (MRR/ARR/etc. ont besoin de TOUTES les pharmacies,
+  // pas seulement de la page affichée) — seul le RENDU est paginé.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / CLIENTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginated = filtered.slice((currentPage - 1) * CLIENTS_PER_PAGE, currentPage * CLIENTS_PER_PAGE);
 
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",color:"#e2e8f0"}}>
@@ -319,15 +328,15 @@ function AdminDashboardLive({ adminToken } = {}) {
         {!loading && tab === "clients" ? (
           selected ? (
             /* ── Détail client ── */
-            <ClientDetail client={selected} plans={PLANS} onClose={()=>setSelected(null)}/>
+            <ClientDetail client={selected} plans={PLANS} adminToken={adminToken} onClose={()=>setSelected(null)}/>
           ) : (
             /* ── Liste clients ── */
             <div>
-              <input value={search} onChange={e=>setSearch(e.target.value)}
+              <input value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}
                 placeholder="🔍 Rechercher pharmacie ou email…"
                 style={{width:"100%",padding:"10px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:9,color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:16,boxSizing:"border-box"}}/>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {filtered.map(ph => (
+                {paginated.map(ph => (
                   <div key={ph.id} onClick={()=>setSelected(ph)}
                     style={{background:"#1e293b",border:`1px solid ${(ph.ordos_attente||0)>0?"#f59e0b":"#334155"}`,borderRadius:12,padding:"14px 18px",cursor:"pointer",transition:"border 0.15s"}}>
                     <div style={{display:"flex",alignItems:"center",gap:14}}>
@@ -383,6 +392,19 @@ function AdminDashboardLive({ adminToken } = {}) {
                   </div>
                 ))}
               </div>
+              {pageCount > 1 && (
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginTop:20}}>
+                  <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={currentPage<=1}
+                    style={{padding:"6px 14px",border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:currentPage<=1?"#475569":"#e2e8f0",fontSize:12,cursor:currentPage<=1?"default":"pointer",fontFamily:"inherit"}}>
+                    ← Précédent
+                  </button>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>Page {currentPage} / {pageCount} · {filtered.length} pharmacie{filtered.length>1?"s":""}</span>
+                  <button onClick={()=>setPage(p=>Math.min(pageCount,p+1))} disabled={currentPage>=pageCount}
+                    style={{padding:"6px 14px",border:"1px solid #334155",borderRadius:8,background:"#1e293b",color:currentPage>=pageCount?"#475569":"#e2e8f0",fontSize:12,cursor:currentPage>=pageCount?"default":"pointer",fontFamily:"inherit"}}>
+                    Suivant →
+                  </button>
+                </div>
+              )}
             </div>
           )
         ) : tab === "carte" ? (
