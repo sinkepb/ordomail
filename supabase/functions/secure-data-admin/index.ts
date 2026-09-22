@@ -75,23 +75,55 @@ Deno.serve(async (req) => {
       const now30 = new Date(Date.now() - 30 * 86400000).toISOString();
       const now7  = new Date(Date.now() - 7 * 86400000).toISOString();
       const now24 = new Date(Date.now() - 86400000).toISOString();
+      // "Jour" = jour calendaire (minuit → maintenant), comme le badge de
+      // notification du dashboard pharmacie (Dashboard.jsx) — pas un glissant
+      // 24h, pour rester cohérent avec ce que le titulaire voit déjà. "Semaine"
+      // et "mois" restent des fenêtres glissantes 7j/30j : c'est déjà la
+      // convention établie ici pour ordos_semaine/ordos_mois, pas de raison
+      // d'introduire une deuxième convention (semaine/mois calendaires) rien
+      // que pour les nouvelles stats scans/connexions.
+      const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
 
       const enriched = await Promise.all((pharmacies || []).map(async (ph: any) => {
         const [
           { count: total },
           { count: mois },
           { count: semaine },
+          { count: jour },
           { count: attente },
           { data: canaux },
           { data: offres },
+          { data: scans },
+          { data: connexions },
         ] = await Promise.all([
           sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id),
           sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).gte("received_at", now30),
           sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).gte("received_at", now7),
+          sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).gte("received_at", startOfToday),
           sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", ph.id).eq("status", "nouveau").lte("received_at", now24),
           sb.from("ordonnances").select("source").eq("pharmacie_id", ph.id).gte("received_at", now30),
           sb.from("offres_stories").select("id", { count: "exact", head: true }).eq("pharmacie_id", ph.id).eq("actif", true),
+          // Scans QR (22/09/2026, voir migration 20260922_qr_scans.sql) — un
+          // seul fetch depuis J-30, buckets jour/semaine/mois calculés ci-dessous
+          // plutôt que 3 requêtes count séparées comme ordonnances au-dessus :
+          // ce endpoint tourne déjà 6 requêtes par pharmacie, pas besoin d'en
+          // ajouter 3 de plus par nouvelle métrique.
+          sb.from("qr_scans").select("scanned_at").eq("pharmacie_id", ph.id).gte("scanned_at", now30),
+          // Connexions (email = titulaire, PIN = vendeur) — déjà tracées dans
+          // audit_logs (action:"login", voir LoginPage.jsx) mais jamais
+          // agrégées jusqu'ici. user_role distingue email ("admin") de PIN
+          // ("vendeur") : pas de nouvelle colonne nécessaire.
+          sb.from("audit_logs").select("user_role, created_at").eq("pharmacie_id", ph.id).eq("action", "login").gte("created_at", now30),
         ]);
+
+        const bucket = (rows: any[], dateField: string) => ({
+          jour: rows.filter((r) => r[dateField] >= startOfToday).length,
+          semaine: rows.filter((r) => r[dateField] >= now7).length,
+          mois: rows.length, // déjà filtré à J-30 dans la requête
+        });
+        const scansBucket = bucket(scans || [], "scanned_at");
+        const loginsEmail = bucket((connexions || []).filter((c: any) => c.user_role === "admin"), "created_at");
+        const loginsPin   = bucket((connexions || []).filter((c: any) => c.user_role === "vendeur"), "created_at");
 
         const totalCanaux    = canaux?.length || 0;
         const qrCount        = canaux?.filter((o: any) => o.source === "qrcode").length || 0;
@@ -118,7 +150,17 @@ Deno.serve(async (req) => {
           ordos_total: total || 0,
           ordos_mois: mois || 0,
           ordos_semaine: semaine || 0,
+          ordos_jour: jour || 0,
           ordos_attente: attente || 0,
+          scans_jour: scansBucket.jour,
+          scans_semaine: scansBucket.semaine,
+          scans_mois: scansBucket.mois,
+          connexions_email_jour: loginsEmail.jour,
+          connexions_email_semaine: loginsEmail.semaine,
+          connexions_email_mois: loginsEmail.mois,
+          connexions_pin_jour: loginsPin.jour,
+          connexions_pin_semaine: loginsPin.semaine,
+          connexions_pin_mois: loginsPin.mois,
           canal_qr_pct: canalQrPct,
           canal_email_pct: canalEmailPct,
           offres_actives: offres?.length || 0,

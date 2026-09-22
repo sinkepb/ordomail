@@ -86,6 +86,33 @@ function ClientDetail({ client: ph, plans, onClose }) {
               </div>
             ))}
           </div>
+
+          {/* Statistiques d'usage jour/semaine/mois (22/09/2026) — dépôts déjà
+              suivis via ordonnances, scans via qr_scans (nouveau, voir
+              log-qr-scan), connexions via audit_logs (action:"login",
+              déjà tracées mais jamais agrégées avant ce jour). */}
+          <div style={{background:"#0f172a",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>📊 Statistiques d'usage</div>
+            <div style={{display:"flex",fontSize:10,color:"#64748b",fontWeight:700,padding:"4px 0 6px",borderBottom:"1px solid #1e293b"}}>
+              <span style={{flex:1}}></span>
+              <span style={{width:40,textAlign:"center"}}>Jour</span>
+              <span style={{width:48,textAlign:"center"}}>Sem.</span>
+              <span style={{width:40,textAlign:"center"}}>Mois</span>
+            </div>
+            {[
+              ["📥 Dépôts d'ordonnances", ph.ordos_jour, ph.ordos_semaine, ph.ordos_mois, "#4ade80"],
+              ["📱 Scans QR code", ph.scans_jour, ph.scans_semaine, ph.scans_mois, "#60a5fa"],
+              ["👑 Connexions email", ph.connexions_email_jour, ph.connexions_email_semaine, ph.connexions_email_mois, "#a78bfa"],
+              ["🔢 Connexions PIN", ph.connexions_pin_jour, ph.connexions_pin_semaine, ph.connexions_pin_mois, "#fbbf24"],
+            ].map(([label, j, s, m, color]) => (
+              <div key={label} style={{display:"flex",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
+                <span style={{flex:1,fontSize:12,color:"#94a3b8"}}>{label}</span>
+                <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{j||0}</span>
+                <span style={{width:48,textAlign:"center",fontSize:14,fontWeight:900,color}}>{s||0}</span>
+                <span style={{width:40,textAlign:"center",fontSize:14,fontWeight:900,color}}>{m||0}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ── Colonne droite ── */}
