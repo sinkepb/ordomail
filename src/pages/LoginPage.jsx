@@ -525,7 +525,15 @@ function AppLogin({ onBack, onLogout, onGoToPricing, onNeedsSubscription, Dashbo
   // leurs libellés déjà prévus dans LogsPanel.jsx (actionLabel.login/logout) —
   // seuls view/print/reopen (Dashboard.jsx) écrivaient réellement dans audit_logs.
   async function handleLogout() {
-    addAuditLog({ userId:session?.userId, userRole:session?.userRole, pharmacieId:session?.pharmacieId, action:"logout", posteNom:session?.posteNom }).catch(()=>{});
+    // @fix 24/09/2026 (régression) — addAuditLog() passe désormais par un
+    // appel réseau à secure-data (voir audit.js), qui doit d'abord résoudre
+    // le jeton de session en cours via un await. En fire-and-forget comme
+    // avant (sans attendre ici), authSignOut() juste en dessous pouvait
+    // invalider ce jeton avant que la requête ne parte réellement — l'entrée
+    // "logout" du Journal d'activité n'était alors jamais écrite (vérifié en
+    // direct : "login" apparaissait, "logout" jamais). Attendre l'appel ici
+    // le fait partir avec un jeton encore valide.
+    await addAuditLog({ userId:session?.userId, userRole:session?.userRole, pharmacieId:session?.pharmacieId, action:"logout", posteNom:session?.posteNom }).catch(()=>{});
     await authSignOut(); window.__ordomailSession=null; setSession(null); (onLogout || onBack)?.();
   }
 
