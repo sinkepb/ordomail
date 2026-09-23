@@ -11,6 +11,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -33,6 +35,16 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // @fix 24/09/2026 (audit) — endpoint public sans authentification, aucune
+    // limitation de débit jusqu'ici : aspiration complète de l'annuaire
+    // (~10k lignes) possible en variant `q`. 60 requêtes/5min par IP — large
+    // marge pour une saisie légitime au clavier (un appel par frappe dès 2
+    // caractères), mais bloque un script de scraping.
+    const allowed = await checkRateLimit(sb, "search-pharmacies-referentiel", getClientIp(req), 60, 5);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques instants" }), { status: 429, headers: CORS });
+    }
+
     // pg_trgm : tolère les fautes de frappe/variantes, classe par pertinence
     // (similarity) plutôt qu'un simple ILIKE préfixe.
     const { data, error } = await sb.rpc("search_pharmacies_referentiel", { q, max_results: 8 });
@@ -40,7 +52,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ data: data || [] }), { headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "search-pharmacies-referentiel") }),
       { status: 500, headers: CORS });
   }
 });

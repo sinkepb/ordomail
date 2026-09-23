@@ -106,6 +106,20 @@ describe.skipIf(!canRun)('RLS live — offre_interets, rate-limit, stories_conte
     });
   });
 
+  // @fix 24/09/2026 (audit) — la policy "audit_logs_insert" (WITH CHECK(true))
+  // autorisait n'importe qui avec la clé anon à écrire dans le journal
+  // d'audit de n'importe quelle pharmacie. Fermée (20260924_audit_logs_close_
+  // open_insert.sql) : l'écriture passe désormais exclusivement par
+  // secure-data:audit_log_create (clé de service, appelant vérifié).
+  describe('audit_logs — écriture fermée au client', () => {
+    it('anon ne peut PAS INSERT directement (doit passer par secure-data:audit_log_create)', async () => {
+      const { error } = await anon.from('audit_logs').insert({
+        pharmacie_id: testPharmacieId, action: 'login',
+      });
+      expect(error).not.toBeNull();
+    });
+  });
+
   describe('pin_verification_attempts / submission_log — rate-limit non contournable', () => {
     let attemptId, logId;
 

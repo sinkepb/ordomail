@@ -12,6 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode, validateFile } from "../_shared/upload-validation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 const MAX_SUBMISSIONS_PER_WINDOW = 20;
 const WINDOW_MINUTES = 10;
@@ -142,7 +143,7 @@ serve(async (req) => {
       message: `Échec dépôt ordonnance — ${e.message}`,
     });
     return new Response(
-      JSON.stringify({ error: e.message }),
+      JSON.stringify({ error: safeErrorMessage(e, "submit-ordonnance") }),
       { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
     );
   }

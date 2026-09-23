@@ -5,6 +5,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { maskId } from "../_shared/log-mask.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -14,6 +17,23 @@ Deno.serve(async (req) => {
   });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: CORS });
+  }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  // @fix 24/09/2026 (audit) — aucune limitation de débit jusqu'ici : création
+  // de comptes en masse possible sans frein. 5 inscriptions/heure par IP —
+  // large marge pour un usage légitime (une officine ne s'inscrit qu'une
+  // fois), mais bloque un script automatisé.
+  const allowed = await checkRateLimit(supabase, "register-pharmacie", getClientIp(req), 5, 60);
+  if (!allowed) {
+    return new Response(
+      JSON.stringify({ error: "Trop de tentatives d'inscription — réessayez dans quelques instants" }),
+      { status: 429, headers: CORS }
+    );
   }
 
   try {
@@ -35,11 +55,6 @@ Deno.serve(async (req) => {
         { status: 400, headers: CORS }
       );
     }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
     // Générer le code vendeur (6 chiffres unique)
     const codeVendeur = String(100000 + Math.floor(Math.random() * 900000));
@@ -108,8 +123,16 @@ Deno.serve(async (req) => {
     }
 
     if (phErr) {
+      // @fix 24/09/2026 (audit) — contrairement à tous les autres chemins
+      // critiques (submit-ordonnance, stripe-webhook...), un échec ici
+      // n'alertait jamais : un souci sur l'inscription (impact direct sur le
+      // chiffre d'affaires) pouvait passer totalement inaperçu.
+      await reportAlert(supabase, {
+        source: "register-pharmacie", severity: "critical",
+        message: `Échec de création pharmacie — ${phErr.message}`,
+      });
       return new Response(
-        JSON.stringify({ error: phErr.message }),
+        JSON.stringify({ error: safeErrorMessage(new Error(phErr.message), "register-pharmacie") }),
         { status: 500, headers: CORS }
       );
     }
@@ -191,9 +214,12 @@ Deno.serve(async (req) => {
     }), { headers: CORS });
 
   } catch (e) {
-    console.error("[register-pharmacie] Erreur:", e.message);
+    await reportAlert(supabase, {
+      source: "register-pharmacie", severity: "critical",
+      message: `Échec d'inscription — ${(e as Error).message}`,
+    });
     return new Response(
-      JSON.stringify({ error: e.message }),
+      JSON.stringify({ error: safeErrorMessage(e, "register-pharmacie") }),
       { status: 500, headers: CORS }
     );
   }

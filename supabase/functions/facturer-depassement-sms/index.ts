@@ -22,8 +22,14 @@ import Stripe from "https://esm.sh/stripe@14.0.0";
 import { reportAlert } from "../_shared/alert.ts";
 import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
 import { SMS_INCLUS_MENSUEL } from "../_shared/smsQuota.ts";
+import { mapWithConcurrency } from "../_shared/concurrency.ts";
 
 const PRIX_SMS_DEPASSEMENT_CENTIMES = 10; // 0,10 € / SMS au-delà du quota
+// @fix 24/09/2026 (audit) — séquentiel jusqu'ici ; chaque pharmacie est
+// traitée indépendamment (idempotence par pharmacie+mois), donc paralléliser
+// est sûr. Concurrence bornée pour ne pas bombarder Stripe/le prestataire
+// d'email de dizaines d'appels simultanés le 1er de chaque mois.
+const FACTURATION_CONCURRENCY = 5;
 
 function isSmsReel(e: { type: string; meta?: { canal?: string } }): boolean {
   return e.type === "sms_envoye" && e.meta?.canal !== "email_test";
@@ -53,14 +59,13 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 
-  let facturees = 0;
   const erreurs: string[] = [];
 
-  for (const ph of pharmacies || []) {
+  const outcomes = await mapWithConcurrency(pharmacies || [], FACTURATION_CONCURRENCY, async (ph): Promise<boolean> => {
     try {
       const { data: rappels } = await supabase.from("rappels_ordonnance").select("id").eq("pharmacie_id", ph.id);
       const rappelIds = (rappels || []).map((r: { id: string }) => r.id);
-      if (rappelIds.length === 0) continue;
+      if (rappelIds.length === 0) return false;
 
       const { data: evenements } = await supabase.from("rappels_evenements")
         .select("type, meta, created_at")
@@ -69,14 +74,14 @@ Deno.serve(async (req) => {
         .lt("created_at", debutMoisCourant.toISOString());
       const smsEnvoyes = (evenements || []).filter(isSmsReel).length;
       const depassement = Math.max(0, smsEnvoyes - SMS_INCLUS_MENSUEL);
-      if (depassement === 0) continue;
+      if (depassement === 0) return false;
 
       // Idempotence (relance manuelle du job pour le même mois) — une seule
       // ligne Stripe par pharmacie et par mois, jamais de double facturation.
       const { data: dejaFacture } = await supabase.from("alerts")
         .select("id").eq("source", "facturer-depassement-sms")
         .contains("meta", { pharmacieId: ph.id, mois: libelleMois }).limit(1);
-      if (dejaFacture && dejaFacture.length > 0) continue;
+      if (dejaFacture && dejaFacture.length > 0) return false;
 
       const montantCentimes = depassement * PRIX_SMS_DEPASSEMENT_CENTIMES;
       const description = `SMS de rappel au-delà du quota inclus — ${libelleMois} : ${depassement} SMS × 0,10 €`;
@@ -108,11 +113,13 @@ Deno.serve(async (req) => {
         message: `${depassement} SMS facturés pour ${ph.nom} (${libelleMois}) — ${(montantCentimes / 100).toFixed(2)} €`,
         meta: { pharmacieId: ph.id, mois: libelleMois, smsEnvoyes, depassement, montantCentimes },
       });
-      facturees++;
+      return true;
     } catch (e) {
       erreurs.push(`${ph.id}: ${(e as Error).message}`);
+      return false;
     }
-  }
+  });
+  const facturees = outcomes.filter(Boolean).length;
 
   if (erreurs.length) {
     await reportAlert(supabase, {

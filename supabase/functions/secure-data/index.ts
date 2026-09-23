@@ -34,6 +34,8 @@ import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
+import { escapeHtml } from "../_shared/html.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -55,7 +57,7 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    const { pharmacieId, vendeurSub } = await resolveCaller(bearer, jwtSecret, sb);
+    const { pharmacieId, vendeurSub, userId: callerUserId } = await resolveCaller(bearer, jwtSecret, sb);
 
     if (!pharmacieId) {
       return new Response(JSON.stringify({ error: "Authentification requise" }),
@@ -82,6 +84,33 @@ Deno.serve(async (req) => {
         await sb.from("vendeur_sessions").delete().eq("id", vendeurSub).eq("pharmacie_id", pharmacieId);
       }
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Journal d'audit (24/09/2026, audit sécurité) — remplace l'INSERT direct
+    // depuis le navigateur (src/lib/supabase/audit.js:addAuditLog), qui reposait
+    // sur une policy RLS ouverte à tous (WITH CHECK(true), voir migration
+    // 20260808_audit_logs_policies.sql) : à l'époque, un poste vendeur (PIN, pas
+    // de session Supabase Auth) n'avait aucun autre moyen de s'authentifier pour
+    // une écriture directe. resolveCaller() vérifie désormais le jeton
+    // vendeur/la session titulaire ICI — pharmacie_id/user_id/user_role ne
+    // viennent donc plus jamais du client (seuls action/ordonnanceId/posteNom,
+    // purement cosmétiques, le sont encore). Voir migration
+    // 20260924_audit_logs_close_open_insert.sql pour la fermeture de la policy.
+    if (resource === "audit_log_create") {
+      const { action, ordonnanceId, posteNom } = params || {};
+      const ACTIONS_CONNUES = new Set(["view", "print", "download", "delete", "upload", "reopen", "login", "logout"]);
+      if (!ACTIONS_CONNUES.has(action)) {
+        return new Response(JSON.stringify({ error: "action invalide" }), { status: 400, headers: CORS });
+      }
+      await sb.from("audit_logs").insert({
+        pharmacie_id: pharmacieId,
+        user_id: vendeurSub || callerUserId || null,
+        user_role: vendeurSub ? "vendeur" : "admin",
+        poste_nom: posteNom?.trim() || null,
+        action,
+        ordonnance_id: ordonnanceId || null,
+      });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     if (resource === "ordonnances") {
@@ -542,6 +571,10 @@ Deno.serve(async (req) => {
         medecin_prescripteur: medecinPrescripteur?.trim() || null,
         specialite: specialite?.trim() || null,
         consentement_sms: true,
+        // @fix 24/09/2026 (audit RGPD) — horodatage du recueil du consentement,
+        // pour pouvoir le démontrer en cas de contestation (art. 7(1)) — voir
+        // migration 20260924_consentement_sms_horodatage.sql.
+        consentement_sms_horodatage: new Date().toISOString(),
         token: generateShortToken(),
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
@@ -861,15 +894,30 @@ Deno.serve(async (req) => {
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
+      let emailDestination: string | null = null;
       if (email?.trim()) {
         canal = "email_test";
+        // @fix 24/09/2026 (audit) — `email` n'est plus utilisé comme adresse de
+        // destination : un appelant authentifié (vendeur ou titulaire) pouvait
+        // sinon faire envoyer un email à N'IMPORTE QUELLE adresse depuis
+        // l'infrastructure OrdoMail (relais de spam/phishing), en plus d'un
+        // corps HTML construit à partir de champs patient non échappés
+        // (injection HTML). `email` n'est donc plus qu'un booléen "utiliser le
+        // canal email" ; la destination réelle est toujours l'adresse déjà
+        // enregistrée de la pharmacie, jamais une valeur fournie par le client.
+        const { data: phEmail } = await sb.from("pharmacies").select("email").eq("id", pharmacieId).maybeSingle();
+        if (!phEmail?.email) {
+          return new Response(JSON.stringify({ error: "Aucune adresse email enregistrée pour cette pharmacie" }), { status: 400, headers: CORS });
+        }
+        emailDestination = phEmail.email;
         // Toutes les lignes du message sauf la dernière (le lien brut, déjà
         // repris juste après en lien cliquable) — sinon seule la première
         // ligne apparaissait dans l'email depuis la mise en forme multi-ligne
-        // du message (07/09/2026).
-        const bodyLines = message.split("\n").slice(0, -1);
+        // du message (07/09/2026). Échappées (audit 24/09/2026) : construites
+        // à partir de champs patient (nom, spécialité...) non fiables.
+        const bodyLines = message.split("\n").slice(0, -1).map(escapeHtml);
         const html = `<p>${bodyLines.join("<br>")}</p><p><a href="${lien}">${lien}</a></p>`;
-        const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
+        const result = await sendTransactionalEmail(phEmail.email, `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
         if (!result.success) {
           return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
         }
@@ -887,7 +935,7 @@ Deno.serve(async (req) => {
         date_dernier_sms_envoye: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(canal === "email_test" ? { to: email.trim() } : {}) } });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(emailDestination ? { to: emailDestination } : {}) } });
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
     }
 
@@ -905,7 +953,11 @@ Deno.serve(async (req) => {
       const pharmacieNom = ph?.nom || "Pharmacie inconnue";
       const auteur = vendeurSub ? (posteNom?.trim() || "Poste vendeur") : "Titulaire";
       const safeQuestion = String(question).trim().slice(0, 2000);
-      const html = `<p><strong>Pharmacie :</strong> ${pharmacieNom} (${ph?.email || "—"})</p><p><strong>Posé par :</strong> ${auteur}</p><p><strong>Question :</strong></p><p>${safeQuestion.replace(/\n/g, "<br>")}</p>`;
+      // @fix 24/09/2026 (audit) — pharmacieNom/email/auteur/safeQuestion sont
+      // tous dérivés de champs modifiables par l'utilisateur (nom de pharmacie,
+      // nom de poste vendeur, question libre) : échappés avant interpolation
+      // HTML pour éviter une injection de balises dans l'email de support.
+      const html = `<p><strong>Pharmacie :</strong> ${escapeHtml(pharmacieNom)} (${escapeHtml(ph?.email || "—")})</p><p><strong>Posé par :</strong> ${escapeHtml(auteur)}</p><p><strong>Question :</strong></p><p>${escapeHtml(safeQuestion).replace(/\n/g, "<br>")}</p>`;
       const text = `Pharmacie : ${pharmacieNom} (${ph?.email || "—"})\nPosé par : ${auteur}\n\nQuestion :\n${safeQuestion}`;
       const result = await sendTransactionalEmail("contact@ordomail.fr", `[Aide] Question de ${pharmacieNom}`, html, text);
       if (!result.success) {
@@ -931,7 +983,7 @@ Deno.serve(async (req) => {
       { status: 400, headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "secure-data") }),
       { status: 500, headers: CORS });
   }
 });

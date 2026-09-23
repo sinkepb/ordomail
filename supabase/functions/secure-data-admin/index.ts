@@ -23,6 +23,7 @@ import { validateFile } from "../_shared/upload-validation.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { runPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -947,7 +948,7 @@ Deno.serve(async (req) => {
       { status: 400, headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "secure-data-admin") }),
       { status: 500, headers: CORS });
   }
 });

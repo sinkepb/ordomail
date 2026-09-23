@@ -19,7 +19,10 @@ import { verifyToken } from "./jwt.ts";
 // en mode PIN unique. Exposé ici (plutôt que redécodé ailleurs) pour rester
 // la seule source de vérité sur le contenu du jeton — voir vendeur_heartbeat/
 // vendeur_release_session (secure-data), seuls consommateurs pour l'instant.
-export type Caller = { pharmacieId: string | null; isAdmin: boolean; vendeurSub: string | null };
+// userId (24/09/2026, voir secure-data:audit_log_create) : l'id Supabase Auth
+// du titulaire quand l'appelant est authentifié par session Auth — null pour
+// un poste vendeur (utiliser vendeurSub) ou un admin backoffice.
+export type Caller = { pharmacieId: string | null; isAdmin: boolean; vendeurSub: string | null; userId: string | null };
 
 /** Identifie l'appelant à partir de l'en-tête Authorization. Ne lève jamais —
  * renvoie { pharmacieId: null, isAdmin: false } si rien n'est reconnu ; c'est
@@ -31,10 +34,10 @@ export async function resolveCaller(
 ): Promise<Caller> {
   const internal = bearer ? await verifyToken(bearer, jwtSecret) : { valid: false as const, error: "" };
   if (internal.valid && internal.payload.role === "vendeur") {
-    return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false, vendeurSub: String(internal.payload.sub || "") || null };
+    return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false, vendeurSub: String(internal.payload.sub || "") || null, userId: null };
   }
   if (internal.valid && internal.payload.role === "admin") {
-    return { pharmacieId: null, isAdmin: true, vendeurSub: null };
+    return { pharmacieId: null, isAdmin: true, vendeurSub: null, userId: null };
   }
   if (bearer) {
     // Ni jeton vendeur ni jeton admin — tenter une session Supabase Auth (titulaire)
@@ -45,8 +48,8 @@ export async function resolveCaller(
         .select("pharmacie_id")
         .eq("id", userData.user.id)
         .maybeSingle();
-      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false, vendeurSub: null };
+      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false, vendeurSub: null, userId: userData.user.id };
     }
   }
-  return { pharmacieId: null, isAdmin: false, vendeurSub: null };
+  return { pharmacieId: null, isAdmin: false, vendeurSub: null, userId: null };
 }

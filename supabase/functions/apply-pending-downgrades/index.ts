@@ -12,10 +12,14 @@ import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
+import { mapWithConcurrency } from "../_shared/concurrency.ts";
 
 // Libellés commerciaux (voir src/lib/plans.js:PLAN_LIMITS, dupliqué ici —
 // cette fonction Deno ne peut pas importer le module frontend ESM).
 const PLAN_LABELS: Record<string, string> = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
+// @fix 24/09/2026 (audit) — séquentiel jusqu'ici ; chaque pharmacie est
+// indépendante, concurrence bornée pour ne pas bombarder Stripe/l'email.
+const DOWNGRADE_CONCURRENCY = 5;
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, { "Content-Type": "application/json" });
@@ -38,9 +42,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });
   }
 
-  let applied = 0;
   const errors: string[] = [];
-  for (const ph of pending || []) {
+  const outcomes = await mapWithConcurrency(pending || [], DOWNGRADE_CONCURRENCY, async (ph): Promise<boolean> => {
     try {
       const newPlan = ph.plan_pending!;
       const lookupKey = `price_${newPlan}_${ph.plan_pending_billing === "annual" ? "annual" : "monthly"}`;
@@ -87,11 +90,13 @@ Deno.serve(async (req) => {
           });
         }
       }
-      applied++;
+      return true;
     } catch (e) {
       errors.push(`${ph.id}: ${(e as Error).message}`);
+      return false;
     }
-  }
+  });
+  const applied = outcomes.filter(Boolean).length;
 
   if (errors.length) {
     await reportAlert(supabase, {

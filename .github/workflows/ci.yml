@@ -41,7 +41,32 @@ jobs:
         run: npm run lint
 
       - name: Tests
+        # @fix 24/09/2026 (audit) — ces secrets n'étaient jamais transmis au
+        # process de test, même s'ils avaient été ajoutés comme secrets du
+        # dépôt : la suite RLS live (rls.live.test.js) ne pouvait donc
+        # matériellement jamais tourner en CI, quoi qu'en dise le commentaire
+        # d'en-tête du fichier ("tourne en CI dès qu'ils sont configurés").
+        # `secrets.*` renvoie une chaîne vide si le secret n'existe pas — le
+        # comportement pour un contributeur/fork sans accès reste inchangé
+        # (suite silencieusement skippée, voir l'avertissement ci-dessous).
+        env:
+          RLS_TEST_SERVICE_ROLE_KEY: ${{ secrets.RLS_TEST_SERVICE_ROLE_KEY }}
+          RLS_TEST_JWT_SECRET: ${{ secrets.RLS_TEST_JWT_SECRET }}
+          RLS_TEST_SUPABASE_URL: ${{ secrets.RLS_TEST_SUPABASE_URL }}
+          RLS_TEST_ANON_KEY: ${{ secrets.RLS_TEST_ANON_KEY }}
         run: npm test
+
+      - name: Avertir si la suite RLS live est skippée
+        # @fix 24/09/2026 (audit) — "couverture quasi nulle... pire, le test
+        # d'intégration RLS est censé tourner en CI mais s'auto-désactive
+        # silencieusement — fausse impression de couverture à chaque exécution
+        # verte". Ce step rend le skip IMPOSSIBLE à manquer dans les logs CI,
+        # plutôt que noyé dans le résumé vitest ("15 skipped" parmi 83 tests).
+        # Ne fait jamais échouer le build (cohérent avec DEPLOIEMENT_CHECKLIST.md
+        # § 1 : un contributeur sans accès à ces secrets ne doit pas être bloqué).
+        if: ${{ !secrets.RLS_TEST_SERVICE_ROLE_KEY || !secrets.RLS_TEST_JWT_SECRET }}
+        run: |
+          echo "::warning::Suite RLS live (rls.live.test.js) SKIPPÉE — RLS_TEST_SERVICE_ROLE_KEY et/ou RLS_TEST_JWT_SECRET absents des secrets du dépôt. Cette CI n'a PAS vérifié le comportement réel des policies RLS contre un vrai projet Supabase. Voir DEPLOIEMENT_CHECKLIST.md § 1."
 
       - name: Build
         run: npm run build
@@ -83,3 +108,42 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  deploy-functions:
+    # Déploiement des fonctions Edge Supabase — OPT-IN, INACTIF tant que les
+    # secrets ci-dessous ne sont pas configurés dans les paramètres du dépôt
+    # (Settings → Secrets and variables → Actions). Ce job ne fait donc RIEN
+    # aujourd'hui — le workflow manuel documenté dans DEPLOIEMENT_CHECKLIST.md
+    # § 2 reste la procédure en vigueur tant qu'il n'est pas activé.
+    #
+    # @fix 24/09/2026 (audit, finding "Déploiement des fonctions Edge
+    # entièrement manuel") — répond à un incident réel observé pendant une
+    # session de travail : un correctif fusionné sur main (suppression
+    # d'ordonnance) est resté inactif en production plusieurs jours, jusqu'au
+    # lancement manuel de `supabase functions deploy`. Reste volontairement
+    # opt-in plutôt qu'activé d'office : automatiser un déploiement vers un
+    # environnement qui porte des données de santé (ordonnances) est une
+    # décision produit, pas seulement technique — à activer une fois le
+    # processus validé, pas comme effet de bord d'un audit.
+    #
+    # Pour l'activer : ajouter les secrets SUPABASE_ACCESS_TOKEN (jeton
+    # personnel, dashboard.supabase.com/account/tokens) et
+    # SUPABASE_PROJECT_REF (hdgpkgaznsaocczxvaix, projet de production) au
+    # dépôt GitHub. Les migrations SQL restent hors périmètre de ce job —
+    # DEPLOIEMENT_CHECKLIST.md § 3 documente pourquoi `supabase db push` est
+    # resté un processus manuel (historique de migrations fragile).
+    needs: build-and-lint
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Déployer les fonctions Edge (si SUPABASE_ACCESS_TOKEN configuré)
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_PROJECT_REF != '' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: npx supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --use-api
+
+      - name: Non configuré — déploiement toujours manuel
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN == '' || secrets.SUPABASE_PROJECT_REF == '' }}
+        run: echo "::notice::SUPABASE_ACCESS_TOKEN/SUPABASE_PROJECT_REF non configurés — déploiement des fonctions Edge toujours manuel, voir DEPLOIEMENT_CHECKLIST.md § 2."

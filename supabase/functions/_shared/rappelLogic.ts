@@ -11,6 +11,14 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendSms } from "./sms.ts";
 import { generateShortToken } from "./shortToken.ts";
+import { mapWithConcurrency } from "./concurrency.ts";
+
+// @fix 24/09/2026 (audit) — traitement séquentiel jusqu'ici (un SMS + 2
+// écritures par rappel dû, borné par le timeout de la fonction) ; c'est le
+// cron le plus exposé (le seul appelant un service externe par ligne).
+// Concurrence bornée plutôt qu'illimitée — évite de bombarder l'adaptateur
+// SMS (et le futur prestataire réel) de dizaines d'envois simultanés.
+const RAPPEL_SCAN_CONCURRENCY = 5;
 
 export interface RappelScanResult {
   scanned: number;
@@ -63,8 +71,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
     .lte("date_prochaine_relance", new Date().toISOString());
   if (error) throw new Error(error.message);
 
-  let sent = 0, failed = 0;
-  for (const rappel of dus || []) {
+  const outcomes = await mapWithConcurrency(dus || [], RAPPEL_SCAN_CONCURRENCY, async (rappel): Promise<"sent" | "failed"> => {
     try {
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
@@ -74,9 +81,8 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 
       if (!result.success) {
-        failed++;
         await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu" } });
-        continue;
+        return "failed";
       }
 
       await sb.from("rappels_ordonnance").update({
@@ -86,12 +92,14 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
       await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
-      sent++;
+      return "sent";
     } catch (e) {
-      failed++;
       console.error(`[rappel] échec pour ${rappel.id}:`, (e as Error).message);
+      return "failed";
     }
-  }
+  });
 
+  const sent = outcomes.filter((o) => o === "sent").length;
+  const failed = outcomes.filter((o) => o === "failed").length;
   return { scanned: (dus || []).length, sent, failed };
 }

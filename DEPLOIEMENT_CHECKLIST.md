@@ -128,7 +128,19 @@ supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
 - [x] `RAPPEL_CRON_SECRET` — **(04/09/2026)** partagé avec le job pg_cron qui appelle `send-rappel-sms` (rappels de renouvellement d'ordonnance) — déjà configuré + job créé sur preview et production lors du lancement de la fonctionnalité. **⚠️ L'envoi SMS est un adaptateur mock (`_shared/sms.ts`) — aucun SMS réel n'est envoyé tant qu'un prestataire (Brevo, décidé) n'est branché.**
 - [x] `POSTMARK_SERVER_TOKEN` — **(04/09/2026)** Server API Token Postmark (sortant — différent de `POSTMARK_WEBHOOK_SECRET`, qui sécurise seulement le webhook entrant) nécessaire au bouton "Envoyer (test)" des rappels (`_shared/email.ts`, `secure-data:rappels_envoyer_test`) : envoie le lien de rappel par email pour tester le parcours patient avant que le SMS réel soit branché. Configuré + envoi confirmé en direct (Postmark a accepté l'appel, statut du rappel passé à `sms_envoye`) sur preview et production. `EMAIL_FROM` configuré à `OrdoMail <contact@ordomail.fr>`.
 
-Déployer chaque fonction modifiée :
+**24/09/2026 — déploiement CI disponible, opt-in.** Un job `deploy-functions`
+existe désormais dans `.github/workflows/ci.yml`, déclenché sur push vers
+`main`, mais **inactif tant que les secrets ne sont pas configurés** (répond
+au finding d'audit "déploiement entièrement manuel", suite à l'incident du
+correctif `ordonnances_delete` resté inactif plusieurs jours). Pour l'activer :
+ajouter `SUPABASE_ACCESS_TOKEN` (dashboard.supabase.com/account/tokens) et
+`SUPABASE_PROJECT_REF` (`hdgpkgaznsaocczxvaix` pour la production) comme
+secrets du dépôt GitHub (Settings → Secrets and variables → Actions). Tant que
+ces secrets ne sont pas ajoutés, rien ne change : la procédure manuelle
+ci-dessous reste la référence. Les migrations SQL restent hors périmètre de ce
+job (voir § 3 — `supabase db push` reste manuel).
+
+Déployer chaque fonction modifiée (procédure manuelle actuelle) :
 ```bash
 supabase functions deploy secure-data
 supabase functions deploy verify-pin

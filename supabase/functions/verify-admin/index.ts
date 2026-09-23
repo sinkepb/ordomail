@@ -7,6 +7,7 @@ import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 const ADMIN_TOKEN_TTL_SECONDS = 4 * 3600; // 4h de session backoffice
 
@@ -90,7 +91,7 @@ serve(async (req) => {
 
   } catch(e) {
     return new Response(
-      JSON.stringify({ success: false, error: e.message }),
+      JSON.stringify({ success: false, error: safeErrorMessage(e, "verify-admin") }),
       { status: 500, headers: CORS }
     );
   }

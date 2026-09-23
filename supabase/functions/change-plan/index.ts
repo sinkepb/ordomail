@@ -12,6 +12,7 @@ import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 // Ordre des plans — sert uniquement à détecter upgrade vs downgrade (§13),
 // pas les limites/fonctionnalités elles-mêmes (voir planFeatures.ts).
@@ -149,6 +150,6 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: true, newPlan }), { headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "change-plan") }), { status: 500, headers: CORS });
   }
 });
