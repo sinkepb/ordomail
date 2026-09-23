@@ -27,6 +27,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
+import { reportAlert } from "../_shared/alert.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
@@ -500,7 +501,7 @@ Deno.serve(async (req) => {
       // ci-dessus) : la table rappels_ordonnance n'est accessible en écriture
       // que via cette fonction (clé de service), aucune policy RLS ne peut
       // donc porter cette restriction côté client.
-      const { data: ph } = await sb.from("pharmacies").select("plan").eq("id", pharmacieId).maybeSingle();
+      const { data: ph } = await sb.from("pharmacies").select("plan, nom").eq("id", pharmacieId).maybeSingle();
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
@@ -546,6 +547,15 @@ Deno.serve(async (req) => {
       }).select().single();
       if (error) throw new Error(error.message);
       await sb.from("rappels_evenements").insert({ rappel_id: data.id, type: "cree" });
+      // Notification backoffice (22/09/2026, demande titulaire) — visibilité
+      // sur l'activité réseau en direct. severity:"info" pour ne jamais
+      // déclencher le webhook sortant de reportAlert (réservé aux vraies
+      // pannes).
+      await reportAlert(sb, {
+        source: "secure-data", severity: "info",
+        message: `Nouveau rappel créé — ${ph?.nom || pharmacieId} (${nom.trim()} ${prenom.trim()})`,
+        meta: { pharmacieId, rappelId: data.id },
+      });
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 

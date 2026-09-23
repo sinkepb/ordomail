@@ -59,7 +59,7 @@ serve(async (req) => {
 
     // 1. Vérifier que la pharmacie existe ET que le jeton public correspond
     const { data: ph } = await sb.from("pharmacies")
-      .select("id, qr_token").eq("id", pharmacie_id).maybeSingle();
+      .select("id, nom, qr_token").eq("id", pharmacie_id).maybeSingle();
     if (!ph || !ph.qr_token || ph.qr_token !== qr_token) {
       return new Response(JSON.stringify({ error: "Pharmacie introuvable" }),
         { status: 404, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -92,6 +92,16 @@ serve(async (req) => {
     }).select().single();
 
     if (ordoErr) throw new Error(ordoErr.message);
+
+    // Notification backoffice (22/09/2026, demande titulaire) — visibilité sur
+    // l'activité réseau en direct. severity:"info" (pas "critical"/"warning")
+    // pour ne jamais déclencher le webhook sortant de reportAlert (réservé aux
+    // vraies pannes) sur un évènement aussi fréquent qu'un dépôt d'ordonnance.
+    await reportAlert(sb, {
+      source: "submit-ordonnance", severity: "info",
+      message: `Nouvelle ordonnance déposée — ${ph.nom || pharmacie_id} (QR code)`,
+      meta: { pharmacieId: pharmacie_id, ordoId: ordo.id },
+    });
 
     // 4. Uploader le fichier si présent
     if (file && file.size > 0) {

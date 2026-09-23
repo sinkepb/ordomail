@@ -7,6 +7,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 import { verifyWebhookSecret } from "../_shared/webhook-secret.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -64,7 +65,7 @@ serve(async (req) => {
   // ── 2. Identifier la pharmacie par email_reception ──────────────────────────
   const { data: ph } = await supabase
     .from("pharmacies")
-    .select("id")
+    .select("id, nom")
     .eq("email_reception", toEmailClean)
     .single();
 
@@ -88,6 +89,18 @@ serve(async (req) => {
     .single();
 
   console.log("[send-email] ordonnance créée:", maskId(ordo?.id), "code:", maskCode(codePatient));
+
+  // Notification backoffice (22/09/2026, demande titulaire) — même logique que
+  // submit-ordonnance : severity:"info" pour ne jamais déclencher le webhook
+  // sortant de reportAlert (réservé aux vraies pannes) sur un évènement aussi
+  // fréquent qu'un dépôt d'ordonnance.
+  if (ordo) {
+    await reportAlert(supabase, {
+      source: "send-email", severity: "info",
+      message: `Nouvelle ordonnance déposée — ${ph.nom || ph.id} (email)`,
+      meta: { pharmacieId: ph.id, ordoId: ordo.id },
+    });
+  }
 
   // ── 4. Uploader les pièces jointes ──────────────────────────────────────────
   for (const att of (p.Attachments || [])) {
