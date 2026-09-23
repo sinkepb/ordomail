@@ -1348,7 +1348,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
         onConfirm={()=>handleDeleteOrdo(deleteConfirm)}
         onCancel={()=>{setDeleteConfirm(null);setDeleteError("");}}/>}
       {deleteSuccess&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#15803d",color:"#fff",padding:"12px 22px",borderRadius:12,fontWeight:700,fontSize:13.5,boxShadow:"0 8px 24px rgba(21,128,61,0.35)",zIndex:9999,display:"flex",alignItems:"center",gap:8}}>
+        <div style={{position:"fixed",top:24,left:"50%",transform:"translateX(-50%)",background:"#15803d",color:"#fff",padding:"12px 22px",borderRadius:12,fontWeight:700,fontSize:13.5,boxShadow:"0 8px 24px rgba(21,128,61,0.35)",zIndex:9999,display:"flex",alignItems:"center",gap:8}}>
           ✅ Ordonnance supprimée
         </div>
       )}
