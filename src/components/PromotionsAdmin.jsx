@@ -5,8 +5,10 @@
 // (callSecureData local, styles inline, palette sombre).
 import { useState, useEffect } from "react";
 import { PLAN_ORDER, PLAN_LIMITS } from "../lib/plans.js";
+import { PaginationControls } from "./PaginationControls.jsx";
 
 const BILLING_INTERVALS = ["monthly", "annual"];
+const ROWS_PER_PAGE = 10;
 
 function emptyPromo() {
   return { id: null, nom: "", actif: false, plans: [], prixPromoMonthly: {}, prixPromoAnnual: {}, dureeGarantieMois: 24, maxPharmacies: "", dateDebut: "", dateFin: "" };
@@ -19,6 +21,8 @@ function PromotionsAdmin({ adminToken } = {}) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [redemptions, setRedemptions] = useState(null); // {promotionId, rows} | null
+  const [page, setPage] = useState(1);
+  const [redemptionsPage, setRedemptionsPage] = useState(1);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -34,7 +38,7 @@ function PromotionsAdmin({ adminToken } = {}) {
   }
 
   async function load() {
-    setLoading(true); setErr("");
+    setLoading(true); setErr(""); setPage(1);
     try {
       const { data } = await callSecureData("admin_promotions_list");
       setList(data || []);
@@ -60,6 +64,7 @@ function PromotionsAdmin({ adminToken } = {}) {
 
   async function viewRedemptions(promo) {
     setRedemptions({ promotionId: promo.id, nom: promo.nom, rows: null });
+    setRedemptionsPage(1);
     try {
       const { data } = await callSecureData("admin_promotions_redemptions", { promotionId: promo.id });
       setRedemptions({ promotionId: promo.id, nom: promo.nom, rows: data || [] });
@@ -154,6 +159,14 @@ function PromotionsAdmin({ adminToken } = {}) {
     );
   }
 
+  const pageCount = Math.max(1, Math.ceil(list.length / ROWS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedList = list.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
+  const redemptionRows = redemptions?.rows || [];
+  const redemptionsPageCount = Math.max(1, Math.ceil(redemptionRows.length / ROWS_PER_PAGE));
+  const redemptionsCurrentPage = Math.min(redemptionsPage, redemptionsPageCount);
+  const paginatedRedemptions = redemptionRows.slice((redemptionsCurrentPage - 1) * ROWS_PER_PAGE, redemptionsCurrentPage * ROWS_PER_PAGE);
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -168,7 +181,7 @@ function PromotionsAdmin({ adminToken } = {}) {
         <div style={{ ...cardStyle, textAlign: "center", color: "#64748b", padding: 40 }}>Aucune promotion créée.</div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {list.map(promo => {
+        {paginatedList.map(promo => {
           const placesRestantes = promo.max_pharmacies != null ? Math.max(0, promo.max_pharmacies - promo.slots_used) : null;
           return (
             <div key={promo.id} style={cardStyle}>
@@ -201,18 +214,20 @@ function PromotionsAdmin({ adminToken } = {}) {
           );
         })}
       </div>
+      <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={list.length} itemLabel="promotion"/>
       {redemptions && (
         <div onClick={() => setRedemptions(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", maxHeight: "70vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 800, fontSize: 15, color: "#fff", marginBottom: 14 }}>Inscrits — {redemptions.nom}</div>
             {redemptions.rows === null && <div style={{ color: "#64748b", fontSize: 13 }}>Chargement…</div>}
             {redemptions.rows?.length === 0 && <div style={{ color: "#64748b", fontSize: 13 }}>Aucune pharmacie inscrite pour l'instant.</div>}
-            {redemptions.rows?.map(r => (
+            {paginatedRedemptions.map(r => (
               <div key={r.id} style={{ borderBottom: "1px solid #334155", padding: "8px 0", fontSize: 12, color: "#e2e8f0" }}>
                 <div style={{ fontWeight: 700 }}>{r.pharmacies?.nom} <span style={{ color: "#64748b", fontWeight: 400 }}>({r.pharmacies?.email})</span></div>
                 <div style={{ color: "#94a3b8" }}>{PLAN_LIMITS[r.plan_id]?.label || r.plan_id} · {r.prix_garanti} € · garanti jusqu'au {new Date(r.garanti_jusqua).toLocaleDateString("fr-FR")}</div>
               </div>
             ))}
+            <PaginationControls page={redemptionsCurrentPage} setPage={setRedemptionsPage} pageCount={redemptionsPageCount} totalCount={redemptionRows.length} itemLabel="inscrit"/>
             <button onClick={() => setRedemptions(null)} style={{ marginTop: 16, width: "100%", padding: "8px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 12 }}>Fermer</button>
           </div>
         </div>

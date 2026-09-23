@@ -10,6 +10,9 @@
 // la clé anon publique. On rafraîchit donc par sondage court (20s) tant que ce
 // panneau est ouvert — quasi temps réel côté opérateur, sans exposer la table.
 import { useState, useEffect, useRef } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const ALERTS_PER_PAGE = 10;
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -42,6 +45,7 @@ function MonitoringPanel({ adminToken } = {}) {
   const [error, setError]             = useState("");
   const [includeResolved, setInclude] = useState(false);
   const [resolvingId, setResolvingId] = useState(null);
+  const [page, setPage] = useState(1);
   const pollRef = useRef(null);
 
   async function load() {
@@ -57,6 +61,11 @@ function MonitoringPanel({ adminToken } = {}) {
 
   useEffect(() => {
     setLoading(true);
+    // Reset uniquement ici (bascule "Afficher résolues"/montage), PAS dans
+    // load() lui-même — load() est aussi appelé toutes les 20s par le
+    // sondage ci-dessous, et ramener l'admin en page 1 à chaque cycle serait
+    // très gênant s'il consulte une page plus loin dans la liste.
+    setPage(1);
     load();
     pollRef.current = setInterval(load, POLL_MS);
     return () => clearInterval(pollRef.current);
@@ -77,6 +86,9 @@ function MonitoringPanel({ adminToken } = {}) {
   }
 
   const critCount = alerts.filter(a => a.severity === "critical" && !a.resolved).length;
+  const pageCount = Math.max(1, Math.ceil(alerts.length / ALERTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedAlerts = alerts.slice((currentPage - 1) * ALERTS_PER_PAGE, currentPage * ALERTS_PER_PAGE);
 
   return (
     <div>
@@ -116,7 +128,7 @@ function MonitoringPanel({ adminToken } = {}) {
       )}
 
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {alerts.map(a => {
+        {paginatedAlerts.map(a => {
           const sev = SEVERITY[a.severity] || SEVERITY.info;
           return (
             <div key={a.id} style={{
@@ -146,6 +158,7 @@ function MonitoringPanel({ adminToken } = {}) {
           );
         })}
       </div>
+      <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={alerts.length} itemLabel="alerte"/>
     </div>
   );
 }

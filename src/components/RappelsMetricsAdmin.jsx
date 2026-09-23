@@ -9,6 +9,9 @@
 // réseau d'admin_rappels_metrics (qui exclut déjà les envois de test par
 // email du comptage, meta.canal === "email_test").
 import { useState, useEffect } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const ROWS_PER_PAGE = 10;
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -34,6 +37,8 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
   const [quotas, setQuotas]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
+  const [pharmaciePage, setPharmaciePage] = useState(1);
+  const [quotaPage, setQuotaPage] = useState(1);
 
   async function load() {
     setError("");
@@ -44,6 +49,8 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
       ]);
       setData(data);
       setQuotas(quotasRes.data || []);
+      setPharmaciePage(1);
+      setQuotaPage(1);
     } catch(e) {
       setError(e.message);
     }
@@ -66,6 +73,12 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
 
   const g = data?.global || {};
   const parPharmacie = data?.parPharmacie || [];
+  const pharmaciePageCount = Math.max(1, Math.ceil(parPharmacie.length / ROWS_PER_PAGE));
+  const pharmacieCurrentPage = Math.min(pharmaciePage, pharmaciePageCount);
+  const paginatedParPharmacie = parPharmacie.slice((pharmacieCurrentPage - 1) * ROWS_PER_PAGE, pharmacieCurrentPage * ROWS_PER_PAGE);
+  const quotaPageCount = Math.max(1, Math.ceil(quotas.length / ROWS_PER_PAGE));
+  const quotaCurrentPage = Math.min(quotaPage, quotaPageCount);
+  const paginatedQuotas = quotas.slice((quotaCurrentPage - 1) * ROWS_PER_PAGE, quotaCurrentPage * ROWS_PER_PAGE);
 
   const kpis = [
     { label: "SMS aujourd'hui",  value: g.smsJour, sub: "envois cycle auto",   icon: "📨", color: "#60a5fa" },
@@ -110,7 +123,7 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
       )}
 
       <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-        {parPharmacie.map(p => (
+        {paginatedParPharmacie.map(p => (
           <div key={p.pharmacieId} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:"11px 16px", display:"flex", alignItems:"center", gap:14 }}>
             <div style={{ width:34, height:34, borderRadius:9, background:p.couleur, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, flexShrink:0 }}>💊</div>
             <div style={{ flex:1, minWidth:0 }}>
@@ -140,6 +153,7 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
           </div>
         ))}
       </div>
+      <PaginationControls page={pharmacieCurrentPage} setPage={setPharmaciePage} pageCount={pharmaciePageCount} totalCount={parPharmacie.length} itemLabel="pharmacie"/>
 
       <div style={{ fontSize:12, fontWeight:700, color:"#94a3b8", margin:"24px 0 10px", textTransform:"uppercase", letterSpacing:0.5 }}>
         Quota SMS mensuel — plan Performance (200 inclus + packs de 100 à 10 € TTC)
@@ -152,7 +166,7 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
       )}
 
       <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-        {quotas.map(q => {
+        {paginatedQuotas.map(q => {
           const pct = q.quotaTotal > 0 ? Math.min(100, Math.round((q.smsEnvoyesMoisCourant / q.quotaTotal) * 100)) : 0;
           const overQuota = q.depassement > 0;
           return (
@@ -174,6 +188,7 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
           );
         })}
       </div>
+      <PaginationControls page={quotaCurrentPage} setPage={setQuotaPage} pageCount={quotaPageCount} totalCount={quotas.length} itemLabel="pharmacie"/>
     </div>
   );
 }

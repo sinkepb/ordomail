@@ -4,6 +4,9 @@
 // est confirmé — voir supabase/functions/stripe-webhook/index.ts. Mêmes
 // conventions que PromotionsAdmin.jsx (callSecureData local, styles inline).
 import { useState, useEffect } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const ROWS_PER_PAGE = 10;
 
 function KitCommandesAdmin({ adminToken } = {}) {
   const [list, setList] = useState([]);
@@ -11,6 +14,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
   const [err, setErr] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [showExpedies, setShowExpedies] = useState(false);
+  const [page, setPage] = useState(1);
 
   async function callSecureData(resource, params) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -26,7 +30,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
   }
 
   async function load() {
-    setLoading(true); setErr("");
+    setLoading(true); setErr(""); setPage(1);
     try {
       const { data } = await callSecureData("admin_kit_commandes_list");
       setList(data || []);
@@ -52,6 +56,9 @@ function KitCommandesAdmin({ adminToken } = {}) {
   const aExpedier = list.filter(r => !r.expedie);
   const expedies = list.filter(r => r.expedie);
   const rows = showExpedies ? [...aExpedier, ...expedies] : aExpedier;
+  const pageCount = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedRows = rows.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
 
   return (
     <div style={{ color: "#e2e8f0" }}>
@@ -61,7 +68,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
           <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>3 stickers sol · 3 supports panneau acrylique · 1 présentoir plexiglas 1m</div>
         </div>
         <label style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <input type="checkbox" checked={showExpedies} onChange={e => setShowExpedies(e.target.checked)} />
+          <input type="checkbox" checked={showExpedies} onChange={e => { setShowExpedies(e.target.checked); setPage(1); }} />
           Afficher les expédiés
         </label>
       </div>
@@ -79,7 +86,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
               {aExpedier.length} en attente
             </div>
           )}
-          {rows.map(row => (
+          {paginatedRows.map(row => (
             <div key={row.id} style={{
               display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
               background: row.expedie ? "#1e293b88" : "#1e293b", border: `1px solid ${row.expedie ? "#334155" : "#fbbf2455"}`,
@@ -100,6 +107,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
               </button>
             </div>
           ))}
+          <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={rows.length} itemLabel="commande"/>
         </div>
       )}
     </div>
