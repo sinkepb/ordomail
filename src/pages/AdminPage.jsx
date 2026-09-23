@@ -12,6 +12,7 @@ import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { RappelsMetricsAdmin } from "../components/RappelsMetricsAdmin.jsx";
+import { PaginationControls } from "../components/PaginationControls.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
 
@@ -146,7 +147,9 @@ function AdminDashboardLive({ adminToken } = {}) {
   const [clients,  setClients]  = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState("");
+  const [page,     setPage]     = useState(1);
   const [selected, setSelected] = useState(null);
+  const CLIENTS_PER_PAGE = 10;
   const [saving,   setSaving]   = useState(false);
   const [msg,      setMsg]      = useState("");
   const [metrics,  setMetrics]  = useState(null); // métriques globales
@@ -240,6 +243,13 @@ function AdminDashboardLive({ adminToken } = {}) {
     c.email?.toLowerCase().includes(search.toLowerCase()) ||
     c.titulaire?.toLowerCase().includes(search.toLowerCase())
   );
+  // Pagination (22/09/2026, demande titulaire) — 10 pharmacies par page max.
+  // Purement côté client : la liste complète est déjà chargée d'un coup pour
+  // computeGlobalMetrics (MRR/ARR/etc. ont besoin de TOUTES les pharmacies,
+  // pas seulement de la page affichée) — seul le RENDU est paginé.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / CLIENTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginated = filtered.slice((currentPage - 1) * CLIENTS_PER_PAGE, currentPage * CLIENTS_PER_PAGE);
 
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",color:"#e2e8f0"}}>
@@ -310,15 +320,15 @@ function AdminDashboardLive({ adminToken } = {}) {
         {!loading && tab === "clients" ? (
           selected ? (
             /* ── Détail client ── */
-            <ClientDetail client={selected} plans={PLANS} onClose={()=>setSelected(null)}/>
+            <ClientDetail client={selected} plans={PLANS} adminToken={adminToken} onClose={()=>setSelected(null)}/>
           ) : (
             /* ── Liste clients ── */
             <div>
-              <input value={search} onChange={e=>setSearch(e.target.value)}
+              <input value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}
                 placeholder="🔍 Rechercher pharmacie ou email…"
                 style={{width:"100%",padding:"10px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:9,color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:16,boxSizing:"border-box"}}/>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {filtered.map(ph => (
+                {paginated.map(ph => (
                   <div key={ph.id} onClick={()=>setSelected(ph)}
                     style={{background:"#1e293b",border:`1px solid ${(ph.ordos_attente||0)>0?"#f59e0b":"#334155"}`,borderRadius:12,padding:"14px 18px",cursor:"pointer",transition:"border 0.15s"}}>
                     <div style={{display:"flex",alignItems:"center",gap:14}}>
@@ -374,6 +384,7 @@ function AdminDashboardLive({ adminToken } = {}) {
                   </div>
                 ))}
               </div>
+              <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={filtered.length} itemLabel="pharmacie"/>
             </div>
           )
         ) : tab === "carte" ? (
@@ -429,18 +440,21 @@ function AdminDashboardLive({ adminToken } = {}) {
               onClearMsg={()=>setMsg("")}
             />
           ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {filtered.map(ph=>(
-                <div key={ph.id} onClick={()=>setSelected(ph)}
-                  style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
-                  <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💊</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,color:"#fff"}}>{ph.nom}</div>
-                    <div style={{fontSize:12,color:"#64748b"}}>{ph.email} · {PLANS[ph.plan]?.label||ph.plan} · {PLANS[ph.plan]?.prix||0}€/mois</div>
+            <div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {paginated.map(ph=>(
+                  <div key={ph.id} onClick={()=>setSelected(ph)}
+                    style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💊</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,color:"#fff"}}>{ph.nom}</div>
+                      <div style={{fontSize:12,color:"#64748b"}}>{ph.email} · {PLANS[ph.plan]?.label||ph.plan} · {PLANS[ph.plan]?.prix||0}€/mois</div>
+                    </div>
+                    <div style={{fontSize:11,color:"#475569"}}>Modifier →</div>
                   </div>
-                  <div style={{fontSize:11,color:"#475569"}}>Modifier →</div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={filtered.length} itemLabel="pharmacie"/>
             </div>
           )
         )}

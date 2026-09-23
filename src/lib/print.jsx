@@ -577,6 +577,99 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
 </html>`;
 }
 
+// ─── Export PDF réel de l'affiche QR (21/09/2026) ─────────────────────────────
+// @fix — signalé en usage réel : le bouton "Enregistrer en PDF" (ci-dessous,
+// openPosterPDFFromHTML) ouvre bien une fenêtre, mais le bouton "Imprimer"
+// intégré à cette fenêtre (window.print()) ne déclenche rien chez ce
+// pharmacien — popup issue de window.open() + blob: URL, cas connu où
+// certains navigateurs n'activent pas correctement window.print() dans ce
+// contexte. Plutôt que de dépendre du dialogue d'impression du navigateur,
+// cette fonction génère un vrai fichier .pdf téléchargeable directement :
+// rendu de l'affiche dans un iframe caché, capture en image (html2canvas),
+// assemblage en PDF aux dimensions physiques réelles (jsPDF), puis
+// téléchargement — aucune fenêtre, aucun window.print(). Import dynamique de
+// jsPDF/html2canvas : ~300 Ko à eux deux, inutile dans le bundle principal
+// pour les pharmacies qui n'utilisent jamais cette affiche.
+function sanitizePdfFilenamePart(s) {
+  return String(s || "ordomail").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "ordomail";
+}
+
+async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+
+  // @fix 21/09/2026 — la première version de cette fonction rendait l'affiche
+  // dans un <iframe srcDoc> avant capture. Résultat en usage réel : PDF avec
+  // police de secours (serif) à la place de Bricolage Grotesque/Manrope, ET
+  // espaces entre les mots disparus ("ENVOYEZ VOTRE ORDONNANCE" collé). Isolé
+  // en testant le même contenu directement dans le document principal (rendu
+  // correct au pixel près) : html2canvas ne capture pas fidèlement les
+  // @font-face externes ni les métriques de texte d'un document ENFANT
+  // cross-document (iframe), même same-origin.
+  //
+  // @fix 21/09/2026 (bis) — le passage à un Shadow DOM seul ne suffisait pas
+  // encore : un <link rel="stylesheet"> Google Fonts posé DANS le shadow root
+  // charge bien la feuille de style (son onload se déclenche), mais les
+  // @font-face qu'elle déclare ne s'enregistrent PAS dans document.fonts —
+  // attendre document.fonts.ready ne voit donc jamais ces polices et se
+  // résout immédiatement, avant que les fichiers de police (chargés en
+  // différé, seulement une fois qu'un texte les réclame) n'aient fini
+  // d'arriver. Le fix : charger la feuille Google Fonts dans le document
+  // PRINCIPAL (où document.fonts la suit correctement — les polices ne sont
+  // pas cloisonnées par shadow root, seules les règles CSS le sont), et
+  // construire le contenu du shadow root AVANT d'attendre fonts.ready, pour
+  // que le texte qu'il contient déclenche bien le chargement paresseux des
+  // polices avant qu'on ne l'attende.
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const fontLinkHref = parsed.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]')?.getAttribute("href");
+  if (fontLinkHref && !document.head.querySelector(`link[rel="stylesheet"][href="${fontLinkHref}"]`)) {
+    const fontLink = document.createElement("link");
+    fontLink.rel = "stylesheet";
+    fontLink.href = fontLinkHref;
+    document.head.appendChild(fontLink);
+    await new Promise((resolve) => { fontLink.onload = resolve; fontLink.onerror = resolve; });
+  }
+
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-99999px;top:0;";
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
+  try {
+    const styleEl = document.createElement("style");
+    styleEl.textContent = parsed.querySelector("style")?.textContent || "";
+    shadow.appendChild(styleEl);
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = parsed.body.innerHTML;
+    shadow.appendChild(wrapper);
+
+    // Doit venir APRÈS la construction du contenu ci-dessus (voir note plus
+    // haut) : c'est le texte du shadow root qui déclenche le chargement
+    // paresseux des polices que cette attente doit suivre.
+    try { await document.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
+    const pageEl = shadow.querySelector(".page");
+    if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
+    const canvas = await html2canvas(pageEl, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      // Le bouton "Imprimer" intégré au HTML (.no-print) n'a pas sa place dans
+      // le PDF exporté — html2canvas ignore les styles @media print par
+      // défaut, donc on le retire explicitement de la capture.
+      ignoreElements: (el) => el.classList?.contains("no-print"),
+    });
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const orientation = widthMm > heightMm ? "l" : "p";
+    const pdf = new jsPDF({ orientation, unit: "mm", format: [widthMm, heightMm] });
+    pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
+    pdf.save(filename);
+  } finally {
+    document.body.removeChild(host);
+  }
+}
+
 // Ouvre un HTML d'affiche déjà généré, sans aucun await avant window.open() —
 // séparée de generatePosterHTML (25/08/2026) : un appelant qui régénère le
 // HTML (import "qrcode", nouvel appel QR.toString) entre le clic et
@@ -597,4 +690,4 @@ function openPosterPDFFromHTML(html) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML, downloadPosterPDF, sanitizePdfFilenamePart };

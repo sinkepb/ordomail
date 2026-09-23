@@ -131,6 +131,48 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: enriched }), { headers: CORS });
     }
 
+    // Statistiques d'usage jour/semaine/mois d'UNE pharmacie (22/09/2026) —
+    // volontairement séparé de admin_pharmacies : demande titulaire que ces
+    // informations ne soient chargées qu'au clic sur une pharmacie, pas pour
+    // toute la liste à chaque chargement de l'onglet Clients (déjà 6 requêtes
+    // par pharmacie rien que pour la liste — inutile d'en ajouter 3 de plus
+    // par pharmacie alors que l'admin n'en consulte qu'une à la fois).
+    if (resource === "admin_pharmacie_usage") {
+      const { pharmacieId } = params || {};
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const now30 = new Date(Date.now() - 30 * 86400000).toISOString();
+      const now7  = new Date(Date.now() - 7 * 86400000).toISOString();
+      // "Jour" = jour calendaire (minuit → maintenant), comme le badge de
+      // notification du dashboard pharmacie (Dashboard.jsx) — pas un glissant
+      // 24h. "Semaine"/"mois" restent des fenêtres glissantes 7j/30j, comme
+      // ordos_semaine/ordos_mois dans admin_pharmacies.
+      const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+
+      const [{ count: ordosJour }, { data: scans }, { data: connexions }] = await Promise.all([
+        sb.from("ordonnances").select("*", { count: "exact", head: true }).eq("pharmacie_id", pharmacieId).gte("received_at", startOfToday),
+        sb.from("qr_scans").select("scanned_at").eq("pharmacie_id", pharmacieId).gte("scanned_at", now30),
+        sb.from("audit_logs").select("user_role, created_at").eq("pharmacie_id", pharmacieId).eq("action", "login").gte("created_at", now30),
+      ]);
+
+      const bucket = (rows: any[], dateField: string) => ({
+        jour: rows.filter((r) => r[dateField] >= startOfToday).length,
+        semaine: rows.filter((r) => r[dateField] >= now7).length,
+        mois: rows.length, // déjà filtré à J-30 dans la requête
+      });
+      const scansBucket = bucket(scans || [], "scanned_at");
+      const loginsEmail = bucket((connexions || []).filter((c: any) => c.user_role === "admin"), "created_at");
+      const loginsPin   = bucket((connexions || []).filter((c: any) => c.user_role === "vendeur"), "created_at");
+
+      return new Response(JSON.stringify({ data: {
+        ordos_jour: ordosJour || 0,
+        scans_jour: scansBucket.jour, scans_semaine: scansBucket.semaine, scans_mois: scansBucket.mois,
+        connexions_email_jour: loginsEmail.jour, connexions_email_semaine: loginsEmail.semaine, connexions_email_mois: loginsEmail.mois,
+        connexions_pin_jour: loginsPin.jour, connexions_pin_semaine: loginsPin.semaine, connexions_pin_mois: loginsPin.mois,
+      } }), { headers: CORS });
+    }
+
     if (resource === "admin_pricing") {
       const { data, error } = await sb.from("pricing_plans").select("*").order("sort_order", { ascending: true });
       if (error) throw new Error(error.message);

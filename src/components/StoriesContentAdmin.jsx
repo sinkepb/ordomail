@@ -8,6 +8,9 @@
 // Routé via secure-data (jeton admin) comme le reste du backoffice.
 import { useState, useEffect } from "react";
 import { fileToBase64 } from "../lib/utils.js";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const ITEMS_PER_PAGE = 10;
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -40,6 +43,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
   const [search, setSearch]     = useState("");
   const [error, setError]       = useState("");
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [page, setPage]         = useState(1);
 
   async function handleImageUpload(file) {
     if (!file) return;
@@ -66,6 +70,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
   async function loadItems() {
     setLoading(true);
     setError("");
+    setPage(1);
     try {
       const { data } = await callSecureData("admin_stories", {}, adminToken);
       if (data) setItems(data);
@@ -146,6 +151,9 @@ function StoriesContentAdmin({ adminToken } = {}) {
     x.titre.toLowerCase().includes(search.toLowerCase()) ||
     (x.contenu||"").toLowerCase().includes(search.toLowerCase())
   );
+  const pageCount = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedItems = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
     <div>
@@ -168,7 +176,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
       )}
 
       {/* Barre recherche */}
-      <input value={search} onChange={e=>setSearch(e.target.value)}
+      <input value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}
         placeholder="🔍 Rechercher…"
         style={{ width:"100%", border:"1.5px solid #e0e7ff", borderRadius:10, padding:"10px 14px", fontSize:14, fontFamily:"inherit", marginBottom:16, outline:"none" }}/>
 
@@ -301,7 +309,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
           <div>{search ? "Aucun résultat" : "Aucun contenu créé"}</div>
         </div>
       )}
-      {filtered.map(item => {
+      {paginatedItems.map(item => {
         const typeInfo = TYPES.find(t=>t.id===item.type) || TYPES[0];
         return (
           <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"14px 16px",
@@ -347,6 +355,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
           </div>
         );
       })}
+      <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={filtered.length} itemLabel="contenu"/>
     </div>
   );
 }

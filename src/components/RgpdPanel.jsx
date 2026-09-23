@@ -16,6 +16,9 @@
 // + historique) a été sortie dans son propre onglet backoffice (PurgeAdmin.jsx)
 // à la demande de l'utilisateur.
 import { useState } from "react";
+import { PaginationControls } from "./PaginationControls.jsx";
+
+const RESULTS_PER_PAGE = 10;
 
 async function callSecureData(resource, params, adminToken) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -41,10 +44,11 @@ function SearchSection({ adminToken }) {
   const [error, setError]       = useState("");
   const [deletingId, setDeletingId] = useState(null);
   const [retentionDays, setRetentionDays] = useState(null);
+  const [page, setPage] = useState(1);
 
   async function search() {
     if (nom.trim().length < 2) { setError("Entrez au moins 2 caractères."); return; }
-    setLoading(true); setError(""); setResults(null);
+    setLoading(true); setError(""); setResults(null); setPage(1);
     try {
       const { data, retentionDays: rd } = await callSecureData("admin_search_ordonnances", { nom: nom.trim() }, adminToken);
       setResults(data || []);
@@ -66,6 +70,11 @@ function SearchSection({ adminToken }) {
     }
     setDeletingId(null);
   }
+
+  const results_ = results || [];
+  const pageCount = Math.max(1, Math.ceil(results_.length / RESULTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedResults = results_.slice((currentPage - 1) * RESULTS_PER_PAGE, currentPage * RESULTS_PER_PAGE);
 
   return (
     <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:20 }}>
@@ -93,7 +102,7 @@ function SearchSection({ adminToken }) {
       )}
       {results && results.length > 0 && (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          {results.map(r => (
+          {paginatedResults.map(r => (
             <div key={r.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px" }}>
               <div style={{ minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:700, color:"#fff" }}>{r.patient_nom || r.from_name || "Patient"}</div>
@@ -109,6 +118,7 @@ function SearchSection({ adminToken }) {
           ))}
         </div>
       )}
+      <PaginationControls page={currentPage} setPage={setPage} pageCount={pageCount} totalCount={results_.length} itemLabel="résultat"/>
     </div>
   );
 }

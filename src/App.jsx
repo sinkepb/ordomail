@@ -136,6 +136,20 @@ function friendlyAuthError(code, description) {
   return "Le lien reçu par email est invalide.";
 }
 
+// Fire-and-forget : signale un scan de QR code pour les statistiques
+// jour/semaine/mois par pharmacie (22/09/2026, voir log-qr-scan). Ne doit
+// jamais bloquer ni faire échouer le parcours patient — erreurs ignorées.
+function logQrScan(pharmacieId, source) {
+  if (isDemoMode || !pharmacieId) return;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  fetch(`${supabaseUrl}/functions/v1/log-qr-scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    body: JSON.stringify({ pharmacieId, source }),
+  }).catch(() => {});
+}
+
 // ── App principale (routeur) ──────────────────────────────────────────────────
 
 function AppInner() {
@@ -394,6 +408,7 @@ function AppInner() {
       // qr_token vient de l'URL (imprimé sur le QR code), pas de la base — submit-ordonnance
       // le revérifiera côté serveur contre la valeur stockée pour cette pharmacie.
       setPatientPharmacieQR({ ...ph, qr_token: qrTokenParam });
+      logQrScan(ph.id, "affiche");
     }).catch(() => setRoute("landing"));
   }, []);
 
@@ -414,6 +429,7 @@ function AppInner() {
       .then(({ pharmacie_id, qr_token }) => fetchPharmaciePublic(pharmacie_id).then(ph => {
         if (!ph) { setRoute("landing"); return; }
         setPatientPharmacieQR({ ...ph, qr_token });
+        logQrScan(pharmacie_id, "qr_code");
       }))
       .catch(() => setRoute("landing"));
   }, []);
