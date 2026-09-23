@@ -91,7 +91,7 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
 
   return (
     <div>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
           <div style={{ fontWeight:800, fontSize:15, color:"#fff" }}>🔔 Rappels &amp; SMS</div>
           <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>SMS encore mocké — ce panneau suit le volume avant l'activation réelle, pour dimensionner le coût à venir.</div>

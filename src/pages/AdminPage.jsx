@@ -262,8 +262,29 @@ function AdminDashboardLive({ adminToken } = {}) {
 
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"'Inter',system-ui,sans-serif",color:"#e2e8f0"}}>
+      {/* Responsive backoffice (22/09/2026, demande titulaire) — tout ce fichier
+          (et ses sous-composants QrCodesAdmin/RappelsMetricsAdmin/etc.) était en
+          styles inline sans le moindre point de rupture mobile, contrairement au
+          dashboard pharmacie (voir Dashboard.jsx, classe .hide-mobile). Même
+          seuil que là-bas (max-width:640px) pour rester cohérent. !important
+          nécessaire : une classe CSS a une spécificité plus faible qu'un style
+          inline, seul moyen de la faire gagner sans réécrire tous les styles
+          inline existants en classes. */}
+      <style>{`
+        @media(max-width:640px){
+          .admin-header{flex-direction:column!important;align-items:flex-start!important;gap:8px!important;padding:12px 16px!important}
+          .admin-header-right{text-align:left!important}
+          .admin-content{padding:12px!important}
+          .admin-kpis{grid-template-columns:repeat(auto-fit,minmax(95px,1fr))!important;gap:8px!important}
+          .admin-tabs{flex-wrap:wrap!important}
+          .admin-tabs>button:last-child{margin-left:0!important}
+          .admin-client-row{flex-wrap:wrap!important}
+          .admin-client-metrics{width:100%!important;justify-content:space-between!important;padding-top:8px!important;margin-top:8px!important;border-top:1px solid #334155!important}
+          .admin-detail-grid{grid-template-columns:1fr!important}
+        }
+      `}</style>
       {/* Header */}
-      <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"16px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div className="admin-header" style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"16px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:22}}>💊</span>
           <div>
@@ -271,7 +292,7 @@ function AdminDashboardLive({ adminToken } = {}) {
             <div style={{fontSize:11,color:"#64748b"}}>Tableau de bord opérateur</div>
           </div>
         </div>
-        <div style={{textAlign:"right"}}>
+        <div className="admin-header-right" style={{textAlign:"right"}}>
           <div style={{fontSize:11,color:"#64748b"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</div>
           {/* __BUILD_TIME__ : horodatage réel injecté au build (voir vite.config.js), pas une
               date maintenue à la main — déplacé ici depuis le pied de la landing page (25/08/2026),
@@ -282,11 +303,11 @@ function AdminDashboardLive({ adminToken } = {}) {
         </div>
       </div>
 
-      <div style={{padding:24}}>
+      <div className="admin-content" style={{padding:24}}>
 
         {/* KPIs globaux */}
         {metrics && (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:12,marginBottom:24}}>
+          <div className="admin-kpis" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:12,marginBottom:24}}>
             {[
               { label:"MRR",          value:`${metrics.mrr}€`,    sub:"revenu mensuel",    icon:"💰", color:"#4ade80" },
               { label:"ARR",          value:`${metrics.arr}€`,    sub:"revenu annuel",     icon:"📈", color:"#60a5fa" },
@@ -307,7 +328,7 @@ function AdminDashboardLive({ adminToken } = {}) {
         )}
 
         {/* Tabs */}
-        <div style={{display:"flex",gap:8,marginBottom:20}}>
+        <div className="admin-tabs" style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
           {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"],...(IS_PREVIEW_PROJECT ? [["gestion","🏛️ Gestion"]] : [])].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
@@ -340,7 +361,7 @@ function AdminDashboardLive({ adminToken } = {}) {
                 {paginated.map(ph => (
                   <div key={ph.id} onClick={()=>setSelected(ph)}
                     style={{background:"#1e293b",border:`1px solid ${(ph.ordos_attente||0)>0?"#f59e0b":"#334155"}`,borderRadius:12,padding:"14px 18px",cursor:"pointer",transition:"border 0.15s"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <div className="admin-client-row" style={{display:"flex",alignItems:"center",gap:14}}>
                       {/* Avatar */}
                       <div style={{width:44,height:44,borderRadius:11,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💊</div>
                       {/* Infos */}
@@ -374,7 +395,7 @@ function AdminDashboardLive({ adminToken } = {}) {
                         </div>
                       </div>
                       {/* Métriques rapides */}
-                      <div style={{display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
+                      <div className="admin-client-metrics" style={{display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
                         <div style={{textAlign:"center"}}>
                           <div style={{fontSize:18,fontWeight:900,color:"#60a5fa"}}>{ph.ordos_mois||0}</div>
                           <div style={{fontSize:9,color:"#475569"}}>ordos/mois</div>

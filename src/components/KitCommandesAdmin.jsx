@@ -62,7 +62,7 @@ function KitCommandesAdmin({ adminToken } = {}) {
 
   return (
     <div style={{ color: "#e2e8f0" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 18 }}>📦 Matériel — file d'expédition</h3>
           <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>3 stickers sol · 3 supports panneau acrylique · 1 présentoir plexiglas 1m</div>

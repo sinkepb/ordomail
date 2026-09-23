@@ -158,7 +158,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
   return (
     <div>
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div>
           <div style={{ fontWeight:900, fontSize:18 }}>📱 Contenu Stories Santé</div>
           <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{items.length} contenus · Affichés aléatoirement aux patients</div>
