@@ -427,8 +427,12 @@ Deno.serve(async (req) => {
     if (resource === "admin_retention_set") {
       const { days, updatedBy } = params || {};
       const parsed = days === null ? null : Number(days);
-      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0)) {
-        return new Response(JSON.stringify({ error: "days doit être un entier positif ou null (désactive la purge)" }),
+      // @fix 23/09/2026 (audit critique) — aucun plafond n'était imposé,
+      // rien n'empêchait techniquement une valeur du type 99999 jours.
+      // 3650 (10 ans) est un garde-fou technique, pas une durée validée
+      // juridiquement — la durée réelle reste à confirmer avec le DPO.
+      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0 || parsed > 3650)) {
+        return new Response(JSON.stringify({ error: "days doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
           { status: 400, headers: CORS });
       }
       const { error } = await sb.from("retention_settings")

@@ -58,43 +58,41 @@ describe.skipIf(!canRun)('RLS live — offre_interets, rate-limit, stories_conte
       await service.from('offre_interets').delete().eq('pharmacie_id', testPharmacieId);
     });
 
-    it('anon peut INSERT une ligne (marquage d\'intérêt initial)', async () => {
+    // @fix 23/09/2026 (audit critique) — ce test documentait volontairement un
+    // comportement permissif (anon INSERT/UPDATE directs, policies
+    // USING(true)) jamais retiré après le passage de l'écriture réelle vers
+    // toggle-interet (clé de service, vérifie isValidPatientCode) le
+    // 27/07/2026 : n'importe qui avec la clé anon publique pouvait écrire des
+    // intérêts patients pour n'importe quelle pharmacie. Les policies
+    // interets_patient_insert/interets_patient_upsert sont supprimées
+    // (20260923_audit_critiques_rls.sql) — ce test vérifie maintenant
+    // l'absence d'accès direct, pas sa présence. Le marquage/retrait
+    // d'intérêt réel continue de fonctionner via toggle-interet (clé de
+    // service, bypass RLS), inchangé.
+    it('anon ne peut PAS INSERT directement (doit passer par toggle-interet)', async () => {
       const { error } = await anon.from('offre_interets').insert({
         pharmacie_id: testPharmacieId, code_patient: codePatient,
         offre_id: null, offre_titre: 'Offre de test', date_jour: dateJour, actif: true,
       });
-      expect(error).toBeNull();
+      expect(error).not.toBeNull();
     });
 
-    // ⚠️ Comportement Supabase anormal, jamais élucidé (27/07/2026), mais qui
-    // n'est PLUS un bloqueur en pratique depuis le même jour : ce test échoue
-    // contre le projet réel — l'UPDATE renvoie un succès HTTP (204, pas
-    // d'erreur) mais la ligne n'est PAS modifiée. Confirmé via EXPLAIN
-    // (VERBOSE) : le plan affiche "One-Time Filter: false" alors que la seule
-    // policy UPDATE applicable est USING(true)/WITH CHECK(true) — reproduit de
-    // façon identique en SQL brut (SET ROLE anon) et via l'API REST réelle, y
-    // compris sur des lignes fraîchement créées. Cause probable : anomalie
-    // côté Supabase (pooler/planner), jamais confirmée avec leur support.
-    // PatientPage.jsx ne dépend plus de ce chemin : le marquage/retrait
-    // d'intérêt passe désormais par l'edge function toggle-interet (clé de
-    // service, bypass RLS) — voir supabase/functions/toggle-interet/index.ts.
-    // Ce test reste volontairement en échec (pas affaibli) pour documenter le
-    // comportement RLS réel de la table, indépendamment du contournement
-    // applicatif.
-    it('anon peut UPDATE une ligne existante via filtre (pas upsert/ON CONFLICT)', async () => {
-      // ⚠️ Ne PAS utiliser .upsert(...,{onConflict}) dans ce test : ON CONFLICT DO
-      // UPDATE exige une visibilité SELECT que anon n'a jamais sur cette table —
-      // exactement le bug confirmé en direct le 27/07/2026 (voir PatientPage.jsx).
+    it('anon ne peut PAS UPDATE directement (doit passer par toggle-interet)', async () => {
+      await service.from('offre_interets').insert({
+        pharmacie_id: testPharmacieId, code_patient: codePatient,
+        offre_id: null, offre_titre: 'Offre de test', date_jour: dateJour, actif: true,
+      });
       const { error } = await anon.from('offre_interets')
         .update({ actif: false })
         .eq('pharmacie_id', testPharmacieId)
         .eq('code_patient', codePatient)
         .eq('date_jour', dateJour);
+      // RLS refuse silencieusement (pas d'erreur HTTP, 0 ligne affectée) —
+      // la preuve du blocage est que la valeur en base reste inchangée.
       expect(error).toBeNull();
-
       const { data } = await service.from('offre_interets')
         .select('actif').eq('pharmacie_id', testPharmacieId).eq('code_patient', codePatient).single();
-      expect(data.actif).toBe(false);
+      expect(data.actif).toBe(true);
     });
 
     it('anon ne peut PAS lire la table (aucune policy SELECT pour anon)', async () => {

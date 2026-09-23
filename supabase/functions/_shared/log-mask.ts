@@ -19,3 +19,12 @@ export function maskCode(code: string | null | undefined): string {
   if (!code) return String(code);
   return code.length <= 1 ? "***" : `${code[0]}***`;
 }
+
+// Ajouté 23/09/2026 (audit critique) — le fallback mock de sendSms() logguait
+// le numéro de téléphone patient en clair (voir _shared/sms.ts).
+export function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return String(phone);
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length <= 4) return "***";
+  return `${digits.slice(0, 2)}***${digits.slice(-2)}`;
+}

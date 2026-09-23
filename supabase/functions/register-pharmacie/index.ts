@@ -177,7 +177,10 @@ Deno.serve(async (req) => {
       { pharmacie_id: pharmacie.id, nom: "Poste Caisse",  actif: true },
     ]);
 
-    console.log("[register-pharmacie] Pharmacie créée:", maskId(pharmacie.id), nom);
+    // @fix 23/09/2026 (audit critique) — loggait le nom réel du titulaire en
+    // clair juste à côté d'un ID masqué, une incohérence : l'ID de la
+    // pharmacie suffit pour corréler/déboguer, pas besoin du nom personnel.
+    console.log("[register-pharmacie] Pharmacie créée:", maskId(pharmacie.id));
 
     return new Response(JSON.stringify({
       success:       true,

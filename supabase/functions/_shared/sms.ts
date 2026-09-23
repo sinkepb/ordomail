@@ -14,6 +14,8 @@
 // Secrets requis (supabase secrets set) :
 //   OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY, OVH_SMS_SERVICE_NAME
 // Optionnel : OVH_ENDPOINT ("ovh-eu" par défaut — voir OVH_ENDPOINTS).
+import { maskPhone } from "./log-mask.ts";
+
 export interface SendSmsResult {
   success: boolean;
   mocked: boolean;
@@ -71,7 +73,14 @@ export async function sendSms(to: string, message: string, pharmacieNom: string)
   const serviceName = Deno.env.get("OVH_SMS_SERVICE_NAME");
 
   if (!appKey || !appSecret || !consumerKey || !serviceName) {
-    console.log(`[sms:mock] pharmacie="${pharmacieNom}" à="${to}" message="${message}"`);
+    // @fix 23/09/2026 (audit critique) — loggait le message ENTIER en clair,
+    // qui embarque le nom du patient, le médecin prescripteur et la
+    // spécialité (voir buildRappelMessage, rappelLogic.ts) : ces logs finissent
+    // dans les Edge Function Logs, lisibles par quiconque a accès au projet
+    // Supabase — une surface d'exposition plus large que la base elle-même.
+    // Le numéro est masqué, le message réduit à sa longueur (suffisant pour
+    // vérifier qu'il n'est pas vide/mal formé sans exposer son contenu).
+    console.log(`[sms:mock] pharmacie="${pharmacieNom}" à="${maskPhone(to)}" longueur_message=${message.length}`);
     return { success: true, mocked: true };
   }
 
