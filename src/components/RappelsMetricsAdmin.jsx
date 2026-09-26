@@ -36,8 +36,8 @@ const PLAN_LABEL = { starter: "Essentiel", standard: "Fluidité", pro: "Performa
 // proportion, pas de librairie de graphiques pour un besoin aussi ponctuel.
 // Composant statique (hors du corps de RappelsMetricsAdmin) — un composant
 // recréé à chaque rendu perd son état/DOM à chaque fois (react-hooks/static-components).
-const STATUT_LABEL = { en_attente: "En attente", sms_envoye: "SMS envoyé", a_traiter: "À traiter", termine: "Terminé" };
-const STATUT_COLOR = { en_attente: "#818cf8", sms_envoye: "#60a5fa", a_traiter: "#f87171", termine: "#4ade80" };
+const STATUT_LABEL = { en_attente: "En attente", sms_envoye: "SMS envoyé", a_traiter: "À traiter", prepare: "Préparé", termine: "Terminé" };
+const STATUT_COLOR = { en_attente: "#818cf8", sms_envoye: "#60a5fa", a_traiter: "#f87171", prepare: "#fb923c", termine: "#4ade80" };
 const CHOIX_LABEL = { tout_renouveler: "Tout renouvelé", rien: "Rien pris", partiel: "Renouvellement partiel" };
 const CHOIX_COLOR = { tout_renouveler: "#4ade80", rien: "#f87171", partiel: "#fbbf24" };
 function Breakdown({ title, counts, labels, colors }) {

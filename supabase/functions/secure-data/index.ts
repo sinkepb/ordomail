@@ -700,7 +700,9 @@ Deno.serve(async (req) => {
         }
       }
 
-      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter").length;
+      // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
+      // retrait) est un cycle toujours en cours, pas résolu : compte comme actif.
+      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length;
       const data = {
         rappelsActifs,
         rappelsTotal: (rappels || []).length,
@@ -742,6 +744,52 @@ Deno.serve(async (req) => {
     // Le pharmacien valide un rappel "à traiter" (quel que soit le choix du
     // patient) : le cycle repart à J+21, comme demandé ("jusqu'à ce que le
     // pharmacien mette fin au rappel").
+    // Marque un rappel "préparé" (26/09/2026) — le pharmacien a préparé le
+    // médicament et l'a rangé dans un casier physique, avant que le patient
+    // ne vienne le retirer. Ne concerne QUE les renouvellements réels
+    // (tout_renouveler/partiel) — "rien" n'a rien à préparer et continue
+    // d'aller directement de a_traiter à rappels_traiter, inchangé.
+    if (resource === "rappels_preparer") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (existing.statut !== "a_traiter") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
+      }
+      if (existing.choix_patient !== "tout_renouveler" && existing.choix_patient !== "partiel") {
+        return new Response(JSON.stringify({ error: "Seuls les renouvellements (total ou partiel) passent par l'étape préparation" }), { status: 409, headers: CORS });
+      }
+      // Numéro de casier : incrément atomique et circulaire (0-99) côté DB —
+      // jamais un tirage aléatoire, pour répartir équitablement l'usage des
+      // 100 casiers physiques (voir increment_rappel_case_compteur).
+      const { data: numero, error: compteurError } = await sb.rpc("increment_rappel_case_compteur", { p_pharmacie_id: pharmacieId });
+      if (compteurError || numero == null) {
+        throw new Error(compteurError?.message || "Échec de l'attribution du casier");
+      }
+      // Préfixe 2 lettres (jamais 0/O ni 1/I, même alphabet que register-pharmacie)
+      // — purement pour lisibilité/distinction visuelle, aucune signification.
+      const LETTRES_CASE = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+      const prefixe = Array.from({ length: 2 }, () => LETTRES_CASE[Math.floor(Math.random() * LETTRES_CASE.length)]).join("");
+      const caseCode = `${prefixe}${String(numero).padStart(2, "0")}`;
+      const { error: preparerError } = await sb.from("rappels_ordonnance").update({
+        statut: "prepare",
+        case_code: caseCode,
+        date_preparee: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (preparerError) throw new Error(preparerError.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "prepare", meta: { caseCode } });
+      return new Response(JSON.stringify({ data: { success: true, caseCode } }), { headers: CORS });
+    }
+
     if (resource === "rappels_traiter") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
@@ -754,8 +802,16 @@ Deno.serve(async (req) => {
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
-      if (existing.statut !== "a_traiter") {
-        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
+      // @fix 26/09/2026 — un renouvellement réel (tout_renouveler/partiel)
+      // doit d'abord être passé par l'étape "préparé" (rappels_preparer) ;
+      // "rien" continue de valider directement depuis "a_traiter", rien à
+      // préparer dans ce cas.
+      const requiertPreparation = existing.choix_patient === "tout_renouveler" || existing.choix_patient === "partiel";
+      const statutAttendu = requiertPreparation ? "prepare" : "a_traiter";
+      if (existing.statut !== statutAttendu) {
+        return new Response(JSON.stringify({
+          error: requiertPreparation ? "Ce rappel doit d'abord être marqué comme préparé" : "Ce rappel n'est pas à traiter",
+        }), { status: 409, headers: CORS });
       }
       // Prochaine date de rappel (04/09/2026) — le pharmacien peut l'ajuster
       // dans la popup de confirmation (voir RappelsSection.jsx:ValiderModal),
@@ -785,6 +841,9 @@ Deno.serve(async (req) => {
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
         date_traite: new Date().toISOString(),
+        // Casier libéré (26/09/2026) — le médicament vient d'être retiré,
+        // le repère de l'ancien cycle n'a plus lieu d'être affiché.
+        case_code: null,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (error) throw new Error(error.message);
@@ -853,6 +912,7 @@ Deno.serve(async (req) => {
         choix_patient: null,
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
+        case_code: null,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);

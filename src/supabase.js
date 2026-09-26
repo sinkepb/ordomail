@@ -95,6 +95,7 @@ export {
   fetchRappelsStats,
   createRappel,
   traiterRappel,
+  preparerRappel,
   terminerRappel,
   reactiverRappel,
   updateRappel,

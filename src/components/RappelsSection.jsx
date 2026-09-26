@@ -2,13 +2,16 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance, getSignedUrl } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance, getSignedUrl } from "../supabase.js";
 import { ViewerModal } from "./PrintModal.jsx";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
+  // @fix 26/09/2026 — étape "préparé" (médicament rangé en casier, en
+  // attente de retrait patient), entre "à traiter" et la validation finale.
+  prepare:    { label: "Préparé",    bg: "#fff7ed", fg: "#c2410c" },
   termine:    { label: "Terminé",    bg: "#f0fdf4", fg: "#15803d" },
 };
 
@@ -45,6 +48,7 @@ const JOURNAL_INFO = {
   sms_envoye:      { icon: "📱", label: "SMS envoyé" },
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
+  prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
   termine:         { icon: "🔚", label: "Rappel terminé" },
   reactive:        { icon: "🔄", label: "Rappel réactivé" },
@@ -60,12 +64,16 @@ function journalLigne(evt) {
   if (evt.type === "sms_echec" && evt.meta?.error) {
     return { ...info, label: `Échec d'envoi — ${evt.meta.error}` };
   }
+  if (evt.type === "prepare" && evt.meta?.caseCode) {
+    return { ...info, label: `Médicament préparé — casier ${evt.meta.caseCode}` };
+  }
   return info;
 }
 
 const FILTRES = [
   ["tous", "Tous"],
   ["a_traiter", "À traiter"],
+  ["prepare", "Préparés"],
   ["en_attente", "En attente"],
   ["termine", "Terminés"],
 ];
@@ -460,6 +468,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
+  // Préparation (26/09/2026) — pas de modal de confirmation (action peu
+  // risquée, contrairement à l'envoi SMS) : un clic attribue le casier et
+  // met à jour la ligne directement.
+  const [preparingId, setPreparingId] = useState(null);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -479,7 +491,8 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     fetchRappels(pharmacie.id).then(data => {
       const list = data || [];
       setRappels(list);
-      setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter" : "en_attente");
+      setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter"
+        : list.some(r => r.statut === "prepare") ? "prepare" : "en_attente");
       setLoading(false);
     });
     // Statistiques d'efficacité (08/09/2026) — chargées une fois au montage,
@@ -544,6 +557,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setSendError(e.message || "Échec de l'envoi.");
     }
     setSending(false);
+  }
+
+  async function handlePreparer(rappel) {
+    setPreparingId(rappel.id);
+    try {
+      const result = await preparerRappel(rappel.id);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "prepare", case_code: result?.caseCode || null } : r));
+    } catch (e) {
+      console.error("[handlePreparer]", e.message);
+    }
+    setPreparingId(null);
   }
 
   async function handleValiderConfirm(dateRappel) {
@@ -747,11 +771,16 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   </div>
                 )}
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
-                {r.statut === "a_traiter" && r.choix_patient && (
+                {(r.statut === "a_traiter" || r.statut === "prepare") && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
                 )}
-                {r.statut === "a_traiter" && r.creneau_retrait && (
+                {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
                   <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
+                )}
+                {/* Casier de préparation (26/09/2026) — repère interne, jamais
+                    communiqué au patient (voir migration du 26/09/2026). */}
+                {r.statut === "prepare" && r.case_code && (
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#c2410c", marginTop: 4 }}>📦 Casier {r.case_code}</div>
                 )}
               </div>
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
@@ -769,7 +798,16 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   📱 Envoyer le SMS
                 </button>
               )}
-              {r.statut === "a_traiter" && (
+              {/* Préparation (26/09/2026) — étape intermédiaire réservée aux
+                  vrais renouvellements (tout/partiel) : "rien" continue
+                  d'aller directement de à traiter à Valider, rien à préparer. */}
+              {r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel") && (
+                <button onClick={() => handlePreparer(r)} disabled={busy || preparingId === r.id}
+                  style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: (busy || preparingId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || preparingId === r.id) ? 0.6 : 1 }}>
+                  {preparingId === r.id ? "…" : "📦 Marquer préparé"}
+                </button>
+              )}
+              {((r.statut === "a_traiter" && r.choix_patient === "rien") || r.statut === "prepare") && (
                 <button onClick={() => setValidatingRappel(r)} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "…" : "✅ Valider"}

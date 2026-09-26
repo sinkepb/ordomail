@@ -81,6 +81,15 @@ export async function traiterRappel(rappelId, dateRappel = null) {
   return await callSecureData('rappels_traiter', { rappelId, dateRappel });
 }
 
+// Marque un rappel "préparé" (26/09/2026) — médicament préparé et rangé
+// dans un casier physique, en attente de retrait patient. Voir
+// secure-data:rappels_preparer pour l'attribution du numéro de casier
+// (compteur circulaire 00-99, jamais un tirage aléatoire).
+export async function preparerRappel(rappelId) {
+  if (IS_DEMO) return { success: true, caseCode: "DM00" };
+  return await callSecureData('rappels_preparer', { rappelId });
+}
+
 export async function terminerRappel(rappelId) {
   if (IS_DEMO) return { success: true };
   return await callSecureData('rappels_terminer', { rappelId });
