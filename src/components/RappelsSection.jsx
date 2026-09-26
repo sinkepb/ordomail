@@ -777,12 +777,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
                   <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
                 )}
-                {/* Casier de préparation (26/09/2026) — repère interne, jamais
-                    communiqué au patient (voir migration du 26/09/2026). */}
-                {r.statut === "prepare" && r.case_code && (
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#c2410c", marginTop: 4 }}>📦 Casier {r.case_code}</div>
-                )}
               </div>
+              {/* Casier de préparation (26/09/2026, grossi le 26/09/2026 sur
+                  retour titulaire) — repère interne, jamais communiqué au
+                  patient. Doit être identifiable EN UN COUP D'ŒIL par le
+                  vendeur au moment de la livraison : gros, gras, bien avant
+                  le badge de statut dans l'ordre de lecture de la ligne. */}
+              {r.statut === "prepare" && r.case_code && (
+                <div style={{ background: "#c2410c", color: "#fff", borderRadius: 10, padding: "6px 16px", fontSize: 22, fontWeight: 900, letterSpacing: "0.03em", flexShrink: 0, lineHeight: 1.1 }}>
+                  📦 {r.case_code}
+                </div>
+              )}
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
               <button onClick={() => setEditingRappel(r)} disabled={busy}
                 style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
