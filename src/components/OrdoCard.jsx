@@ -715,6 +715,17 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelet
                     ✓ ↩
                   </button>
                 )}
+                {/* @fix 26/09/2026 — un rappel par ordonnance individuelle du
+                    groupe (avant : un seul bouton pour tout le patient, au
+                    pied du groupe, sans lien avec une ordonnance précise). */}
+                {onCreateRappel && (
+                  <button onClick={() => onCreateRappel(o)} title="Créer un rappel pour cette ordonnance"
+                    style={{ padding: "3px 6px", border: "1.5px solid rgba(26,58,110,0.3)", borderRadius: 5,
+                      background: "#f0f4ff", color: "#1a3a6e", fontSize: 8,
+                      cursor: "pointer", fontFamily: "inherit" }}>
+                    ⏰
+                  </button>
+                )}
                 {onDelete && (
                   <button onClick={() => onDelete(o)} title="Supprimer l'ordonnance"
                     style={{ padding: "3px 6px", border: "1px solid #fecaca", borderRadius: 5,
@@ -734,19 +745,11 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelet
           que le conteneur soit display:flex/column, voir plus haut — c'était
           documenté comme l'intention ici mais jamais réellement appliqué). */}
       <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
-        {/* Créer un rappel — seule sur sa ligne, au-dessus des autres boutons
-            (retour direct du titulaire pilote, 04/09/2026), un seul rappel
-            par groupe/patient plutôt que par ordonnance individuelle. */}
-        {onCreateRappel && (
-          <button onClick={() => onCreateRappel(group)} style={{
-            width: "100%", boxSizing: "border-box", padding: "9px", border: "1.5px solid rgba(26,58,110,0.3)",
-            borderRadius: 7, background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 11,
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-          }}>
-            ⏰ Créer son rappel
-          </button>
-        )}
+        {/* @fix 26/09/2026 — le bouton "Créer son rappel" unique par groupe a
+            été retiré : chaque ordonnance du groupe a désormais son propre
+            bouton ⏰ ci-dessus (liste des ordonnances du groupe), pour lier
+            le rappel à l'ordonnance réellement concernée plutôt qu'à une
+            ordonnance arbitraire du patient. */}
         <div style={{ display: "flex", gap: 6 }}>
           {onSonnette && sonnetteActive !== false && (
             <button onClick={onSonnette}

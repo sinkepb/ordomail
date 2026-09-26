@@ -534,9 +534,19 @@ Deno.serve(async (req) => {
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
+      }
+      // Lien vers l'ordonnance d'origine (26/09/2026) — optionnel, jamais fait
+      // confiance sans vérification : un ordonnanceId fourni par le client
+      // doit appartenir à CETTE pharmacie, sinon silencieusement ignoré (pas
+      // une erreur bloquante — un id invalide/périmé ne doit pas empêcher la
+      // création du rappel lui-même).
+      let verifiedOrdonnanceId: string | null = null;
+      if (ordonnanceId) {
+        const { data: ordo } = await sb.from("ordonnances").select("id").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+        if (ordo) verifiedOrdonnanceId = ordo.id;
       }
       // Consentement du patient à être recontacté — obligatoire, jamais un
       // défaut supposé sur une donnée de santé (même logique que
@@ -576,6 +586,7 @@ Deno.serve(async (req) => {
         // migration 20260924_consentement_sms_horodatage.sql.
         consentement_sms_horodatage: new Date().toISOString(),
         token: generateShortToken(),
+        ordonnance_id: verifiedOrdonnanceId,
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
@@ -590,6 +601,39 @@ Deno.serve(async (req) => {
         meta: { pharmacieId, rappelId: data.id },
       });
       return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en
+    // un clic à l'ordonnance depuis la liste des rappels, sans exposer un
+    // resource générique "ordonnance par id" (surface d'attaque plus large
+    // qu'utile ici : on ne veut QUE le fichier lié à un rappel qu'on sait déjà
+    // appartenir à l'appelant). Revérifie l'appartenance du rappel ET de
+    // l'ordonnance à pharmacieId, même si l'ordonnance a déjà été vérifiée à
+    // la création (défense en profondeur, cohérent avec le reste du fichier).
+    if (resource === "rappels_ordonnance_fichier") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("pharmacie_id, ordonnance_id").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (!rappel.ordonnance_id) {
+        return new Response(JSON.stringify({ data: null }), { headers: CORS });
+      }
+      const { data: ordo } = await sb.from("ordonnances")
+        .select("fichier_url, fichier_nom, fichier_type")
+        .eq("id", rappel.ordonnance_id).eq("pharmacie_id", pharmacieId).maybeSingle();
+      if (!ordo?.fichier_url) {
+        return new Response(JSON.stringify({ data: null }), { headers: CORS });
+      }
+      return new Response(JSON.stringify({
+        data: { path: ordo.fichier_url, name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image" },
+      }), { headers: CORS });
     }
 
     if (resource === "rappels_list") {

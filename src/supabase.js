@@ -100,4 +100,5 @@ export {
   updateRappel,
   envoyerTestRappel,
   fetchSmsConsommation,
+  fetchRappelOrdonnance,
 } from './lib/supabase/rappels.js';

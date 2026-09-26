@@ -11,7 +11,7 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
-import { RappelsSection, RappelForm } from "../components/RappelsSection.jsx";
+import { RappelsSection, RappelForm, RappelOrdonnancePicker } from "../components/RappelsSection.jsx";
 import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
@@ -578,6 +578,9 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
+  // Sélection d'une ordonnance avant de créer un rappel "hors ordonnance"
+  // (26/09/2026) — voir RappelOrdonnancePicker.
+  const [showOrdonnancePicker, setShowOrdonnancePicker] = useState(false);
   const [rappelCreating, setRappelCreating] = useState(false);
   const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
 
@@ -1050,9 +1053,14 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                   mécanisme que le bouton "Créer son rappel" des cartes
                   ordonnance (rappelDraft + RappelForm rendu plus bas,
                   indépendant de l'onglet actif) plutôt que le showForm local
-                  de RappelsSection, qui est démontée quand cet onglet est actif. */}
+                  de RappelsSection, qui est démontée quand cet onglet est actif.
+                  @fix 26/09/2026 — hors du contexte d'une ordonnance précise,
+                  ouvre d'abord un sélecteur d'ordonnance (RappelOrdonnancePicker) :
+                  un rappel doit toujours être rattaché à une ordonnance quand
+                  c'est possible, pour que le nom du patient soit fiable et que
+                  l'ordonnance reste accessible depuis la liste des rappels. */}
               {canRappels && (
-                <button onClick={()=>setRappelDraft({nom:"",prenom:""})}
+                <button onClick={()=>setShowOrdonnancePicker(true)}
                   style={{marginLeft:"auto",padding:"5px 14px",borderRadius:16,border:"none",background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
                   + Nouveau rappel
                 </button>
@@ -1094,7 +1102,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
                       onDelete={(ordo)=>setDeleteConfirm(ordo)}
-                      onCreateRappel={(group)=>setRappelDraft({...splitNomPrenom(group.extracted?.nom||group.fromName), medecin: group.extracted?.medecin || null})}/>;
+                      onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null, ordonnanceId: ordo.id})}/>;
                   }
                   return <OrdoCard key={o.id} id={`ordo-${o.id}`} ordo={o} accentUnique={pharmacie?.accent_unique}
                     interets={o.interets || []}
@@ -1114,7 +1122,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
                     onDelete={()=>setDeleteConfirm(o)}
-                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null, ordonnanceId: ordo.id})}
                     loadingId={loadingId}/>;
                 })}
               </div>
@@ -1172,13 +1180,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                               🔔
                             </button>
                           )}
-                          {/* Créer un rappel — manquait en vue liste groupée (04/09/2026),
-                              déjà présent en vue grille (OrdoGroup). Un seul par patient. */}
-                          <button onClick={()=>setRappelDraft({...splitNomPrenom(o.extracted?.nom||o.fromName), medecin: o.extracted?.medecin || null})}
-                            style={{padding:"8px 12px",border:"1.5px solid rgba(26,58,110,0.3)",borderRadius:9,
-                              background:"#f0f4ff",color:"#1a3a6e",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
-                            ⏰ Créer son rappel
-                          </button>
+                          {/* @fix 26/09/2026 — bouton unique par patient retiré : chaque
+                              ordonnance du groupe a désormais son propre bouton ⏰
+                              plus bas (lignes individuelles), pour lier le rappel à
+                              l'ordonnance réellement concernée. */}
                         </div>
                           );
                         })()}
@@ -1269,6 +1274,15 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 ✓ ↩ Remettre à traiter
                               </button>
                             )}
+                            {/* @fix 26/09/2026 — un rappel par ordonnance individuelle du
+                                groupe (avant : un seul bouton pour tout le patient). */}
+                            <button onClick={()=>setRappelDraft({...splitNomPrenom(ord.extracted?.nom||ord.fromName), medecin: ord.extracted?.medecin || null, ordonnanceId: ord.id})}
+                              title="Créer un rappel pour cette ordonnance"
+                              style={{padding:"4px 8px",border:"1px solid rgba(26,58,110,0.3)",borderRadius:6,
+                                background:"#f0f4ff",color:"#1a3a6e",fontSize:11,
+                                cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                              ⏰
+                            </button>
                             <button onClick={()=>setDeleteConfirm(ord)} title="Supprimer l'ordonnance"
                               style={{padding:"4px 8px",border:"1px solid #fecaca",borderRadius:6,
                                 background:"#fef2f2",color:"#b91c1c",fontSize:11,
@@ -1298,7 +1312,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
                     onDelete={()=>setDeleteConfirm(o)}
-                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null})}/>;
+                    onCreateRappel={(ordo)=>setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null, ordonnanceId: ordo.id})}/>;
                 })}
               </div>
             )}
@@ -1352,10 +1366,13 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
           ✅ Ordonnance supprimée
         </div>
       )}
+      {showOrdonnancePicker&&<RappelOrdonnancePicker ordonnances={ordonnances}
+        onCancel={()=>setShowOrdonnancePicker(false)}
+        onPick={(ordo)=>{setShowOrdonnancePicker(false);setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null, ordonnanceId: ordo.id});}}/>}
       {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
-        onCreated={async(payload)=>{await createRappel(pharmacieId,payload);setRappelDraft(null);}}/>}
+        onCreated={async(payload)=>{await createRappel(pharmacieId,{...payload,ordonnanceId:rappelDraft.ordonnanceId});setRappelDraft(null);}}/>}
 
       {/* Portail direct vers document.body (25/08/2026) — le CSS d'impression ci-dessous
           masque body>* (les enfants DIRECTS de <body>) puis force l'affichage de

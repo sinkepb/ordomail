@@ -32,6 +32,38 @@ async function callSecureData(resource, params, adminToken) {
 
 const PLAN_LABEL = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
 
+// Répartitions par statut / par choix patient (26/09/2026) — simple barre de
+// proportion, pas de librairie de graphiques pour un besoin aussi ponctuel.
+// Composant statique (hors du corps de RappelsMetricsAdmin) — un composant
+// recréé à chaque rendu perd son état/DOM à chaque fois (react-hooks/static-components).
+const STATUT_LABEL = { en_attente: "En attente", sms_envoye: "SMS envoyé", a_traiter: "À traiter", termine: "Terminé" };
+const STATUT_COLOR = { en_attente: "#818cf8", sms_envoye: "#60a5fa", a_traiter: "#f87171", termine: "#4ade80" };
+const CHOIX_LABEL = { tout_renouveler: "Tout renouvelé", rien: "Rien pris", partiel: "Renouvellement partiel" };
+const CHOIX_COLOR = { tout_renouveler: "#4ade80", rien: "#f87171", partiel: "#fbbf24" };
+function Breakdown({ title, counts, labels, colors }) {
+  const total = Object.values(counts || {}).reduce((a, b) => a + b, 0);
+  return (
+    <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:"14px 16px" }}>
+      <div style={{ fontSize:12, fontWeight:700, color:"#94a3b8", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>{title}</div>
+      {total === 0 && <div style={{ fontSize:12.5, color:"#64748b" }}>Aucune donnée sur la période.</div>}
+      {total > 0 && Object.entries(counts).map(([key, count]) => {
+        const pct = Math.round((count / total) * 100);
+        return (
+          <div key={key} style={{ marginBottom:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}>
+              <span style={{ color:"#e2e8f0" }}>{labels[key] || key}</span>
+              <span style={{ color:"#94a3b8", fontVariantNumeric:"tabular-nums" }}>{count} · {pct}%</span>
+            </div>
+            <div style={{ height:6, borderRadius:20, background:"#334155", overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${pct}%`, background: colors[key] || "#64748b", borderRadius:20 }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RappelsMetricsAdmin({ adminToken } = {}) {
   const [data, setData]       = useState(null);
   const [quotas, setQuotas]   = useState([]);
@@ -87,6 +119,9 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
     { label: "Rappels actifs",   value: g.rappelsActifs, sub: `sur ${g.rappelsTotal||0} au total`, icon: "🔔", color: "#a78bfa" },
     { label: "Taux de réponse",  value: `${g.tauxReponse||0}%`, sub: "patient / SMS envoyé (90j)", icon: "✅", color: "#4ade80" },
     { label: "Échecs d'envoi",   value: g.echecs90j, sub: "sur 90 jours",      icon: "⚠️", color: g.echecs90j > 0 ? "#f87171" : "#4ade80" },
+    // @fix 26/09/2026 (métriques détaillées, demande titulaire)
+    { label: "Renouvellement réel", value: `${g.tauxRenouvellement||0}%`, sub: "tout/partiel parmi les réponses", icon: "🔁", color: "#4ade80" },
+    { label: "Liés à une ordonnance", value: g.avecOrdonnance||0, sub: `sur ${g.rappelsTotal||0} rappels`, icon: "📎", color: "#60a5fa" },
   ];
 
   return (
@@ -110,6 +145,11 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
             <div style={{ fontSize:10, color:"#475569" }}>{k.sub}</div>
           </div>
         ))}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:12, marginBottom:24 }}>
+        <Breakdown title="Répartition par statut" counts={g.parStatut} labels={STATUT_LABEL} colors={STATUT_COLOR} />
+        <Breakdown title="Répartition par choix patient" counts={g.parChoix} labels={CHOIX_LABEL} colors={CHOIX_COLOR} />
       </div>
 
       <div style={{ fontSize:12, fontWeight:700, color:"#94a3b8", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>

@@ -693,7 +693,10 @@ Deno.serve(async (req) => {
 
       const [{ data: pharmacies }, { data: rappels }, { data: evenements }] = await Promise.all([
         sb.from("pharmacies").select("id, nom, plan, couleur"),
-        sb.from("rappels_ordonnance").select("id, pharmacie_id, statut"),
+        // @fix 26/09/2026 — choix_patient et ordonnance_id ajoutés (métriques
+        // détaillées backoffice : répartition par statut/choix, adoption du
+        // lien ordonnance) ; aucun coût supplémentaire, même requête.
+        sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient, ordonnance_id"),
         sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").gte("created_at", since90),
       ]);
 
@@ -746,6 +749,25 @@ Deno.serve(async (req) => {
 
       const tauxReponse = sms90j > 0 ? Math.round((reponses90j / sms90j) * 100) : 0;
 
+      // @fix 26/09/2026 (métriques détaillées, demande titulaire) — répartition
+      // par statut du cycle et par choix du patient, et adoption du lien
+      // ordonnance (rattaché à une ordonnance précise depuis le 26/09/2026,
+      // voir migration 20260926_rappels_ordonnance_link.sql). Le taux de
+      // renouvellement réel se calcule sur les rappels ayant déjà reçu une
+      // réponse (choix_patient non nul) — pas sur le total, qui inclut des
+      // cycles encore en_attente sans réponse à ce jour.
+      const parStatut = { en_attente: 0, sms_envoye: 0, a_traiter: 0, termine: 0 } as Record<string, number>;
+      const parChoix = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
+      let avecOrdonnance = 0, avecReponse = 0;
+      for (const r of rappels || []) {
+        if (r.statut in parStatut) parStatut[r.statut]++;
+        if (r.choix_patient) { parChoix[r.choix_patient] = (parChoix[r.choix_patient] || 0) + 1; avecReponse++; }
+        if (r.ordonnance_id) avecOrdonnance++;
+      }
+      const tauxRenouvellement = avecReponse > 0
+        ? Math.round(((parChoix.tout_renouveler + parChoix.partiel) / avecReponse) * 100)
+        : 0;
+
       return new Response(JSON.stringify({
         data: {
           global: {
@@ -753,6 +775,8 @@ Deno.serve(async (req) => {
             rappelsTotal: (rappels || []).length,
             smsJour, sms7j, sms30j, sms90j,
             echecs90j, reponses90j, tauxReponse,
+            parStatut, parChoix, tauxRenouvellement,
+            avecOrdonnance,
           },
           parPharmacie: Array.from(parPharmacie.values())
             .filter(p => p.rappelsActifs > 0 || p.sms90j > 0)

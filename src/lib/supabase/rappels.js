@@ -41,7 +41,7 @@ export async function fetchRappelsStats() {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -52,13 +52,28 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
       commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, specialite: specialite || null, consentement_sms: !!consentement,
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
+      ordonnance_id: ordonnanceId || null,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
       created_at: new Date().toISOString(),
     };
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId });
+}
+
+// Fichier de l'ordonnance liée à un rappel (26/09/2026) — voir
+// secure-data:rappels_ordonnance_fichier. Renvoie null si le rappel n'a pas
+// d'ordonnance liée (créé avant cette fonctionnalité, ou ordonnance depuis
+// supprimée).
+export async function fetchRappelOrdonnance(rappelId) {
+  if (IS_DEMO) return null;
+  try {
+    return await callSecureData('rappels_ordonnance_fichier', { rappelId });
+  } catch (e) {
+    console.error('[fetchRappelOrdonnance]', e.message);
+    return null;
+  }
 }
 
 export async function traiterRappel(rappelId, dateRappel = null) {
