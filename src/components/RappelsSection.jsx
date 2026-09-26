@@ -887,49 +887,40 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   );
 }
 
-// Sélection d'une ordonnance avant de créer un rappel "hors ordonnance"
-// (26/09/2026) — depuis le bouton générique "+ Nouveau rappel" (pas depuis
-// une carte ordonnance précise), le pharmacien choisit d'abord l'ordonnance
-// concernée : le nom du patient (et le médecin, si l'OCR l'a détecté) sont
-// ensuite préremplis exactement comme pour les boutons "⏰" par ordonnance
-// (voir Dashboard.jsx, setRappelDraft). Recherche en mémoire sur les
-// ordonnances déjà chargées (pas de nouvel appel réseau) — même normalisation
-// insensible aux accents que la recherche de patients plus haut.
-function RappelOrdonnancePicker({ ordonnances = [], onCancel, onPick }) {
-  const [search, setSearch] = useState("");
-  const searchNorm = search.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const matches = !searchNorm ? ordonnances : ordonnances.filter(o => {
-    const nom = (o.extracted?.nom || o.fromName || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    const code = (o.code_patient || "").toLowerCase();
-    return nom.includes(searchNorm) || code.includes(searchNorm);
-  });
-
+// Ajout d'une ordonnance avant de créer un rappel "hors ordonnance"
+// (26/09/2026, révisé le 26/09/2026 sur retour titulaire) — depuis le
+// bouton générique "+ Nouveau rappel" (pas depuis une carte ordonnance
+// précise), le pharmacien ajoute la pièce depuis son ordinateur : chaque
+// rappel doit correspondre à une ordonnance réellement déposée pour ce
+// rappel, jamais à un choix parmi celles déjà présentes dans OrdoMail.
+// L'upload + l'OCR sont gérés par le composant parent (Dashboard.jsx, via
+// onUpload) — ce composant ne gère que l'UI du champ fichier.
+function RappelOrdonnanceUpload({ onCancel, onUpload, uploading, error }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={uploading ? undefined : onCancel}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🔔 Nouveau rappel</div>
-        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 12 }}>Sélectionnez l'ordonnance concernée — le nom du patient sera pré-rempli.</div>
-        <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Nom ou code patient…"
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
-        <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-          {matches.length === 0 && (
-            <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 16 }}>
-              {ordonnances.length === 0 ? "Aucune ordonnance chargée pour l'instant." : "Aucune ordonnance ne correspond."}
-            </div>
-          )}
-          {matches.map(o => (
-            <button key={o.id} type="button" onClick={() => onPick(o)}
-              style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontFamily: "inherit" }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{o.extracted?.nom || o.fromName || "Patient inconnu"}</div>
-              <div style={{ fontSize: 11.5, color: "#94a3b8" }}>
-                {o.code_patient ? `Code ${o.code_patient} · ` : ""}{o.receivedAt ? new Date(o.receivedAt).toLocaleDateString("fr-FR") : ""}
-              </div>
-            </button>
-          ))}
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>
+          Ajoutez la photo ou le PDF de l'ordonnance concernée depuis votre ordinateur — le nom du patient sera pré-rempli automatiquement.
         </div>
-        <button type="button" onClick={onCancel}
-          style={{ marginTop: 12, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "32px 16px", borderRadius: 12, border: "2px dashed #c7d2fe", cursor: uploading ? "wait" : "pointer", background: "#f8fafc", marginBottom: 12 }}>
+          <span style={{ fontSize: 32 }}>{uploading ? "⏳" : "📎"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#1a3a6e" }}>{uploading ? "Envoi en cours…" : "Choisir un fichier"}</span>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>JPG, PNG ou PDF — 15 Mo maximum</span>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} style={{ display: "none" }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              const r = new FileReader();
+              r.onload = ev => onUpload(f, ev.target.result);
+              r.readAsDataURL(f);
+            }} />
+        </label>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button type="button" onClick={onCancel} disabled={uploading}
+          style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: uploading ? "default" : "pointer", fontFamily: "inherit", opacity: uploading ? 0.6 : 1 }}>
           Annuler
         </button>
       </div>
@@ -937,4 +928,4 @@ function RappelOrdonnancePicker({ ordonnances = [], onCancel, onPick }) {
   );
 }
 
-export { RappelsSection, RappelForm, RappelOrdonnancePicker };
+export { RappelsSection, RappelForm, RappelOrdonnanceUpload };

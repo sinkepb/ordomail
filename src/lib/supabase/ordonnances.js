@@ -101,6 +101,31 @@ export async function uploadOrdoFile(pharmacieId, ordoId, file, dataUrl) {
   return { dataUrl: signedUrl, path };
 }
 
+// Création manuelle d'une ordonnance depuis l'ordinateur du pharmacien
+// (26/09/2026) — utilisée quand on crée un rappel de renouvellement "hors
+// ordonnance" : le pharmacien ajoute la pièce depuis son poste plutôt que
+// de rattacher un rappel à une ordonnance déjà présente dans OrdoMail. Voir
+// secure-data:ordonnances_create (insère la ligne PUIS uploade le fichier).
+export async function createOrdonnanceManuelle(pharmacieId, file) {
+  if (IS_DEMO) {
+    const db = getDB();
+    const ph = db.pharmacies.find(p => p.id === pharmacieId);
+    if (!ph) return null;
+    if (!ph.ordonnances) ph.ordonnances = [];
+    const id = `ordo-manuel-${Date.now()}`;
+    ph.ordonnances.unshift({
+      id, pharmacie_id: pharmacieId, source: 'upload', status: 'nouveau',
+      received_at: new Date().toISOString(), attachments: [],
+    });
+    return { id };
+  }
+  const uploadFile = await compressImageFile(file);
+  const fileBase64 = await fileToBase64(uploadFile);
+  return await callSecureData('ordonnances_create', {
+    fileName: uploadFile.name, fileType: uploadFile.type, fileBase64,
+  });
+}
+
 // ─── Normaliser une ordonnance DB Supabase → format UI ───────────────────────
 function normOrdo(row) {
   return {

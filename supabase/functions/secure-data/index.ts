@@ -283,6 +283,61 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
+    // Création manuelle d'une ordonnance depuis le dashboard (26/09/2026) — le
+    // pharmacien/vendeur ajoute une ordonnance depuis son ordinateur (pas via
+    // le flux patient QR code/email), typiquement pour créer un rappel de
+    // renouvellement sans ordonnance déjà présente dans OrdoMail (voir "+
+    // Nouveau rappel", RappelOrdonnanceUpload côté client).
+    //
+    // Insère la ligne PUIS uploade le fichier, plutôt que de réutiliser
+    // ordonnances_upload_file (juste en dessous) : cette dernière EXIGE une
+    // ligne déjà existante et sert de garde-fou anti-IDOR (voir son
+    // commentaire) — mélanger création et upload y affaiblirait ce garde-fou.
+    if (resource === "ordonnances_create") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { fileName, fileType, fileBase64 } = params || {};
+      if (!fileName || !fileType || !fileBase64) {
+        return new Response(JSON.stringify({ error: "fileName, fileType et fileBase64 requis" }), { status: 400, headers: CORS });
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
+      }
+      const checkFile = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      if (!checkFile.ok) {
+        return new Response(JSON.stringify({ error: checkFile.error }), { status: 400, headers: CORS });
+      }
+
+      const { data: ordo, error: insertError } = await sb.from("ordonnances").insert({
+        pharmacie_id: pharmacieId,
+        source: "upload",
+        status: "nouveau",
+        from_name: vendeurSub ? "Ajout manuel (poste)" : "Ajout manuel (titulaire)",
+      }).select().single();
+      if (insertError) throw new Error(insertError.message);
+
+      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${pharmacieId}/${ordo.id}/ordonnance.${ext}`;
+      const { error: upErr } = await sb.storage.from("ordonnances-files").upload(path, bytes, { contentType: fileType, upsert: true });
+      if (upErr) throw new Error(upErr.message);
+
+      await sb.from("ordonnances").update({
+        fichier_url:    path,
+        fichier_nom:    fileName,
+        fichier_type:   ext === "pdf" ? "pdf" : "image",
+        fichier_taille: `${Math.round(bytes.length / 1024)} Ko`,
+      }).eq("id", ordo.id);
+
+      const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(path, 3600);
+      return new Response(JSON.stringify({
+        data: { id: ordo.id, path, signedUrl: signed?.signedUrl || null },
+      }), { headers: CORS });
+    }
+
     // Upload du fichier d'une ordonnance (photo/PDF), depuis le Dashboard vendeur/
     // titulaire.
     //

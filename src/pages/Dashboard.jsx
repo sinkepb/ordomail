@@ -11,7 +11,7 @@ import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
 import { StoriesSection } from "../components/StoriesSection.jsx";
-import { RappelsSection, RappelForm, RappelOrdonnancePicker } from "../components/RappelsSection.jsx";
+import { RappelsSection, RappelForm, RappelOrdonnanceUpload } from "../components/RappelsSection.jsx";
 import { Btn } from "../components/ui.jsx";
 import { LogsPanel } from "../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../components/ErrorBoundary.jsx";
@@ -26,6 +26,7 @@ import {
   updateOrdoStatus,
   updateOrdoExtracted,
   uploadOrdoFile,
+  createOrdonnanceManuelle,
   deleteOrdonnance,
   subscribeToPharmacy,
   addAuditLog,
@@ -578,9 +579,11 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [showAide, setShowAide] = useState(false);
   const [rappelDraft, setRappelDraft] = useState(null); // {nom, prenom} | null — popup création rappel depuis une carte
-  // Sélection d'une ordonnance avant de créer un rappel "hors ordonnance"
-  // (26/09/2026) — voir RappelOrdonnancePicker.
-  const [showOrdonnancePicker, setShowOrdonnancePicker] = useState(false);
+  // Ajout d'une ordonnance depuis l'ordinateur avant de créer un rappel
+  // "hors ordonnance" (26/09/2026, révisé le 26/09/2026 — voir RappelOrdonnanceUpload).
+  const [showOrdonnanceUpload, setShowOrdonnanceUpload] = useState(false);
+  const [ordonnanceUploading, setOrdonnanceUploading] = useState(false);
+  const [ordonnanceUploadError, setOrdonnanceUploadError] = useState("");
   const [rappelCreating, setRappelCreating] = useState(false);
   const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
 
@@ -913,6 +916,33 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
     await updateOrdo(ordoId, {extracted});
     setLoadingId(null);
   }
+  // Ajout d'une ordonnance depuis l'ordinateur pour créer un rappel "hors
+  // ordonnance" (26/09/2026, révisé le 26/09/2026 sur retour titulaire :
+  // le pharmacien doit ajouter une nouvelle pièce, pas choisir une
+  // ordonnance déjà présente dans OrdoMail). Crée une vraie ligne
+  // ordonnances (pas un simple brouillon), fait tourner l'OCR comme pour
+  // tout dépôt, puis enchaîne sur le formulaire de rappel pré-rempli —
+  // même pipeline que handleFile, en partant d'une ordonnance qui n'existe
+  // pas encore plutôt que d'une déjà en base.
+  async function handleRappelOrdonnanceUpload(file, dataUrl) {
+    setOrdonnanceUploading(true);
+    setOrdonnanceUploadError("");
+    try {
+      const created = await createOrdonnanceManuelle(pharmacieId, file);
+      if (!created?.id) throw new Error("Échec de la création de l'ordonnance.");
+      const extracted = await extractFromFile(dataUrl.split(",")[1], file.type, {});
+      await updateOrdoExtracted(created.id, pharmacieId, extracted);
+      // Rafraîchit la liste pour que la nouvelle ordonnance apparaisse aussi
+      // dans l'onglet Ordonnances, pas seulement dans le brouillon de rappel.
+      const updated = await fetchOrdonnances(pharmacieId, 7);
+      if (updated) setOrdonnances(updated);
+      setShowOrdonnanceUpload(false);
+      setRappelDraft({ ...splitNomPrenom(extracted?.nom), medecin: extracted?.medecin || null, ordonnanceId: created.id });
+    } catch (e) {
+      setOrdonnanceUploadError(e.message || "Échec de l'envoi du fichier.");
+    }
+    setOrdonnanceUploading(false);
+  }
   async function handleSaveParams(patch) {
     await savePharmacie(pharmacieId, patch);
     setPharmacie(p=>({...p,...patch}));
@@ -1054,13 +1084,16 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                   ordonnance (rappelDraft + RappelForm rendu plus bas,
                   indépendant de l'onglet actif) plutôt que le showForm local
                   de RappelsSection, qui est démontée quand cet onglet est actif.
-                  @fix 26/09/2026 — hors du contexte d'une ordonnance précise,
-                  ouvre d'abord un sélecteur d'ordonnance (RappelOrdonnancePicker) :
-                  un rappel doit toujours être rattaché à une ordonnance quand
-                  c'est possible, pour que le nom du patient soit fiable et que
-                  l'ordonnance reste accessible depuis la liste des rappels. */}
+                  @fix 26/09/2026, révisé le 26/09/2026 — hors du contexte
+                  d'une ordonnance précise, ouvre d'abord un ajout de fichier
+                  (RappelOrdonnanceUpload) : le pharmacien dépose une nouvelle
+                  ordonnance depuis son ordinateur (jamais un choix parmi
+                  celles déjà présentes dans OrdoMail), pour que chaque rappel
+                  corresponde à une pièce réellement déposée pour lui, avec un
+                  nom de patient fiable (OCR) et accessible depuis la liste
+                  des rappels. */}
               {canRappels && (
-                <button onClick={()=>setShowOrdonnancePicker(true)}
+                <button onClick={()=>setShowOrdonnanceUpload(true)}
                   style={{marginLeft:"auto",padding:"5px 14px",borderRadius:16,border:"none",background:"#1a3a6e",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
                   + Nouveau rappel
                 </button>
@@ -1366,9 +1399,11 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
           ✅ Ordonnance supprimée
         </div>
       )}
-      {showOrdonnancePicker&&<RappelOrdonnancePicker ordonnances={ordonnances}
-        onCancel={()=>setShowOrdonnancePicker(false)}
-        onPick={(ordo)=>{setShowOrdonnancePicker(false);setRappelDraft({...splitNomPrenom(ordo.extracted?.nom||ordo.fromName), medecin: ordo.extracted?.medecin || null, ordonnanceId: ordo.id});}}/>}
+      {showOrdonnanceUpload&&<RappelOrdonnanceUpload
+        onCancel={()=>{setShowOrdonnanceUpload(false);setOrdonnanceUploadError("");}}
+        onUpload={handleRappelOrdonnanceUpload}
+        uploading={ordonnanceUploading}
+        error={ordonnanceUploadError}/>}
       {rappelDraft&&<RappelForm initialNom={rappelDraft.nom} initialPrenom={rappelDraft.prenom} initialMedecin={rappelDraft.medecin}
         creating={rappelCreating} setCreating={setRappelCreating}
         onCancel={()=>setRappelDraft(null)}
