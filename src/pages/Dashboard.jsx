@@ -6,7 +6,7 @@ import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
-import { PrintConfirmModal, ViewerModal, TraiterConfirmModal, DeleteConfirmModal } from "../components/PrintModal.jsx";
+import { PrintConfirmModal, TraiterConfirmModal, DeleteConfirmModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
@@ -570,7 +570,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
     try { localStorage.setItem("ordomail_view_mode", mode); } catch { /* stockage indisponible, tant pis */ }
   }
   const [loadingId, setLoadingId] = useState(null);
-  const [viewerAtt, setViewerAtt] = useState(null);
   const [printModal, setPrintModal] = useState(null);
   const [downloadConfirm, setDownloadConfirm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -868,7 +867,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       await updateOrdoExtracted(id, pharmacieId, patch.extracted);
     }
   }
-  function handleViewOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"view",ordonnanceId:id,posteNom}).catch(()=>{}); }
   function handlePrintOrdo(id) { addAuditLog({userId:userId2,userRole,pharmacieId,action:"print",ordonnanceId:id,posteNom}).catch(()=>{}); }
   // Téléchargement direct = traitement de l'ordonnance au même titre que
   // l'impression (retour titulaire, 16/09/2026) : le fichier téléchargé est
@@ -1125,13 +1123,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                       sonnetteActive={pharmacie?.sonnette_active !== false}
                       onSonnette={() => appellerPatient(pharmacieId, o.code_patient)}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
-                      onView={async (ordo)=>{
-                        handleViewOrdo(ordo.id);
-                        const a = ordo.attachments?.[0];
-                        if (!a) return;
-                        if (a.dataUrl) { setViewerAtt(a); return; }
-                        if (a.path) { const url = await getSignedUrl(a.path,300); if (url) setViewerAtt({...a,dataUrl:url}); }
-                      }}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
                       onDelete={(ordo)=>setDeleteConfirm(ordo)}
@@ -1142,15 +1133,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
-                    onView={()=>{handleViewOrdo(o.id);(async () => {
-              const a = o.attachments?.[0];
-              if (!a) return;
-              if (a.dataUrl) { setViewerAtt(a); return; }
-              if (a.path) {
-                const url = await getSignedUrl(a.path, 300);
-                if (url) setViewerAtt({ ...a, dataUrl: url });
-              }
-            })();}}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
@@ -1254,20 +1236,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 <span style={{color:"#94a3b8",fontWeight:400}}> — {truncateFilename(ord.attachments[0].name)}</span>
                               )}
                             </span>
-                            {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
-                              <button onClick={async ()=>{
-                                  handleViewOrdo(ord.id);
-                                  const a = ord.attachments[0];
-                                  if (a.dataUrl) { setViewerAtt(a); return; }
-                                  const url = await getSignedUrl(a.path, 300);
-                                  if (url) setViewerAtt({ ...a, dataUrl: url });
-                                }}
-                                style={{padding:"4px 8px",border:"1px solid #c7d2fe",borderRadius:6,
-                                  background:"#f0f4ff",color:"#4338ca",fontSize:11,
-                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
-                                👁
-                              </button>
-                            )}
+                            {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
                             {/* Téléchargement direct — manquait en vue liste groupée
                                 (04/09/2026), déjà présent en vue grille (OrdoCard). */}
                             {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
@@ -1333,15 +1302,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
-                    onView={()=>{handleViewOrdo(o.id);(async () => {
-              const a = o.attachments?.[0];
-              if (!a) return;
-              if (a.dataUrl) { setViewerAtt(a); return; }
-              if (a.path) {
-                const url = await getSignedUrl(a.path, 300);
-                if (url) setViewerAtt({ ...a, dataUrl: url });
-              }
-            })();}}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
                     onDelete={()=>setDeleteConfirm(o)}
@@ -1384,7 +1344,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       </button>
       {showAide&&<AideModal posteNom={posteNom} isAdmin={canAdmin} onClose={()=>setShowAide(false)}/>}
 
-      {viewerAtt&&<ViewerModal att={viewerAtt} onClose={()=>setViewerAtt(null)}/>}
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
