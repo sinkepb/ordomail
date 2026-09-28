@@ -48,6 +48,7 @@ export {
   updateOrdoStatus,
   updateOrdoExtracted,
   uploadOrdoFile,
+  createOrdonnanceManuelle,
   deleteOrdonnance,
   addOrdonnance,
 } from './lib/supabase/ordonnances.js';
@@ -95,9 +96,11 @@ export {
   fetchRappelsStats,
   createRappel,
   traiterRappel,
+  preparerRappel,
   terminerRappel,
   reactiverRappel,
   updateRappel,
   envoyerTestRappel,
   fetchSmsConsommation,
+  fetchRappelOrdonnance,
 } from './lib/supabase/rappels.js';

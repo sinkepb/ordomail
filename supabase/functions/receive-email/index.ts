@@ -10,6 +10,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 import { verifyWebhookSecret } from "../_shared/webhook-secret.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -140,10 +141,9 @@ Deno.serve(async (req) => {
     }), { headers: CORS });
 
   } catch (e) {
-    console.error("[receive-email] Erreur:", e.message);
     // En cas d'erreur dans receive-email, NE PAS bloquer — retourner 200
     // pour que Postmark ne retry pas en boucle
-    return new Response(JSON.stringify({ success: false, error: e.message }), 
+    return new Response(JSON.stringify({ success: false, error: safeErrorMessage(e, "receive-email") }),
       { status: 200, headers: CORS });
   }
 });

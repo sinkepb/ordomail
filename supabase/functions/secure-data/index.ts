@@ -27,12 +27,15 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
+import { reportAlert } from "../_shared/alert.ts";
 import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
+import { escapeHtml } from "../_shared/html.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -54,7 +57,7 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    const { pharmacieId, vendeurSub } = await resolveCaller(bearer, jwtSecret, sb);
+    const { pharmacieId, vendeurSub, userId: callerUserId } = await resolveCaller(bearer, jwtSecret, sb);
 
     if (!pharmacieId) {
       return new Response(JSON.stringify({ error: "Authentification requise" }),
@@ -81,6 +84,33 @@ Deno.serve(async (req) => {
         await sb.from("vendeur_sessions").delete().eq("id", vendeurSub).eq("pharmacie_id", pharmacieId);
       }
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Journal d'audit (24/09/2026, audit sécurité) — remplace l'INSERT direct
+    // depuis le navigateur (src/lib/supabase/audit.js:addAuditLog), qui reposait
+    // sur une policy RLS ouverte à tous (WITH CHECK(true), voir migration
+    // 20260808_audit_logs_policies.sql) : à l'époque, un poste vendeur (PIN, pas
+    // de session Supabase Auth) n'avait aucun autre moyen de s'authentifier pour
+    // une écriture directe. resolveCaller() vérifie désormais le jeton
+    // vendeur/la session titulaire ICI — pharmacie_id/user_id/user_role ne
+    // viennent donc plus jamais du client (seuls action/ordonnanceId/posteNom,
+    // purement cosmétiques, le sont encore). Voir migration
+    // 20260924_audit_logs_close_open_insert.sql pour la fermeture de la policy.
+    if (resource === "audit_log_create") {
+      const { action, ordonnanceId, posteNom } = params || {};
+      const ACTIONS_CONNUES = new Set(["view", "print", "download", "delete", "upload", "reopen", "login", "logout"]);
+      if (!ACTIONS_CONNUES.has(action)) {
+        return new Response(JSON.stringify({ error: "action invalide" }), { status: 400, headers: CORS });
+      }
+      await sb.from("audit_logs").insert({
+        pharmacie_id: pharmacieId,
+        user_id: vendeurSub || callerUserId || null,
+        user_role: vendeurSub ? "vendeur" : "admin",
+        poste_nom: posteNom?.trim() || null,
+        action,
+        ordonnance_id: ordonnanceId || null,
+      });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     if (resource === "ordonnances") {
@@ -251,6 +281,61 @@ Deno.serve(async (req) => {
       );
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Création manuelle d'une ordonnance depuis le dashboard (26/09/2026) — le
+    // pharmacien/vendeur ajoute une ordonnance depuis son ordinateur (pas via
+    // le flux patient QR code/email), typiquement pour créer un rappel de
+    // renouvellement sans ordonnance déjà présente dans OrdoMail (voir "+
+    // Nouveau rappel", RappelOrdonnanceUpload côté client).
+    //
+    // Insère la ligne PUIS uploade le fichier, plutôt que de réutiliser
+    // ordonnances_upload_file (juste en dessous) : cette dernière EXIGE une
+    // ligne déjà existante et sert de garde-fou anti-IDOR (voir son
+    // commentaire) — mélanger création et upload y affaiblirait ce garde-fou.
+    if (resource === "ordonnances_create") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { fileName, fileType, fileBase64 } = params || {};
+      if (!fileName || !fileType || !fileBase64) {
+        return new Response(JSON.stringify({ error: "fileName, fileType et fileBase64 requis" }), { status: 400, headers: CORS });
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
+      }
+      const checkFile = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      if (!checkFile.ok) {
+        return new Response(JSON.stringify({ error: checkFile.error }), { status: 400, headers: CORS });
+      }
+
+      const { data: ordo, error: insertError } = await sb.from("ordonnances").insert({
+        pharmacie_id: pharmacieId,
+        source: "upload",
+        status: "nouveau",
+        from_name: vendeurSub ? "Ajout manuel (poste)" : "Ajout manuel (titulaire)",
+      }).select().single();
+      if (insertError) throw new Error(insertError.message);
+
+      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${pharmacieId}/${ordo.id}/ordonnance.${ext}`;
+      const { error: upErr } = await sb.storage.from("ordonnances-files").upload(path, bytes, { contentType: fileType, upsert: true });
+      if (upErr) throw new Error(upErr.message);
+
+      await sb.from("ordonnances").update({
+        fichier_url:    path,
+        fichier_nom:    fileName,
+        fichier_type:   ext === "pdf" ? "pdf" : "image",
+        fichier_taille: `${Math.round(bytes.length / 1024)} Ko`,
+      }).eq("id", ordo.id);
+
+      const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(path, 3600);
+      return new Response(JSON.stringify({
+        data: { id: ordo.id, path, signedUrl: signed?.signedUrl || null },
+      }), { headers: CORS });
     }
 
     // Upload du fichier d'une ordonnance (photo/PDF), depuis le Dashboard vendeur/
@@ -500,13 +585,23 @@ Deno.serve(async (req) => {
       // ci-dessus) : la table rappels_ordonnance n'est accessible en écriture
       // que via cette fonction (clé de service), aucune policy RLS ne peut
       // donc porter cette restriction côté client.
-      const { data: ph } = await sb.from("pharmacies").select("plan").eq("id", pharmacieId).maybeSingle();
+      const { data: ph } = await sb.from("pharmacies").select("plan, nom").eq("id", pharmacieId).maybeSingle();
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
+      }
+      // Lien vers l'ordonnance d'origine (26/09/2026) — optionnel, jamais fait
+      // confiance sans vérification : un ordonnanceId fourni par le client
+      // doit appartenir à CETTE pharmacie, sinon silencieusement ignoré (pas
+      // une erreur bloquante — un id invalide/périmé ne doit pas empêcher la
+      // création du rappel lui-même).
+      let verifiedOrdonnanceId: string | null = null;
+      if (ordonnanceId) {
+        const { data: ordo } = await sb.from("ordonnances").select("id").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+        if (ordo) verifiedOrdonnanceId = ordo.id;
       }
       // Consentement du patient à être recontacté — obligatoire, jamais un
       // défaut supposé sur une donnée de santé (même logique que
@@ -541,12 +636,69 @@ Deno.serve(async (req) => {
         medecin_prescripteur: medecinPrescripteur?.trim() || null,
         specialite: specialite?.trim() || null,
         consentement_sms: true,
+        // @fix 24/09/2026 (audit RGPD) — horodatage du recueil du consentement,
+        // pour pouvoir le démontrer en cas de contestation (art. 7(1)) — voir
+        // migration 20260924_consentement_sms_horodatage.sql.
+        consentement_sms_horodatage: new Date().toISOString(),
         token: generateShortToken(),
+        ordonnance_id: verifiedOrdonnanceId,
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
       await sb.from("rappels_evenements").insert({ rappel_id: data.id, type: "cree" });
+      // Notification backoffice (22/09/2026, demande titulaire) — visibilité
+      // sur l'activité réseau en direct. severity:"info" pour ne jamais
+      // déclencher le webhook sortant de reportAlert (réservé aux vraies
+      // pannes).
+      await reportAlert(sb, {
+        source: "secure-data", severity: "info",
+        message: `Nouveau rappel créé — ${ph?.nom || pharmacieId} (${nom.trim()} ${prenom.trim()})`,
+        meta: { pharmacieId, rappelId: data.id },
+      });
       return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en
+    // un clic à l'ordonnance depuis la liste des rappels, sans exposer un
+    // resource générique "ordonnance par id" (surface d'attaque plus large
+    // qu'utile ici : on ne veut QUE le fichier lié à un rappel qu'on sait déjà
+    // appartenir à l'appelant). Revérifie l'appartenance du rappel ET de
+    // l'ordonnance à pharmacieId, même si l'ordonnance a déjà été vérifiée à
+    // la création (défense en profondeur, cohérent avec le reste du fichier).
+    if (resource === "rappels_ordonnance_fichier") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("pharmacie_id, ordonnance_id").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (!rappel.ordonnance_id) {
+        return new Response(JSON.stringify({ data: null }), { headers: CORS });
+      }
+      const { data: ordo } = await sb.from("ordonnances")
+        .select("fichier_url, fichier_nom, fichier_type")
+        .eq("id", rappel.ordonnance_id).eq("pharmacie_id", pharmacieId).maybeSingle();
+      if (!ordo?.fichier_url) {
+        return new Response(JSON.stringify({ data: null }), { headers: CORS });
+      }
+      // @fix 28/09/2026 — l'URL signée est générée ICI (clé de service),
+      // pas laissée au client via sb.storage.createSignedUrl() : la policy
+      // storage.objects (users_own_files) exige get_user_pharmacie_id(), qui
+      // dépend de auth.uid() et vaut toujours NULL pour un poste vendeur
+      // (jeton interne signé, jamais de vraie session Supabase Auth) — un
+      // vendeur ne pouvait donc jamais générer sa propre URL signée pour un
+      // fichier de sa propre pharmacie. En la générant ici avec la clé de
+      // service (bypass RLS, appartenance déjà vérifiée ci-dessus), la popup
+      // fonctionne aussi bien pour un vendeur que pour le titulaire.
+      const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(ordo.fichier_url, 300);
+      return new Response(JSON.stringify({
+        data: { name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image", signedUrl: signed?.signedUrl || null },
+      }), { headers: CORS });
     }
 
     if (resource === "rappels_list") {
@@ -613,7 +765,9 @@ Deno.serve(async (req) => {
         }
       }
 
-      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter").length;
+      // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
+      // retrait) est un cycle toujours en cours, pas résolu : compte comme actif.
+      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length;
       const data = {
         rappelsActifs,
         rappelsTotal: (rappels || []).length,
@@ -655,6 +809,52 @@ Deno.serve(async (req) => {
     // Le pharmacien valide un rappel "à traiter" (quel que soit le choix du
     // patient) : le cycle repart à J+21, comme demandé ("jusqu'à ce que le
     // pharmacien mette fin au rappel").
+    // Marque un rappel "préparé" (26/09/2026) — le pharmacien a préparé le
+    // médicament et l'a rangé dans un casier physique, avant que le patient
+    // ne vienne le retirer. Ne concerne QUE les renouvellements réels
+    // (tout_renouveler/partiel) — "rien" n'a rien à préparer et continue
+    // d'aller directement de a_traiter à rappels_traiter, inchangé.
+    if (resource === "rappels_preparer") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (existing.statut !== "a_traiter") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
+      }
+      if (existing.choix_patient !== "tout_renouveler" && existing.choix_patient !== "partiel") {
+        return new Response(JSON.stringify({ error: "Seuls les renouvellements (total ou partiel) passent par l'étape préparation" }), { status: 409, headers: CORS });
+      }
+      // Numéro de casier : incrément atomique et circulaire (0-99) côté DB —
+      // jamais un tirage aléatoire, pour répartir équitablement l'usage des
+      // 100 casiers physiques (voir increment_rappel_case_compteur).
+      const { data: numero, error: compteurError } = await sb.rpc("increment_rappel_case_compteur", { p_pharmacie_id: pharmacieId });
+      if (compteurError || numero == null) {
+        throw new Error(compteurError?.message || "Échec de l'attribution du casier");
+      }
+      // Préfixe 2 lettres (jamais 0/O ni 1/I, même alphabet que register-pharmacie)
+      // — purement pour lisibilité/distinction visuelle, aucune signification.
+      const LETTRES_CASE = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+      const prefixe = Array.from({ length: 2 }, () => LETTRES_CASE[Math.floor(Math.random() * LETTRES_CASE.length)]).join("");
+      const caseCode = `${prefixe}${String(numero).padStart(2, "0")}`;
+      const { error: preparerError } = await sb.from("rappels_ordonnance").update({
+        statut: "prepare",
+        case_code: caseCode,
+        date_preparee: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (preparerError) throw new Error(preparerError.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "prepare", meta: { caseCode } });
+      return new Response(JSON.stringify({ data: { success: true, caseCode } }), { headers: CORS });
+    }
+
     if (resource === "rappels_traiter") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
@@ -667,8 +867,16 @@ Deno.serve(async (req) => {
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
-      if (existing.statut !== "a_traiter") {
-        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
+      // @fix 26/09/2026 — un renouvellement réel (tout_renouveler/partiel)
+      // doit d'abord être passé par l'étape "préparé" (rappels_preparer) ;
+      // "rien" continue de valider directement depuis "a_traiter", rien à
+      // préparer dans ce cas.
+      const requiertPreparation = existing.choix_patient === "tout_renouveler" || existing.choix_patient === "partiel";
+      const statutAttendu = requiertPreparation ? "prepare" : "a_traiter";
+      if (existing.statut !== statutAttendu) {
+        return new Response(JSON.stringify({
+          error: requiertPreparation ? "Ce rappel doit d'abord être marqué comme préparé" : "Ce rappel n'est pas à traiter",
+        }), { status: 409, headers: CORS });
       }
       // Prochaine date de rappel (04/09/2026) — le pharmacien peut l'ajuster
       // dans la popup de confirmation (voir RappelsSection.jsx:ValiderModal),
@@ -698,6 +906,9 @@ Deno.serve(async (req) => {
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
         date_traite: new Date().toISOString(),
+        // Casier libéré (26/09/2026) — le médicament vient d'être retiré,
+        // le repère de l'ancien cycle n'a plus lieu d'être affiché.
+        case_code: null,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (error) throw new Error(error.message);
@@ -766,6 +977,7 @@ Deno.serve(async (req) => {
         choix_patient: null,
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
+        case_code: null,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);
@@ -851,15 +1063,30 @@ Deno.serve(async (req) => {
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
+      let emailDestination: string | null = null;
       if (email?.trim()) {
         canal = "email_test";
+        // @fix 24/09/2026 (audit) — `email` n'est plus utilisé comme adresse de
+        // destination : un appelant authentifié (vendeur ou titulaire) pouvait
+        // sinon faire envoyer un email à N'IMPORTE QUELLE adresse depuis
+        // l'infrastructure OrdoMail (relais de spam/phishing), en plus d'un
+        // corps HTML construit à partir de champs patient non échappés
+        // (injection HTML). `email` n'est donc plus qu'un booléen "utiliser le
+        // canal email" ; la destination réelle est toujours l'adresse déjà
+        // enregistrée de la pharmacie, jamais une valeur fournie par le client.
+        const { data: phEmail } = await sb.from("pharmacies").select("email").eq("id", pharmacieId).maybeSingle();
+        if (!phEmail?.email) {
+          return new Response(JSON.stringify({ error: "Aucune adresse email enregistrée pour cette pharmacie" }), { status: 400, headers: CORS });
+        }
+        emailDestination = phEmail.email;
         // Toutes les lignes du message sauf la dernière (le lien brut, déjà
         // repris juste après en lien cliquable) — sinon seule la première
         // ligne apparaissait dans l'email depuis la mise en forme multi-ligne
-        // du message (07/09/2026).
-        const bodyLines = message.split("\n").slice(0, -1);
+        // du message (07/09/2026). Échappées (audit 24/09/2026) : construites
+        // à partir de champs patient (nom, spécialité...) non fiables.
+        const bodyLines = message.split("\n").slice(0, -1).map(escapeHtml);
         const html = `<p>${bodyLines.join("<br>")}</p><p><a href="${lien}">${lien}</a></p>`;
-        const result = await sendTransactionalEmail(email.trim(), `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
+        const result = await sendTransactionalEmail(phEmail.email, `[TEST] Rappel de renouvellement — ${rappel.patient_prenom}`, html, message);
         if (!result.success) {
           return new Response(JSON.stringify({ error: result.error || "Échec de l'envoi de l'email" }), { status: 502, headers: CORS });
         }
@@ -877,7 +1104,7 @@ Deno.serve(async (req) => {
         date_dernier_sms_envoye: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(canal === "email_test" ? { to: email.trim() } : {}) } });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(emailDestination ? { to: emailDestination } : {}) } });
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
     }
 
@@ -895,7 +1122,11 @@ Deno.serve(async (req) => {
       const pharmacieNom = ph?.nom || "Pharmacie inconnue";
       const auteur = vendeurSub ? (posteNom?.trim() || "Poste vendeur") : "Titulaire";
       const safeQuestion = String(question).trim().slice(0, 2000);
-      const html = `<p><strong>Pharmacie :</strong> ${pharmacieNom} (${ph?.email || "—"})</p><p><strong>Posé par :</strong> ${auteur}</p><p><strong>Question :</strong></p><p>${safeQuestion.replace(/\n/g, "<br>")}</p>`;
+      // @fix 24/09/2026 (audit) — pharmacieNom/email/auteur/safeQuestion sont
+      // tous dérivés de champs modifiables par l'utilisateur (nom de pharmacie,
+      // nom de poste vendeur, question libre) : échappés avant interpolation
+      // HTML pour éviter une injection de balises dans l'email de support.
+      const html = `<p><strong>Pharmacie :</strong> ${escapeHtml(pharmacieNom)} (${escapeHtml(ph?.email || "—")})</p><p><strong>Posé par :</strong> ${escapeHtml(auteur)}</p><p><strong>Question :</strong></p><p>${escapeHtml(safeQuestion).replace(/\n/g, "<br>")}</p>`;
       const text = `Pharmacie : ${pharmacieNom} (${ph?.email || "—"})\nPosé par : ${auteur}\n\nQuestion :\n${safeQuestion}`;
       const result = await sendTransactionalEmail("contact@ordomail.fr", `[Aide] Question de ${pharmacieNom}`, html, text);
       if (!result.success) {
@@ -921,7 +1152,7 @@ Deno.serve(async (req) => {
       { status: 400, headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "secure-data") }),
       { status: 500, headers: CORS });
   }
 });

@@ -18,6 +18,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -59,6 +60,6 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true }), { headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "log-qr-scan") }), { status: 500, headers: CORS });
   }
 });

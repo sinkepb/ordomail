@@ -51,9 +51,9 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
   return (
     <div style={{background:"#1e293b",borderRadius:16,border:"1px solid #334155",overflow:"hidden"}}>
       {/* Header client */}
-      <div style={{padding:"20px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:16}}>
+      <div className="admin-detail-header" style={{padding:"20px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
         <div style={{width:52,height:52,borderRadius:14,background:ph.couleur||"#1a3a6e",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>💊</div>
-        <div style={{flex:1}}>
+        <div style={{flex:1,minWidth:180}}>
           <div style={{fontWeight:900,fontSize:20,color:"#fff"}}>{ph.nom}</div>
           <div style={{fontSize:13,color:"#64748b"}}>{ph.email} · {ph.adresse}</div>
         </div>
@@ -71,7 +71,7 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
       {/* Graphique historique 30 jours */}
       <HistoriqueSparkline pharmacieId={ph.id}/>
 
-      <div style={{padding:"0 24px 24px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <div className="admin-detail-grid" style={{padding:"0 24px 24px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
 
         {/* ── Colonne gauche ── */}
         <div style={{display:"flex",flexDirection:"column",gap:16}}>

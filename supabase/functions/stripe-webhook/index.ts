@@ -47,7 +47,7 @@ serve(async (req) => {
   try {
     if (["customer.subscription.created","customer.subscription.updated"].includes(event.type)) {
       const sub = obj as Stripe.Subscription;
-      const { data:ph } = await supabase.from("pharmacies").select("id, email").eq("stripe_customer_id",sub.customer).single();
+      const { data:ph } = await supabase.from("pharmacies").select("id, nom, email").eq("stripe_customer_id",sub.customer).single();
       if (ph) {
         const lookupKey = sub.items.data[0]?.price.lookup_key;
         const { plan, known } = resolvePlan(lookupKey);
@@ -136,6 +136,17 @@ serve(async (req) => {
         // prélèvement réelle : sub.trial_end si l'essai gratuit est en cours
         // (cas normal à l'inscription, TRIAL_DAYS=30 dans create-checkout-
         // session), sinon current_period_end. Best-effort, non bloquant.
+        // Notification backoffice (22/09/2026, demande titulaire) — visibilité
+        // sur les nouvelles souscriptions en direct. severity:"info" pour ne
+        // jamais déclencher le webhook sortant de reportAlert (réservé aux
+        // vraies pannes) — une souscription n'est pas un incident.
+        if (event.type === "customer.subscription.created") {
+          await reportAlert(supabase, {
+            source: "stripe-webhook", severity: "info",
+            message: `Nouvelle souscription — ${ph.nom || ph.email || ph.id} (plan ${PLAN_LABELS[plan] || plan})`,
+            meta: { pharmacieId: ph.id, subId: sub.id, plan },
+          });
+        }
         if (event.type === "customer.subscription.created" && ph.email) {
           const label = PLAN_LABELS[plan] || plan;
           const priceItem = sub.items.data[0]?.price;

@@ -17,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
 import { buildLookupKey, resolveAppOrigin } from "../_shared/checkout.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 const TRIAL_DAYS = 30;
 
@@ -219,6 +220,6 @@ serve(async (req) => {
     return new Response(JSON.stringify({ url: session.url }), { headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "create-checkout-session") }), { status: 500, headers: CORS });
   }
 });

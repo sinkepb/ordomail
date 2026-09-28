@@ -11,6 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -134,7 +135,7 @@ Deno.serve(async (req) => {
 
   } catch (e) {
     return new Response(
-      JSON.stringify({ error: e.message }),
+      JSON.stringify({ error: safeErrorMessage(e, "update-pin") }),
       { status: 500, headers: CORS },
     );
   }

@@ -84,7 +84,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded, onDelete, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelete, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
@@ -226,25 +226,27 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded,
           </div>
         )}
 
-        {/* Miniature ordonnance si dispo */}
+        {/* Miniature ordonnance si dispo — @fix 28/09/2026 : retrait du
+            bouton/aperçu cliquable "Voir" (demande titulaire), la miniature
+            reste affichée à titre indicatif mais n'ouvre plus de popup. */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
-          <div style={{ marginBottom: 11, cursor: "pointer" }} onClick={onView}>
+          <div style={{ marginBottom: 11 }}>
             <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
           </div>
         )}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
-          <div onClick={onView} style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
+          <div style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", border: "1px solid #eee" }}>
             <div style={{ fontSize: 18 }}>📄</div>
             <div style={{ fontSize: 8, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
           </div>
         )}
         {/* Photo iPhone (HEIC) : aucun navigateur de bureau ne peut la prévisualiser
-            inline (icône brisée sinon) — état honnête, téléchargement via ViewerModal. */}
+            inline (icône brisée sinon) — téléchargement via le bouton ⬇️. */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "heic" && (
-          <div onClick={onView} style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", cursor: "pointer", border: "1px solid #eee" }}>
+          <div style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", border: "1px solid #eee" }}>
             <div style={{ fontSize: 18 }}>📷</div>
             <div style={{ fontSize: 8, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
-            <div style={{ fontSize: 8, color: "#aaa", marginTop: 2 }}>Photo iPhone (HEIC) — cliquer pour télécharger</div>
+            <div style={{ fontSize: 8, color: "#aaa", marginTop: 2 }}>Photo iPhone (HEIC) — télécharger pour consulter</div>
           </div>
         )}
       </div>
@@ -290,19 +292,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded,
               🔔
             </button>
           )}
-          {/* Voir — affiché dès qu'un fichier existe (dataUrl EN DÉMO ou path
-              EN PROD), pas seulement dataUrl : en prod le fichier n'a jamais
-              de dataUrl (chargé à la demande via URL signée, voir
-              AttachmentThumb plus haut), donc ce bouton ne s'affichait quasi
-              jamais en usage réel — repéré en direct par le titulaire pilote
-              (incohérence "le bouton Voir n'apparaît pas systématiquement"). */}
-          {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) ? (
-            <button onClick={onView} title="Voir l'ordonnance" style={{
-              width: 26, height: 26, flexShrink: 0, boxSizing: "border-box", padding: 0, border: "1.5px solid #e0e0e0", borderRadius: 7,
-              background: "#fff", color: "#555", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>👁</button>
-          ) : (
+          {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré :
+              affichait la miniature/le fichier dans une popup, jugé
+              redondant avec le téléchargement direct (⬇️ ci-dessous). */}
+          {!(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
             <div style={{ display: "flex", gap: 4 }}>
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
@@ -370,7 +363,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onUpload, onReopen, onDownloaded,
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onDelete, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoRow({ id, ordo, onPrint, onReopen, onDownloaded, onDelete, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -468,13 +461,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onDelete, 
             🔔
           </button>
         )}
-        <button onClick={onView} disabled={!hasFile}
-          style={{ padding: "6px 10px", border: `1.5px solid ${hasFile ? accent.border : "#e2e8f0"}`,
-            borderRadius: 8, background: hasFile ? "#f8faff" : "#f5f5f5",
-            color: hasFile ? accent.avatar : "#ccc", fontWeight: 700, fontSize: 13,
-            cursor: hasFile ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
-          👁
-        </button>
+        {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
         {/* Téléchargement direct + Créer un rappel — manquaient en vue liste
             (04/09/2026), déjà présents en vue grille (OrdoCard/OrdoGroup). */}
         {hasFile && (
@@ -518,7 +505,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onReopen, onDownloaded, onDelete, 
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -680,17 +667,7 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelet
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-                {/* dataUrl OU path (04/09/2026, même correctif que OrdoCard) —
-                    en prod le fichier n'a jamais de dataUrl, seulement path
-                    (URL signée chargée à la demande). */}
-                {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && (
-                  <button onClick={() => onView(o)}
-                    style={{ padding: "3px 6px", border: "1px solid #c7d2fe", borderRadius: 5,
-                      background: "#f0f4ff", color: "#4338ca", fontSize: 8,
-                      cursor: "pointer", fontFamily: "inherit" }}>
-                    👁
-                  </button>
-                )}
+                {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
                 {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && (
                   <button onClick={() => handleDownload(o)} disabled={downloadingId === o.id} title="Télécharger le fichier"
                     style={{ padding: "3px 6px", border: "1px solid rgba(26,58,110,0.3)", borderRadius: 5,
@@ -715,6 +692,17 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelet
                     ✓ ↩
                   </button>
                 )}
+                {/* @fix 26/09/2026 — un rappel par ordonnance individuelle du
+                    groupe (avant : un seul bouton pour tout le patient, au
+                    pied du groupe, sans lien avec une ordonnance précise). */}
+                {onCreateRappel && (
+                  <button onClick={() => onCreateRappel(o)} title="Créer un rappel pour cette ordonnance"
+                    style={{ padding: "3px 6px", border: "1.5px solid rgba(26,58,110,0.3)", borderRadius: 5,
+                      background: "#f0f4ff", color: "#1a3a6e", fontSize: 8,
+                      cursor: "pointer", fontFamily: "inherit" }}>
+                    ⏰
+                  </button>
+                )}
                 {onDelete && (
                   <button onClick={() => onDelete(o)} title="Supprimer l'ordonnance"
                     style={{ padding: "3px 6px", border: "1px solid #fecaca", borderRadius: 5,
@@ -734,19 +722,11 @@ function OrdoGroup({ id, group, onPrint, onView, onReopen, onDownloaded, onDelet
           que le conteneur soit display:flex/column, voir plus haut — c'était
           documenté comme l'intention ici mais jamais réellement appliqué). */}
       <div style={{ marginTop: "auto", padding: "0 11px 11px", display: "flex", flexDirection: "column", gap: 5 }}>
-        {/* Créer un rappel — seule sur sa ligne, au-dessus des autres boutons
-            (retour direct du titulaire pilote, 04/09/2026), un seul rappel
-            par groupe/patient plutôt que par ordonnance individuelle. */}
-        {onCreateRappel && (
-          <button onClick={() => onCreateRappel(group)} style={{
-            width: "100%", boxSizing: "border-box", padding: "9px", border: "1.5px solid rgba(26,58,110,0.3)",
-            borderRadius: 7, background: "#f0f4ff", color: "#1a3a6e", fontWeight: 700, fontSize: 11,
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-          }}>
-            ⏰ Créer son rappel
-          </button>
-        )}
+        {/* @fix 26/09/2026 — le bouton "Créer son rappel" unique par groupe a
+            été retiré : chaque ordonnance du groupe a désormais son propre
+            bouton ⏰ ci-dessus (liste des ordonnances du groupe), pour lier
+            le rappel à l'ordonnance réellement concernée plutôt qu'à une
+            ordonnance arbitraire du patient. */}
         <div style={{ display: "flex", gap: 6 }}>
           {onSonnette && sonnetteActive !== false && (
             <button onClick={onSonnette}

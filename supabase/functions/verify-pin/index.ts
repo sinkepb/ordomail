@@ -15,6 +15,7 @@ import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getPlanLimit } from "../_shared/planFeatures.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 const MAX_ATTEMPTS_PER_WINDOW = 10;
 const WINDOW_MINUTES = 15;
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
     }), { headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "verify-pin") }),
       { status: 500, headers: CORS });
   }
 });

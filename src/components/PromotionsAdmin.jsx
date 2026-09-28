@@ -169,7 +169,7 @@ function PromotionsAdmin({ adminToken } = {}) {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 20, color: "#fff" }}>🚀 Promotions</div>
           <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>{loading ? "Chargement…" : `${list.length} promotion(s)`}</div>

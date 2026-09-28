@@ -1,16 +1,21 @@
 // ─── Journal d'audit (traçabilité connexions/impressions/consultations) ──────
 // Extrait de src/supabase.js (27/07/2026) — voir src/supabase.js.
-import { getSupabase } from './client.js';
+import { getSupabase, callSecureData } from './client.js';
 
-export async function addAuditLog({ userId, userRole, pharmacieId, action, ordonnanceId, posteNom }) {
-  const sb = getSupabase();
-  await sb.from('audit_logs').insert({
-    pharmacie_id:  pharmacieId,
-    user_id:       userId        || null,
-    user_role:     userRole      || null,
-    poste_nom:     posteNom      || null,
+// @fix 24/09/2026 (audit sécurité) — écrivait auparavant directement en base
+// (INSERT anon/authenticated), ce qui reposait sur une policy RLS ouverte à
+// tous (WITH CHECK(true)) faute d'un moyen pour un poste vendeur (PIN) de
+// s'authentifier autrement pour une écriture directe. Passe désormais par
+// secure-data:audit_log_create, qui vérifie le jeton vendeur/la session
+// titulaire côté serveur — pharmacieId/userId/userRole ne sont donc plus
+// utilisés ici que pour compatibilité de signature avec les appelants
+// existants (Dashboard.jsx, LoginPage.jsx) : la valeur réellement enregistrée
+// est toujours celle que le serveur dérive du jeton, jamais celle-ci.
+export async function addAuditLog({ action, ordonnanceId, posteNom }) {
+  await callSecureData('audit_log_create', {
     action,
-    ordonnance_id: ordonnanceId  || null,
+    ordonnanceId: ordonnanceId || null,
+    posteNom:     posteNom     || null,
   });
 }
 

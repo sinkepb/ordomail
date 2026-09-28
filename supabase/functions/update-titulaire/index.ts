@@ -7,6 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -51,7 +52,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true }), { headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }),
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "update-titulaire") }),
       { status: 500, headers: CORS });
   }
 });

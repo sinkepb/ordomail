@@ -2,12 +2,17 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, subscribeToRappels, fetchSmsConsommation } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { pdfAllPagesAsImages } from "../lib/ocr.js";
+import { fileToBase64 } from "../lib/utils.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
+  // @fix 26/09/2026 — étape "préparé" (médicament rangé en casier, en
+  // attente de retrait patient), entre "à traiter" et la validation finale.
+  prepare:    { label: "Préparé",    bg: "#fff7ed", fg: "#c2410c" },
   termine:    { label: "Terminé",    bg: "#f0fdf4", fg: "#15803d" },
 };
 
@@ -44,6 +49,7 @@ const JOURNAL_INFO = {
   sms_envoye:      { icon: "📱", label: "SMS envoyé" },
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
+  prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
   termine:         { icon: "🔚", label: "Rappel terminé" },
   reactive:        { icon: "🔄", label: "Rappel réactivé" },
@@ -59,12 +65,16 @@ function journalLigne(evt) {
   if (evt.type === "sms_echec" && evt.meta?.error) {
     return { ...info, label: `Échec d'envoi — ${evt.meta.error}` };
   }
+  if (evt.type === "prepare" && evt.meta?.caseCode) {
+    return { ...info, label: `Médicament préparé — casier ${evt.meta.caseCode}` };
+  }
   return info;
 }
 
 const FILTRES = [
   ["tous", "Tous"],
   ["a_traiter", "À traiter"],
+  ["prepare", "Préparés"],
   ["en_attente", "En attente"],
   ["termine", "Terminés"],
 ];
@@ -459,6 +469,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
+  // Préparation (26/09/2026) — pas de modal de confirmation (action peu
+  // risquée, contrairement à l'envoi SMS) : un clic attribue le casier et
+  // met à jour la ligne directement.
+  const [preparingId, setPreparingId] = useState(null);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -468,6 +482,9 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [journalLoading, setJournalLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [smsQuota, setSmsQuota] = useState(null);
+  // Ordonnance liée à un rappel (26/09/2026) — popup in-app, voir ViewerModal.
+  const [viewerAtt, setViewerAtt] = useState(null);
+  const [loadingOrdoId, setLoadingOrdoId] = useState(null);
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -475,7 +492,8 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     fetchRappels(pharmacie.id).then(data => {
       const list = data || [];
       setRappels(list);
-      setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter" : "en_attente");
+      setFiltre(list.some(r => r.statut === "a_traiter") ? "a_traiter"
+        : list.some(r => r.statut === "prepare") ? "prepare" : "en_attente");
       setLoading(false);
     });
     // Statistiques d'efficacité (08/09/2026) — chargées une fois au montage,
@@ -542,6 +560,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setSending(false);
   }
 
+  async function handlePreparer(rappel) {
+    setPreparingId(rappel.id);
+    try {
+      const result = await preparerRappel(rappel.id);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "prepare", case_code: result?.caseCode || null } : r));
+    } catch (e) {
+      console.error("[handlePreparer]", e.message);
+    }
+    setPreparingId(null);
+  }
+
   async function handleValiderConfirm(dateRappel) {
     const rappel = validatingRappel;
     setBusyId(rappel.id);
@@ -583,6 +612,22 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       console.error("[handleReactiverConfirm]", e.message);
     }
     setBusyId(null);
+  }
+
+  // Ouvre l'ordonnance liée à un rappel dans une popup in-app (26/09/2026,
+  // révisé le 28/09/2026 : plus jamais de nouvel onglet, voir
+  // RappelOrdonnanceViewerModal). L'URL signée est déjà générée côté
+  // serveur par secure-data (voir son commentaire) — jamais via
+  // getSignedUrl() ici : ce dernier tourne avec la session du navigateur,
+  // qui pour un poste vendeur n'a pas les droits nécessaires côté Storage.
+  async function handleViewOrdonnance(rappel) {
+    setLoadingOrdoId(rappel.id);
+    try {
+      const att = await fetchRappelOrdonnance(rappel.id);
+      if (att?.signedUrl) setViewerAtt({ ...att, dataUrl: att.signedUrl });
+    } finally {
+      setLoadingOrdoId(null);
+    }
   }
 
   async function toggleJournal(rappelId) {
@@ -726,13 +771,23 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   </div>
                 )}
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
-                {r.statut === "a_traiter" && r.choix_patient && (
+                {(r.statut === "a_traiter" || r.statut === "prepare") && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
                 )}
-                {r.statut === "a_traiter" && r.creneau_retrait && (
+                {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
                   <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
                 )}
               </div>
+              {/* Casier de préparation (26/09/2026, grossi le 26/09/2026 sur
+                  retour titulaire) — repère interne, jamais communiqué au
+                  patient. Doit être identifiable EN UN COUP D'ŒIL par le
+                  vendeur au moment de la livraison : gros, gras, bien avant
+                  le badge de statut dans l'ordre de lecture de la ligne. */}
+              {r.statut === "prepare" && r.case_code && (
+                <div style={{ background: "#c2410c", color: "#fff", borderRadius: 10, padding: "6px 16px", fontSize: 22, fontWeight: 900, letterSpacing: "0.03em", flexShrink: 0, lineHeight: 1.1 }}>
+                  📦 {r.case_code}
+                </div>
+              )}
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
               <button onClick={() => setEditingRappel(r)} disabled={busy}
                 style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
@@ -748,7 +803,16 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   📱 Envoyer le SMS
                 </button>
               )}
-              {r.statut === "a_traiter" && (
+              {/* Préparation (26/09/2026) — étape intermédiaire réservée aux
+                  vrais renouvellements (tout/partiel) : "rien" continue
+                  d'aller directement de à traiter à Valider, rien à préparer. */}
+              {r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel") && (
+                <button onClick={() => handlePreparer(r)} disabled={busy || preparingId === r.id}
+                  style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: (busy || preparingId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || preparingId === r.id) ? 0.6 : 1 }}>
+                  {preparingId === r.id ? "…" : "📦 Marquer préparé"}
+                </button>
+              )}
+              {((r.statut === "a_traiter" && r.choix_patient === "rien") || r.statut === "prepare") && (
                 <button onClick={() => setValidatingRappel(r)} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "…" : "✅ Valider"}
@@ -766,6 +830,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 <button onClick={() => setReactivatingRappel(r)} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   🔄 Réactiver
+                </button>
+              )}
+              {/* Ordonnance liée (26/09/2026) — accès direct au fichier
+                  depuis la liste, sans quitter l'application (jamais de
+                  nouvel onglet, voir RappelOrdonnanceViewerModal). */}
+              {r.ordonnance_id && (
+                <button onClick={() => handleViewOrdonnance(r)} disabled={loadingOrdoId === r.id}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: loadingOrdoId === r.id ? "default" : "pointer", fontFamily: "inherit", opacity: loadingOrdoId === r.id ? 0.6 : 1 }}>
+                  {loadingOrdoId === r.id ? "…" : "📎 Voir l'ordonnance"}
                 </button>
               )}
               {/* Historique détaillé (07/09/2026) — journal complet des
@@ -810,8 +883,113 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
+      {viewerAtt && <RappelOrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );
 }
 
-export { RappelsSection, RappelForm };
+// Popup "Voir l'ordonnance" dédiée aux rappels (28/09/2026) — remplace
+// ViewerModal (PrintModal.jsx), qui ouvrait un PDF/HEIC dans un NOUVEL
+// ONGLET : ici, un PDF est toujours converti en image(s) via pdf.js (déjà
+// chargé pour l'OCR, voir lib/ocr.js) et affiché inline dans la popup,
+// jamais de nouvelle fenêtre — même conversion que l'impression
+// (PrintModal.jsx, PDF_MULTIPAGE_TO_IMAGE déjà activé en production), page
+// par page si le PDF en a plusieurs. HEIC (photo iPhone) reste un cas
+// résiduel non convertible côté navigateur : message clair plutôt qu'un
+// repli vers un nouvel onglet.
+function RappelOrdonnanceViewerModal({ att, onClose }) {
+  const [images, setImages] = useState(null); // tableau de data URLs, ou null pendant le chargement
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!att?.dataUrl) return;
+      if (att.type === "image") {
+        setImages([att.dataUrl]);
+        return;
+      }
+      if (att.type === "pdf") {
+        try {
+          const resp = await fetch(att.dataUrl);
+          const blob = await resp.blob();
+          const base64 = await fileToBase64(blob);
+          const pages = await pdfAllPagesAsImages(base64);
+          if (cancelled) return;
+          if (pages && pages.length) setImages(pages);
+          else setError("Impossible de convertir ce PDF en image.");
+        } catch (e) {
+          console.error("[RappelOrdonnanceViewerModal]", e.message);
+          if (!cancelled) setError("Impossible d'afficher ce fichier.");
+        }
+        return;
+      }
+      setError("Aperçu non disponible pour ce format (photo iPhone/HEIC) — téléchargez le fichier depuis l'onglet Ordonnances.");
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [att]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20, overflowY: "auto" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: "90vw", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        {error && (
+          <div style={{ background: "#fff", borderRadius: 12, padding: "20px 24px", color: "#dc2626", fontSize: 14, maxWidth: 360, textAlign: "center" }}>
+            {error}
+          </div>
+        )}
+        {!error && !images && <div style={{ color: "#fff", fontSize: 14 }}>Chargement…</div>}
+        {!error && images && images.map((src, i) => (
+          <img key={i} src={src} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 6, background: "#fff" }} />
+        ))}
+        <button type="button" onClick={onClose}
+          style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#fff", color: "#1a3a6e", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+          Fermer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Ajout d'une ordonnance avant de créer un rappel "hors ordonnance"
+// (26/09/2026, révisé le 26/09/2026 sur retour titulaire) — depuis le
+// bouton générique "+ Nouveau rappel" (pas depuis une carte ordonnance
+// précise), le pharmacien ajoute la pièce depuis son ordinateur : chaque
+// rappel doit correspondre à une ordonnance réellement déposée pour ce
+// rappel, jamais à un choix parmi celles déjà présentes dans OrdoMail.
+// L'upload + l'OCR sont gérés par le composant parent (Dashboard.jsx, via
+// onUpload) — ce composant ne gère que l'UI du champ fichier.
+function RappelOrdonnanceUpload({ onCancel, onUpload, uploading, error }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={uploading ? undefined : onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🔔 Nouveau rappel</div>
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>
+          Ajoutez la photo ou le PDF de l'ordonnance concernée depuis votre ordinateur — le nom du patient sera pré-rempli automatiquement.
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "32px 16px", borderRadius: 12, border: "2px dashed #c7d2fe", cursor: uploading ? "wait" : "pointer", background: "#f8fafc", marginBottom: 12 }}>
+          <span style={{ fontSize: 32 }}>{uploading ? "⏳" : "📎"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#1a3a6e" }}>{uploading ? "Envoi en cours…" : "Choisir un fichier"}</span>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>JPG, PNG ou PDF — 15 Mo maximum</span>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} style={{ display: "none" }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              const r = new FileReader();
+              r.onload = ev => onUpload(f, ev.target.result);
+              r.readAsDataURL(f);
+            }} />
+        </label>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button type="button" onClick={onCancel} disabled={uploading}
+          style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: uploading ? "default" : "pointer", fontFamily: "inherit", opacity: uploading ? 0.6 : 1 }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export { RappelsSection, RappelForm, RappelOrdonnanceUpload };

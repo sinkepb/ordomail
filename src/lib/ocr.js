@@ -287,4 +287,9 @@ function prewarmTesseract() { getTesseractWorker().catch(() => {}); }
 
 // ─── UI primitives ────────────────────────────────────────────────────────────
 
-export { getTesseractWorker, preprocessImage, pdfToImage, pdfFirstPageIfSinglePage, pdfAllPagesAsImages, extractFromFile, prewarmTesseract };
+// @fix 24/09/2026 (audit) — OCR_PARSERS exporté uniquement pour permettre des
+// tests unitaires (ocr.test.js) sur la logique regex, historiquement la
+// source de plusieurs bugs réels (voir les commentaires @fix ci-dessus) —
+// jamais couverte jusqu'ici. N'affecte pas le comportement de extractFromFile,
+// qui continue de l'utiliser en interne exactement comme avant.
+export { getTesseractWorker, preprocessImage, pdfToImage, pdfFirstPageIfSinglePage, pdfAllPagesAsImages, extractFromFile, prewarmTesseract, OCR_PARSERS };
