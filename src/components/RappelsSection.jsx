@@ -73,9 +73,9 @@ function journalLigne(evt) {
 
 const FILTRES = [
   ["tous", "Tous"],
+  ["en_attente", "En attente"],
   ["a_traiter", "À traiter"],
   ["prepare", "Préparés"],
-  ["en_attente", "En attente"],
   ["termine", "Terminés"],
 ];
 
@@ -900,6 +900,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
 function RappelOrdonnanceViewerModal({ att, onClose }) {
   const [images, setImages] = useState(null); // tableau de data URLs, ou null pendant le chargement
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -930,6 +931,29 @@ function RappelOrdonnanceViewerModal({ att, onClose }) {
     return () => { cancelled = true; };
   }, [att]);
 
+  // Même mécanisme que OrdoCard.jsx:handleDownload — passe par un blob local
+  // plutôt qu'un lien direct vers l'URL signée, qui ouvrirait un nouvel onglet
+  // au lieu de déclencher un téléchargement (comportement cross-origin).
+  async function handleDownload() {
+    if (!att?.dataUrl || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(att.dataUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.name || "ordonnance";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      console.error("[RappelOrdonnanceViewerModal:handleDownload]", e.message);
+    }
+    setDownloading(false);
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20, overflowY: "auto" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ maxWidth: "90vw", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
@@ -942,10 +966,18 @@ function RappelOrdonnanceViewerModal({ att, onClose }) {
         {!error && images && images.map((src, i) => (
           <img key={i} src={src} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 6, background: "#fff" }} />
         ))}
-        <button type="button" onClick={onClose}
-          style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#fff", color: "#1a3a6e", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
-          Fermer
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          {att?.dataUrl && (
+            <button type="button" onClick={handleDownload} disabled={downloading}
+              style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #fff", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: downloading ? "default" : "pointer", opacity: downloading ? 0.6 : 1, fontFamily: "inherit" }}>
+              {downloading ? "…" : "⬇️ Télécharger"}
+            </button>
+          )}
+          <button type="button" onClick={onClose}
+            style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#fff", color: "#1a3a6e", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Fermer
+          </button>
+        </div>
       </div>
     </div>
   );
