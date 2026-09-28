@@ -2,8 +2,9 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance, getSignedUrl } from "../supabase.js";
-import { ViewerModal } from "./PrintModal.jsx";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { pdfAllPagesAsImages } from "../lib/ocr.js";
+import { fileToBase64 } from "../lib/utils.js";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
@@ -613,18 +614,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setBusyId(null);
   }
 
-  // Ouvre l'ordonnance liée à un rappel dans une popup in-app (26/09/2026) —
-  // même mécanisme que le bouton "👁 Voir" des ordonnances (Dashboard.jsx) :
-  // récupère le chemin Storage via secure-data, génère une URL signée à la
-  // demande, puis réutilise ViewerModal tel quel.
+  // Ouvre l'ordonnance liée à un rappel dans une popup in-app (26/09/2026,
+  // révisé le 28/09/2026 : plus jamais de nouvel onglet, voir
+  // RappelOrdonnanceViewerModal). L'URL signée est déjà générée côté
+  // serveur par secure-data (voir son commentaire) — jamais via
+  // getSignedUrl() ici : ce dernier tourne avec la session du navigateur,
+  // qui pour un poste vendeur n'a pas les droits nécessaires côté Storage.
   async function handleViewOrdonnance(rappel) {
     setLoadingOrdoId(rappel.id);
     try {
       const att = await fetchRappelOrdonnance(rappel.id);
-      if (att?.path) {
-        const url = await getSignedUrl(att.path, 300);
-        if (url) setViewerAtt({ ...att, dataUrl: url });
-      }
+      if (att?.signedUrl) setViewerAtt({ ...att, dataUrl: att.signedUrl });
     } finally {
       setLoadingOrdoId(null);
     }
@@ -833,7 +833,8 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 </button>
               )}
               {/* Ordonnance liée (26/09/2026) — accès direct au fichier
-                  depuis la liste, sans quitter l'application (ViewerModal). */}
+                  depuis la liste, sans quitter l'application (jamais de
+                  nouvel onglet, voir RappelOrdonnanceViewerModal). */}
               {r.ordonnance_id && (
                 <button onClick={() => handleViewOrdonnance(r)} disabled={loadingOrdoId === r.id}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: loadingOrdoId === r.id ? "default" : "pointer", fontFamily: "inherit", opacity: loadingOrdoId === r.id ? 0.6 : 1 }}>
@@ -882,7 +883,70 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
-      {viewerAtt && <ViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
+      {viewerAtt && <RappelOrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
+    </div>
+  );
+}
+
+// Popup "Voir l'ordonnance" dédiée aux rappels (28/09/2026) — remplace
+// ViewerModal (PrintModal.jsx), qui ouvrait un PDF/HEIC dans un NOUVEL
+// ONGLET : ici, un PDF est toujours converti en image(s) via pdf.js (déjà
+// chargé pour l'OCR, voir lib/ocr.js) et affiché inline dans la popup,
+// jamais de nouvelle fenêtre — même conversion que l'impression
+// (PrintModal.jsx, PDF_MULTIPAGE_TO_IMAGE déjà activé en production), page
+// par page si le PDF en a plusieurs. HEIC (photo iPhone) reste un cas
+// résiduel non convertible côté navigateur : message clair plutôt qu'un
+// repli vers un nouvel onglet.
+function RappelOrdonnanceViewerModal({ att, onClose }) {
+  const [images, setImages] = useState(null); // tableau de data URLs, ou null pendant le chargement
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!att?.dataUrl) return;
+      if (att.type === "image") {
+        setImages([att.dataUrl]);
+        return;
+      }
+      if (att.type === "pdf") {
+        try {
+          const resp = await fetch(att.dataUrl);
+          const blob = await resp.blob();
+          const base64 = await fileToBase64(blob);
+          const pages = await pdfAllPagesAsImages(base64);
+          if (cancelled) return;
+          if (pages && pages.length) setImages(pages);
+          else setError("Impossible de convertir ce PDF en image.");
+        } catch (e) {
+          console.error("[RappelOrdonnanceViewerModal]", e.message);
+          if (!cancelled) setError("Impossible d'afficher ce fichier.");
+        }
+        return;
+      }
+      setError("Aperçu non disponible pour ce format (photo iPhone/HEIC) — téléchargez le fichier depuis l'onglet Ordonnances.");
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [att]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20, overflowY: "auto" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: "90vw", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        {error && (
+          <div style={{ background: "#fff", borderRadius: 12, padding: "20px 24px", color: "#dc2626", fontSize: 14, maxWidth: 360, textAlign: "center" }}>
+            {error}
+          </div>
+        )}
+        {!error && !images && <div style={{ color: "#fff", fontSize: 14 }}>Chargement…</div>}
+        {!error && images && images.map((src, i) => (
+          <img key={i} src={src} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 6, background: "#fff" }} />
+        ))}
+        <button type="button" onClick={onClose}
+          style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#fff", color: "#1a3a6e", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+          Fermer
+        </button>
+      </div>
     </div>
   );
 }

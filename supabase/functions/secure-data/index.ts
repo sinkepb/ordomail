@@ -686,8 +686,18 @@ Deno.serve(async (req) => {
       if (!ordo?.fichier_url) {
         return new Response(JSON.stringify({ data: null }), { headers: CORS });
       }
+      // @fix 28/09/2026 — l'URL signée est générée ICI (clé de service),
+      // pas laissée au client via sb.storage.createSignedUrl() : la policy
+      // storage.objects (users_own_files) exige get_user_pharmacie_id(), qui
+      // dépend de auth.uid() et vaut toujours NULL pour un poste vendeur
+      // (jeton interne signé, jamais de vraie session Supabase Auth) — un
+      // vendeur ne pouvait donc jamais générer sa propre URL signée pour un
+      // fichier de sa propre pharmacie. En la générant ici avec la clé de
+      // service (bypass RLS, appartenance déjà vérifiée ci-dessus), la popup
+      // fonctionne aussi bien pour un vendeur que pour le titulaire.
+      const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(ordo.fichier_url, 300);
       return new Response(JSON.stringify({
-        data: { path: ordo.fichier_url, name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image" },
+        data: { name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image", signedUrl: signed?.signedUrl || null },
       }), { headers: CORS });
     }
 
