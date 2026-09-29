@@ -272,35 +272,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
             ⏰ Créer son rappel
           </button>
         )}
-        {/* Réorganisation (28/09/2026, retour titulaire) — les deux actions
-            qui résolvent l'ordonnance (Imprimer / Traité) sont regroupées sur
-            leur propre ligne, à poids visuel égal ; les utilitaires (appeler,
-            télécharger) passent sur une ligne dédiée en dessous plutôt que
-            de se disputer la place à côté d'Imprimer. */}
-        <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={onPrint} style={{
-            flex: 1, boxSizing: "border-box", padding: "10px 6px", border: "none", borderRadius: 7,
-            background: isNew ? accent.bandeau : "#475569", color: "#fff",
-            fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-          }}>
-            🖨️ Imprimer
-          </button>
-          {/* Marquer traité sans imprimer ni télécharger (28/09/2026, retour
-              titulaire) — jusqu'ici, "traité" n'était accessible qu'en
-              conséquence d'Imprimer ou Télécharger (voir TraiterConfirmModal,
-              PrintModal.jsx), jamais comme action directe. */}
-          {onTraiter && isNew && (
-            <button onClick={() => onTraiter(ordo)} style={{
-              flex: 1, boxSizing: "border-box", padding: "10px 6px", border: "1.5px solid #86efac", borderRadius: 7,
-              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            }}>
-              ✅ Traité
-            </button>
-          )}
-        </div>
+        {/* Réorganisation (29/09/2026, retour titulaire) — sonnette/télécharger/
+            imprimer (les 3 actions qu'on peut faire avant même de statuer sur
+            l'ordonnance) sur une ligne ; traité/supprimer (les 2 façons de la
+            sortir de la liste "à traiter") sur la ligne suivante. */}
         <div style={{ display: "flex", gap: 6 }}>
           {/* Bouton sonnette — en premier (retour direct, 04/09/2026) */}
           {onSonnette && sonnetteActive !== false && (
@@ -338,32 +313,56 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
               {downloading ? "…" : "⬇️"}
             </button>
           )}
+          <button onClick={onPrint} style={{
+            flex: 1, boxSizing: "border-box", padding: "10px 6px", border: "none", borderRadius: 7,
+            background: isNew ? accent.bandeau : "#475569", color: "#fff",
+            fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>
+            🖨️ Imprimer
+          </button>
         </div>
-        {/* Bouton remettre à traiter — visible uniquement sur les ordonnances imprimées */}
-        {!isNew && (
-          <button onClick={onReopen} style={{
-            width: "100%", padding: "5px", border: "1.5px solid #e6a817", borderRadius: 7,
-            background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 9,
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-          }}>
-            ↩ Remettre à traiter
-          </button>
-        )}
-        {/* Supprimer (18/09/2026, demande titulaire) — toujours disponible,
-            quel que soit le statut ; onDelete ouvre la confirmation
-            (DeleteConfirmModal, Dashboard.jsx), jamais de suppression directe
-            au clic. Discret (texte seul, pas de fond) pour ne pas rivaliser
-            visuellement avec les actions courantes de la carte. */}
-        {onDelete && (
-          <button onClick={() => onDelete(ordo)} style={{
-            width: "100%", padding: "4px", border: "none", background: "transparent",
-            color: "#b91c1c", fontWeight: 600, fontSize: 9, cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-          }}>
-            🗑️ Supprimer
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          {/* Marquer traité sans imprimer ni télécharger (28/09/2026, retour
+              titulaire) — jusqu'ici, "traité" n'était accessible qu'en
+              conséquence d'Imprimer ou Télécharger (voir TraiterConfirmModal,
+              PrintModal.jsx), jamais comme action directe. */}
+          {onTraiter && isNew && (
+            <button onClick={() => onTraiter(ordo)} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #86efac", borderRadius: 7,
+              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            }}>
+              ✅ Traité
+            </button>
+          )}
+          {/* Bouton remettre à traiter — visible uniquement sur les ordonnances
+              déjà traitées, prend la place de Traité sur cette même ligne. */}
+          {!isNew && (
+            <button onClick={onReopen} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #e6a817", borderRadius: 7,
+              background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 11,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
+              ↩ Remettre à traiter
+            </button>
+          )}
+          {/* Supprimer (18/09/2026, demande titulaire) — toujours disponible,
+              quel que soit le statut ; onDelete ouvre la confirmation
+              (DeleteConfirmModal, Dashboard.jsx), jamais de suppression directe
+              au clic. */}
+          {onDelete && (
+            <button onClick={() => onDelete(ordo)} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #fecaca", borderRadius: 7,
+              background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
+              🗑️ Supprimer
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
