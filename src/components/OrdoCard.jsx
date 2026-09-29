@@ -84,7 +84,7 @@ function AttachmentThumb({ att, style }) {
   return <img src={src} alt="" style={style}/>;
 }
 
-function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelete, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, onDownloaded, onDelete, loadingId, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew = ordo.status === "nouveau";
   const nom    = ordo.extracted?.nom || ordo.fromName || "Patient";
   const initiale = nom?.charAt(0)?.toUpperCase() || "?";
@@ -226,16 +226,17 @@ function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelet
           </div>
         )}
 
-        {/* Miniature ordonnance si dispo — @fix 28/09/2026 : retrait du
-            bouton/aperçu cliquable "Voir" (demande titulaire), la miniature
-            reste affichée à titre indicatif mais n'ouvre plus de popup. */}
+        {/* Miniature ordonnance si dispo — cliquable pour l'afficher en popup
+            (28/09/2026, retour titulaire : le bouton "Voir" avait été retiré
+            le 28/09/2026 mais la miniature reste le point d'entrée naturel
+            pour consulter le fichier, voir OrdonnanceViewerModal). */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
-          <div style={{ marginBottom: 11 }}>
-            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
+          <div style={{ marginBottom: 11 }} onClick={() => onView?.(ordo)}>
+            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee", cursor: onView ? "pointer" : "default" }} />
           </div>
         )}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
-          <div style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", border: "1px solid #eee" }}>
+          <div onClick={() => onView?.(ordo)} style={{ marginBottom: 11, background: "#f5f5f5", borderRadius: 6, padding: "8px", textAlign: "center", border: "1px solid #eee", cursor: onView ? "pointer" : "default" }}>
             <div style={{ fontSize: 18 }}>📄</div>
             <div style={{ fontSize: 8, color: "#888" }}>{truncateFilename(ordo.attachments[0].name)}</div>
           </div>
@@ -271,15 +272,35 @@ function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelet
             ⏰ Créer son rappel
           </button>
         )}
-        {/* Voir/sonnette/téléchargement doivent tenir sur la MÊME ligne
-            qu'Imprimer, jamais passer à la ligne (demande explicite,
-            04/09/2026) — largeur carrée fixe et petite (26px) plutôt qu'un
-            padding dépendant du glyphe emoji, pour que les 3 icônes + leurs
-            espacements tiennent à coup sûr dans l'autre moitié de la ligne
-            une fois Imprimer posé à 50% (vérifié au plancher réel de la
-            grille, 225px de carte — voir Dashboard.jsx). flexWrap retiré :
-            le calcul est désormais garanti au lieu d'être un filet de
-            sécurité qui finissait par se déclencher. */}
+        {/* Réorganisation (28/09/2026, retour titulaire) — les deux actions
+            qui résolvent l'ordonnance (Imprimer / Traité) sont regroupées sur
+            leur propre ligne, à poids visuel égal ; les utilitaires (appeler,
+            télécharger) passent sur une ligne dédiée en dessous plutôt que
+            de se disputer la place à côté d'Imprimer. */}
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={onPrint} style={{
+            flex: 1, boxSizing: "border-box", padding: "10px 6px", border: "none", borderRadius: 7,
+            background: isNew ? accent.bandeau : "#475569", color: "#fff",
+            fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>
+            🖨️ Imprimer
+          </button>
+          {/* Marquer traité sans imprimer ni télécharger (28/09/2026, retour
+              titulaire) — jusqu'ici, "traité" n'était accessible qu'en
+              conséquence d'Imprimer ou Télécharger (voir TraiterConfirmModal,
+              PrintModal.jsx), jamais comme action directe. */}
+          {onTraiter && isNew && (
+            <button onClick={() => onTraiter(ordo)} style={{
+              flex: 1, boxSizing: "border-box", padding: "10px 6px", border: "1.5px solid #86efac", borderRadius: 7,
+              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            }}>
+              ✅ Traité
+            </button>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 6 }}>
           {/* Bouton sonnette — en premier (retour direct, 04/09/2026) */}
           {onSonnette && sonnetteActive !== false && (
@@ -292,9 +313,6 @@ function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelet
               🔔
             </button>
           )}
-          {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré :
-              affichait la miniature/le fichier dans une popup, jugé
-              redondant avec le téléchargement direct (⬇️ ci-dessous). */}
           {!(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
             <div style={{ display: "flex", gap: 4 }}>
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
@@ -320,18 +338,6 @@ function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelet
               {downloading ? "…" : "⬇️"}
             </button>
           )}
-          {/* Imprimer occupe toujours la moitié de la largeur de la ligne
-              (demande explicite) — width:"50%" plutôt que flex:1, sinon sa
-              largeur dépend de ce qu'il y a à côté (Voir/upload, sonnette). */}
-          <button onClick={onPrint} style={{
-            width: "50%", flexShrink: 0, boxSizing: "border-box", padding: "10px 6px", border: "none", borderRadius: 7,
-            background: isNew ? accent.bandeau : "#475569", color: "#fff",
-            fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-            boxShadow: isNew ? `0 4px 12px ${accent.avatar}55` : "none",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-          }}>
-            🖨️ Imprimer
-          </button>
         </div>
         {/* Bouton remettre à traiter — visible uniquement sur les ordonnances imprimées */}
         {!isNew && (
@@ -363,7 +369,7 @@ function OrdoCard({ id, ordo, onPrint, onUpload, onReopen, onDownloaded, onDelet
   );
 }
 
-function OrdoRow({ id, ordo, onPrint, onReopen, onDownloaded, onDelete, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
+function OrdoRow({ id, ordo, onPrint, onView, onTraiter, onReopen, onDownloaded, onDelete, onSonnette, sonnetteActive, onCreateRappel, interets = [], accentUnique }) {
   const isNew   = ordo.status === "nouveau";
   const nom     = ordo.extracted?.nom || ordo.fromName || "Patient";
   const email   = ordo.fromEmail || "";
@@ -461,7 +467,15 @@ function OrdoRow({ id, ordo, onPrint, onReopen, onDownloaded, onDelete, onSonnet
             🔔
           </button>
         )}
-        {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
+        {/* Voir le fichier en popup (28/09/2026, retour titulaire) — même
+            OrdonnanceViewerModal que la vue grille (OrdoCard). */}
+        {hasFile && onView && (
+          <button onClick={() => onView(ordo)} title="Voir l'ordonnance"
+            style={{ padding: "6px 10px", border: "1.5px solid rgba(26,58,110,0.3)",
+              borderRadius: 8, background: "#f0f4ff", cursor: "pointer", fontSize: 15 }}>
+            👁
+          </button>
+        )}
         {/* Téléchargement direct + Créer un rappel — manquaient en vue liste
             (04/09/2026), déjà présents en vue grille (OrdoCard/OrdoGroup). */}
         {hasFile && (
@@ -485,6 +499,15 @@ function OrdoRow({ id, ordo, onPrint, onReopen, onDownloaded, onDelete, onSonnet
             fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
           🖨️ Imprimer
         </button>
+        {/* Marquer traité directement, sans imprimer ni télécharger
+            (28/09/2026, retour titulaire) — voir OrdoCard pour le contexte. */}
+        {onTraiter && isNew && (
+          <button onClick={() => onTraiter(ordo)}
+            style={{ padding: "6px 12px", border: "1.5px solid #86efac", borderRadius: 8,
+              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            ✅ Traité
+          </button>
+        )}
         {!isNew && (
           <button onClick={onReopen}
             style={{ padding: "6px 9px", border: "1.5px solid #e6a817", borderRadius: 8,
@@ -505,7 +528,7 @@ function OrdoRow({ id, ordo, onPrint, onReopen, onDownloaded, onDelete, onSonnet
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onView, onTraiter, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -667,7 +690,15 @@ function OrdoGroup({ id, group, onPrint, onReopen, onDownloaded, onDelete, inter
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-                {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
+                {/* Voir le fichier en popup (28/09/2026, retour titulaire). */}
+                {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && onView && (
+                  <button onClick={() => onView(o)} title="Voir l'ordonnance"
+                    style={{ padding: "3px 6px", border: "1px solid rgba(26,58,110,0.3)", borderRadius: 5,
+                      background: "#f0f4ff", color: "#1a3a6e", fontSize: 8,
+                      cursor: "pointer", fontFamily: "inherit" }}>
+                    👁
+                  </button>
+                )}
                 {(o.attachments?.[0]?.dataUrl || o.attachments?.[0]?.path) && (
                   <button onClick={() => handleDownload(o)} disabled={downloadingId === o.id} title="Télécharger le fichier"
                     style={{ padding: "3px 6px", border: "1px solid rgba(26,58,110,0.3)", borderRadius: 5,
@@ -677,14 +708,25 @@ function OrdoGroup({ id, group, onPrint, onReopen, onDownloaded, onDelete, inter
                     {downloadingId === o.id ? "…" : "⬇️"}
                   </button>
                 )}
-                {!ordImprime ? (
+                {!ordImprime && (
                   <button onClick={() => onPrint(o)}
                     style={{ padding: "3px 8px", border: "none", borderRadius: 5,
                       background: accent.bandeau, color: "#fff", fontSize: 8,
                       cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                     🖨️ Imprimer
                   </button>
-                ) : (
+                )}
+                {/* Marquer traité directement, sans imprimer ni télécharger
+                    (28/09/2026, retour titulaire) — voir OrdoCard pour le contexte. */}
+                {!ordImprime && onTraiter && (
+                  <button onClick={() => onTraiter(o)}
+                    style={{ padding: "3px 8px", border: "1px solid #86efac", borderRadius: 5,
+                      background: "#f0fdf4", color: "#15803d", fontSize: 8,
+                      cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                    ✅ Traité
+                  </button>
+                )}
+                {ordImprime && (
                   <button onClick={() => onReopen(o)} title="Remettre à traiter"
                     style={{ padding: "3px 6px", border: "1px solid #e6a817", borderRadius: 5,
                       background: "#fffbf0", color: "#92400e", fontSize: 8, fontWeight: 700,
