@@ -272,12 +272,10 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
             ⏰ Créer son rappel
           </button>
         )}
-        {/* Réorganisation (29/09/2026, retour titulaire) — Traité n'agit pas
-            sur le fichier de l'ordonnance (contrairement à Imprimer/
-            Télécharger), au même titre que Sonnette (appelle le patient,
-            sans rapport avec le fichier) : les deux restent groupés sur leur
-            propre ligne. Télécharger/Imprimer (actions sur le fichier) sur la
-            ligne suivante, Supprimer seul en dessous. */}
+        {/* Réorganisation (29/09/2026, retour titulaire) — sonnette/télécharger/
+            imprimer (les 3 actions qu'on peut faire avant même de statuer sur
+            l'ordonnance) sur une ligne ; traité/supprimer (les 2 façons de la
+            sortir de la liste "à traiter") sur la ligne suivante. */}
         <div style={{ display: "flex", gap: 6 }}>
           {/* Bouton sonnette — en premier (retour direct, 04/09/2026) */}
           {onSonnette && sonnetteActive !== false && (
@@ -290,33 +288,6 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
               🔔
             </button>
           )}
-          {/* Marquer traité sans imprimer ni télécharger (28/09/2026, retour
-              titulaire) — jusqu'ici, "traité" n'était accessible qu'en
-              conséquence d'Imprimer ou Télécharger (voir TraiterConfirmModal,
-              PrintModal.jsx), jamais comme action directe. */}
-          {onTraiter && isNew && (
-            <button onClick={() => onTraiter(ordo)} style={{
-              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #86efac", borderRadius: 7,
-              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            }}>
-              ✅ Traité
-            </button>
-          )}
-          {/* Bouton remettre à traiter — visible uniquement sur les ordonnances
-              déjà traitées, prend la place de Traité sur cette même ligne. */}
-          {!isNew && (
-            <button onClick={onReopen} style={{
-              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #e6a817", borderRadius: 7,
-              background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 11,
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            }}>
-              ↩ Remettre à traiter
-            </button>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
           {!(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
             <div style={{ display: "flex", gap: 4 }}>
               <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
@@ -352,19 +323,46 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
             🖨️ Imprimer
           </button>
         </div>
-        {/* Supprimer (18/09/2026, demande titulaire) — toujours disponible,
-            quel que soit le statut ; onDelete ouvre la confirmation
-            (DeleteConfirmModal, Dashboard.jsx), jamais de suppression directe
-            au clic. */}
-        {onDelete && (
-          <button onClick={() => onDelete(ordo)} style={{
-            width: "100%", boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #fecaca", borderRadius: 7,
-            background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-          }}>
-            🗑️ Supprimer
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          {/* Marquer traité sans imprimer ni télécharger (28/09/2026, retour
+              titulaire) — jusqu'ici, "traité" n'était accessible qu'en
+              conséquence d'Imprimer ou Télécharger (voir TraiterConfirmModal,
+              PrintModal.jsx), jamais comme action directe. */}
+          {onTraiter && isNew && (
+            <button onClick={() => onTraiter(ordo)} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #86efac", borderRadius: 7,
+              background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            }}>
+              ✅ Traité
+            </button>
+          )}
+          {/* Bouton remettre à traiter — visible uniquement sur les ordonnances
+              déjà traitées, prend la place de Traité sur cette même ligne. */}
+          {!isNew && (
+            <button onClick={onReopen} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #e6a817", borderRadius: 7,
+              background: "#fffbf0", color: "#92400e", fontWeight: 700, fontSize: 11,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
+              ↩ Remettre à traiter
+            </button>
+          )}
+          {/* Supprimer (18/09/2026, demande titulaire) — toujours disponible,
+              quel que soit le statut ; onDelete ouvre la confirmation
+              (DeleteConfirmModal, Dashboard.jsx), jamais de suppression directe
+              au clic. */}
+          {onDelete && (
+            <button onClick={() => onDelete(ordo)} style={{
+              flex: 1, boxSizing: "border-box", padding: "9px 6px", border: "1.5px solid #fecaca", borderRadius: 7,
+              background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
+              🗑️ Supprimer
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
