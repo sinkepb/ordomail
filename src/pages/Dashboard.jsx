@@ -1159,7 +1159,6 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                       onSonnette={() => appellerPatient(pharmacieId, o.code_patient)}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
                       onView={handleViewOrdo}
-                      onTraiter={(ordo)=>setTraiterConfirm(ordo)}
                       onTraiterGroupe={(group)=>setTraiterGroupeConfirm(group)}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
@@ -1328,16 +1327,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 🖨️ Imprimer
                               </button>
                             )}
-                            {/* Marquer traité directement, sans imprimer ni télécharger
-                                (28/09/2026, retour titulaire). */}
-                            {!ordImprime && (
-                              <button onClick={()=>setTraiterConfirm(ord)}
-                                style={{padding:"4px 10px",border:"1px solid #86efac",borderRadius:6,
-                                  background:"#f0fdf4",color:"#15803d",fontSize:11,fontWeight:700,
-                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
-                                ✅ Traité
-                              </button>
-                            )}
+                            {/* @fix 29/09/2026 (demande titulaire) — bouton "Traité" par
+                                ordonnance retiré ici : pour un patient à plusieurs
+                                ordonnances, seul "✅ Tout traiter" dans l'en-tête (à
+                                côté de la sonnette) reste disponible. */}
                             {ordImprime && (
                               <button onClick={()=>{updateOrdo(ord.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ord.id,posteNom});}}
                                 title="Remettre à traiter"

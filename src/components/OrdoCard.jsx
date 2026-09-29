@@ -527,7 +527,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onTraiter, onReopen, onDownloaded,
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onTraiter, onTraiterGroupe, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onView, onTraiterGroupe, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -715,16 +715,10 @@ function OrdoGroup({ id, group, onPrint, onView, onTraiter, onTraiterGroupe, onR
                     🖨️ Imprimer
                   </button>
                 )}
-                {/* Marquer traité directement, sans imprimer ni télécharger
-                    (28/09/2026, retour titulaire) — voir OrdoCard pour le contexte. */}
-                {!ordImprime && onTraiter && (
-                  <button onClick={() => onTraiter(o)}
-                    style={{ padding: "3px 8px", border: "1px solid #86efac", borderRadius: 5,
-                      background: "#f0fdf4", color: "#15803d", fontSize: 8,
-                      cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                    ✅ Traité
-                  </button>
-                )}
+                {/* @fix 29/09/2026 (demande titulaire) — bouton "Traité" par
+                    ordonnance retiré ici : pour un patient à plusieurs
+                    ordonnances, seul "✅ Tout marquer traité" au pied de
+                    carte (à côté de la sonnette) reste disponible. */}
                 {ordImprime && (
                   <button onClick={() => onReopen(o)} title="Remettre à traiter"
                     style={{ padding: "3px 6px", border: "1px solid #e6a817", borderRadius: 5,
