@@ -527,7 +527,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onTraiter, onReopen, onDownloaded,
 
 
 // ─── OrdoGroup — groupe d'ordonnances avec le même code patient ───────────────
-function OrdoGroup({ id, group, onPrint, onView, onTraiter, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
+function OrdoGroup({ id, group, onPrint, onView, onTraiter, onTraiterGroupe, onReopen, onDownloaded, onDelete, interets = [], onSonnette, sonnetteActive, onCreateRappel, accentUnique }) {
   // Statut du groupe = "nouveau" si AU MOINS UNE ordonnance est nouvelle
   const isNew      = group.ordonnances.some(o => o.status === "nouveau");
   const allImprime = group.ordonnances.every(o => o.status === "imprime");
@@ -780,19 +780,36 @@ function OrdoGroup({ id, group, onPrint, onView, onTraiter, onReopen, onDownload
               🔔
             </button>
           )}
-          {/* Statut global */}
-          <div style={{
-            flex: 1, padding: "9px", borderRadius: 7,
-            background: allImprime ? "#f0fdf4" : accent.bg,
-            border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontWeight: 800, fontSize: 10,
-            color: allImprime ? "#15803d" : accent.avatar,
-          }}>
-            {allImprime
-              ? "✓ Toutes imprimées"
-              : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
-          </div>
+          {/* Statut global — devient un bouton actionnable "Tout marquer
+              traité" (29/09/2026, retour titulaire) tant qu'il reste des
+              ordonnances à traiter : "traité" n'est pas lié à UNE ordonnance
+              précise (contrairement à Imprimer), il se raisonne au niveau du
+              patient au même titre que la sonnette, d'où sa place ici plutôt
+              que noyé dans chaque ligne (qui garde son propre bouton Traité
+              pour une ordonnance isolée). */}
+          {!allImprime && onTraiterGroupe ? (
+            <button onClick={() => onTraiterGroupe(group)} style={{
+              flex: 1, padding: "9px", borderRadius: 7, border: "1.5px solid #86efac",
+              background: "#f0fdf4", color: "#15803d",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 800, fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+            }}>
+              ✅ Tout marquer traité
+            </button>
+          ) : (
+            <div style={{
+              flex: 1, padding: "9px", borderRadius: 7,
+              background: allImprime ? "#f0fdf4" : accent.bg,
+              border: `1px solid ${allImprime ? "#bbf7d0" : accent.border}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 800, fontSize: 10,
+              color: allImprime ? "#15803d" : accent.avatar,
+            }}>
+              {allImprime
+                ? "✓ Toutes imprimées"
+                : `${group.ordonnances.filter(o=>o.status==="nouveau").length} à imprimer`}
+            </div>
+          )}
         </div>
       </div>
     </div>
