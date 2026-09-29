@@ -404,6 +404,34 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
+// Confirmation avant de marquer préparé (29/09/2026) — génère et consomme un
+// code de casier (compteur incrémenté, jamais réutilisé), donc une
+// confirmation explicite évite qu'un clic accidentel consomme un casier pour
+// rien plutôt qu'une fois le médicament réellement préparé et rangé.
+function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>📦 Marquer comme préparé ?</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+          Un identifiant de casier sera généré pour <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> — à faire uniquement une fois le médicament réellement préparé et rangé.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? "…" : "Confirmer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
@@ -472,6 +500,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // risquée, contrairement à l'envoi SMS) : un clic attribue le casier et
   // met à jour la ligne directement.
   const [preparingId, setPreparingId] = useState(null);
+  const [preparingConfirm, setPreparingConfirm] = useState(null);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -806,7 +835,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   vrais renouvellements (tout/partiel) : "rien" continue
                   d'aller directement de à traiter à Valider, rien à préparer. */}
               {r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel") && (
-                <button onClick={() => handlePreparer(r)} disabled={busy || preparingId === r.id}
+                <button onClick={() => setPreparingConfirm(r)} disabled={busy || preparingId === r.id}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: (busy || preparingId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || preparingId === r.id) ? 0.6 : 1 }}>
                   {preparingId === r.id ? "…" : "📦 Marquer préparé"}
                 </button>
@@ -881,6 +910,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
+      {preparingConfirm && <PreparerConfirmModal rappel={preparingConfirm}
+        onCancel={() => setPreparingConfirm(null)}
+        onConfirm={async () => { await handlePreparer(preparingConfirm); setPreparingConfirm(null); }}
+        submitting={preparingId === preparingConfirm.id} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
