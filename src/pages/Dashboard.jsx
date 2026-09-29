@@ -6,7 +6,8 @@ import { PLAN_LIMITS, hasFeature } from "../lib/plans.js";
 import { timeAgo, getOrdoAccent, isSameDay, toDateKey, formatDateLabel, truncateFilename } from "../lib/utils.js";
 import { extractFromFile, prewarmTesseract } from "../lib/ocr.js";
 import { OrdoCard, OrdoRow, OrdoGroup } from "../components/OrdoCard.jsx";
-import { PrintConfirmModal, TraiterConfirmModal, DeleteConfirmModal } from "../components/PrintModal.jsx";
+import { OrdonnanceViewerModal } from "../components/OrdonnanceViewerModal.jsx";
+import { PrintConfirmModal, TraiterConfirmModal, TraiterGroupeConfirmModal, DeleteConfirmModal } from "../components/PrintModal.jsx";
 import { UpgradeModal } from "../components/UpgradeModal.jsx";
 import { OffresSection } from "../components/OffresSection.jsx";
 import { CompteSection } from "../components/CompteSection.jsx";
@@ -27,6 +28,7 @@ import {
   updateOrdoExtracted,
   uploadOrdoFile,
   createOrdonnanceManuelle,
+  fetchOrdonnanceFichier,
   deleteOrdonnance,
   subscribeToPharmacy,
   addAuditLog,
@@ -572,6 +574,25 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [loadingId, setLoadingId] = useState(null);
   const [printModal, setPrintModal] = useState(null);
   const [downloadConfirm, setDownloadConfirm] = useState(null);
+  const [traiterConfirm, setTraiterConfirm] = useState(null);
+  const [traiterGroupeConfirm, setTraiterGroupeConfirm] = useState(null);
+  // Popup "voir l'ordonnance" (28/09/2026) — même OrdonnanceViewerModal que
+  // les rappels, jamais de nouvel onglet. L'URL signée est résolue côté
+  // serveur (fetchOrdonnanceFichier) plutôt que via getSignedUrl() ici : ce
+  // dernier tourne avec la session du navigateur, sans droits Storage pour un
+  // poste vendeur (pas de session Supabase Auth, voir son commentaire).
+  const [viewerAtt, setViewerAtt] = useState(null);
+  const [loadingViewerId, setLoadingViewerId] = useState(null);
+  async function handleViewOrdo(ordo) {
+    if (loadingViewerId) return;
+    setLoadingViewerId(ordo.id);
+    try {
+      const att = await fetchOrdonnanceFichier(ordo.id);
+      if (att?.signedUrl) setViewerAtt({ ...att, dataUrl: att.signedUrl });
+    } finally {
+      setLoadingViewerId(null);
+    }
+  }
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -876,6 +897,20 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   // ordonnance de "À traiter" par erreur (double-clic, téléchargement pour
   // simple vérification) — même logique de confirmation que pour Imprimer.
   function handleDownloadOrdo(id) { updateOrdo(id,{status:"imprime"}); addAuditLog({userId:userId2,userRole,pharmacieId,action:"download",ordonnanceId:id,posteNom}).catch(()=>{}); }
+  // Bouton "Traité" explicite (28/09/2026, retour titulaire) — jusqu'ici,
+  // marquer une ordonnance comme traitée n'était qu'une conséquence
+  // d'imprimer ou télécharger (action loguée en conséquence) ; ici aucun
+  // fichier n'est manipulé, donc une action d'audit dédiée plutôt que de
+  // logger faussement "download".
+  function handleTraiterOrdo(id) { updateOrdo(id,{status:"imprime"}); addAuditLog({userId:userId2,userRole,pharmacieId,action:"traiter",ordonnanceId:id,posteNom}).catch(()=>{}); }
+  // Tout marquer traité pour un patient à plusieurs ordonnances (29/09/2026,
+  // retour titulaire) — voir OrdoGroup pour le contexte (bouton au pied de
+  // carte, à côté de la sonnette, plutôt qu'ordonnance par ordonnance).
+  function handleTraiterGroupe(group) {
+    for (const o of group.ordonnances) {
+      if (o.status !== "imprime") handleTraiterOrdo(o.id);
+    }
+  }
   // Suppression définitive (18/09/2026, demande titulaire) — toujours
   // appelée depuis DeleteConfirmModal.onConfirm, jamais directement au clic
   // sur 🗑️ (voir onDelete={()=>setDeleteConfirm(ordo)} plus bas). Retrait
@@ -1123,6 +1158,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                       sonnetteActive={pharmacie?.sonnette_active !== false}
                       onSonnette={() => appellerPatient(pharmacieId, o.code_patient)}
                       onPrint={(ordo)=>{handlePrintOrdo(ordo.id);setPrintModal(ordo);}}
+                      onView={handleViewOrdo}
+                      onTraiterGroupe={(group)=>setTraiterGroupeConfirm(group)}
                       onReopen={(ordo)=>{updateOrdo(ordo.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ordo.id,posteNom});}}
                       onDownloaded={(ordo)=>setDownloadConfirm(ordo)}
                       onDelete={(ordo)=>setDeleteConfirm(ordo)}
@@ -1133,6 +1170,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient || "???")}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
+                    onView={handleViewOrdo}
+                    onTraiter={()=>setTraiterConfirm(o)}
                     onUpload={(file,dataUrl)=>handleFile(o.id,file,dataUrl)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
@@ -1195,6 +1234,18 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                               🔔
                             </button>
                           )}
+                          {/* Tout marquer traité (29/09/2026, retour titulaire) — même
+                              raisonnement que OrdoGroup : pas lié à une ordonnance
+                              précise, se raisonne au niveau du patient comme la
+                              sonnette, donc juste à côté plutôt que ligne par ligne. */}
+                          {!allImprime && (
+                            <button onClick={()=>setTraiterGroupeConfirm(o)}
+                              style={{padding:"8px 12px",border:"1.5px solid #86efac",borderRadius:9,
+                                background:"#f0fdf4",color:"#15803d",fontWeight:700,fontSize:12,
+                                cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                              ✅ Tout traiter
+                            </button>
+                          )}
                           {/* @fix 26/09/2026 — bouton unique par patient retiré : chaque
                               ordonnance du groupe a désormais son propre bouton ⏰
                               plus bas (lignes individuelles), pour lier le rappel à
@@ -1236,7 +1287,15 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 <span style={{color:"#94a3b8",fontWeight:400}}> — {truncateFilename(ord.attachments[0].name)}</span>
                               )}
                             </span>
-                            {/* @fix 28/09/2026 (demande titulaire) — bouton "👁 Voir" retiré. */}
+                            {/* Voir le fichier en popup (28/09/2026, retour titulaire). */}
+                            {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
+                              <button onClick={()=>handleViewOrdo(ord)} title="Voir l'ordonnance"
+                                style={{padding:"4px 8px",border:"1px solid rgba(26,58,110,0.3)",borderRadius:6,
+                                  background:"#f0f4ff",color:"#1a3a6e",fontSize:11,
+                                  cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                                👁
+                              </button>
+                            )}
                             {/* Téléchargement direct — manquait en vue liste groupée
                                 (04/09/2026), déjà présent en vue grille (OrdoCard). */}
                             {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
@@ -1260,14 +1319,19 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                                 ⬇️
                               </button>
                             )}
-                            {!ordImprime ? (
+                            {!ordImprime && (
                               <button onClick={()=>{handlePrintOrdo(ord.id);setPrintModal(ord);}}
                                 style={{padding:"4px 10px",border:"none",borderRadius:6,
                                   background:accent.bandeau,color:"#fff",fontSize:11,
                                   cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
                                 🖨️ Imprimer
                               </button>
-                            ) : (
+                            )}
+                            {/* @fix 29/09/2026 (demande titulaire) — bouton "Traité" par
+                                ordonnance retiré ici : pour un patient à plusieurs
+                                ordonnances, seul "✅ Tout traiter" dans l'en-tête (à
+                                côté de la sonnette) reste disponible. */}
+                            {ordImprime && (
                               <button onClick={()=>{updateOrdo(ord.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:ord.id,posteNom});}}
                                 title="Remettre à traiter"
                                 style={{padding:"4px 8px",border:"1px solid #e6a817",borderRadius:6,
@@ -1302,6 +1366,8 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                     sonnetteActive={pharmacie?.sonnette_active !== false}
                     onSonnette={()=>appellerPatient(pharmacieId, o.code_patient)}
                     onPrint={()=>{handlePrintOrdo(o.id);setPrintModal(o);}}
+                    onView={handleViewOrdo}
+                    onTraiter={()=>setTraiterConfirm(o)}
                     onReopen={()=>{updateOrdo(o.id,{status:"nouveau"});addAuditLog({userId:userId2,userRole,pharmacieId,action:"reopen",ordonnanceId:o.id,posteNom});}}
                     onDownloaded={()=>setDownloadConfirm(o)}
                     onDelete={()=>setDeleteConfirm(o)}
@@ -1344,12 +1410,21 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       </button>
       {showAide&&<AideModal posteNom={posteNom} isAdmin={canAdmin} onClose={()=>setShowAide(false)}/>}
 
+      {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
       {printModal&&<PrintConfirmModal ordo={printModal}
         onConfirm={()=>{updateOrdo(printModal.id,{status:"imprime"});setPrintModal(null);}}
         onCancel={()=>setPrintModal(null)}/>}
       {downloadConfirm&&<TraiterConfirmModal ordo={downloadConfirm} couleur={couleur}
         onConfirm={()=>{handleDownloadOrdo(downloadConfirm.id);setDownloadConfirm(null);}}
         onCancel={()=>setDownloadConfirm(null)}/>}
+      {traiterConfirm&&<TraiterConfirmModal ordo={traiterConfirm} couleur={couleur}
+        onConfirm={()=>{handleTraiterOrdo(traiterConfirm.id);setTraiterConfirm(null);}}
+        onCancel={()=>setTraiterConfirm(null)}/>}
+      {traiterGroupeConfirm&&<TraiterGroupeConfirmModal
+        count={traiterGroupeConfirm.ordonnances.filter(o=>o.status!=="imprime").length}
+        nom={traiterGroupeConfirm.extracted?.nom || traiterGroupeConfirm.fromName || "ce patient"}
+        onConfirm={()=>{handleTraiterGroupe(traiterGroupeConfirm);setTraiterGroupeConfirm(null);}}
+        onCancel={()=>setTraiterGroupeConfirm(null)}/>}
       {deleteConfirm&&<DeleteConfirmModal ordo={deleteConfirm} couleur={couleur} deleting={deleting} error={deleteError}
         onConfirm={()=>handleDeleteOrdo(deleteConfirm)}
         onCancel={()=>{setDeleteConfirm(null);setDeleteError("");}}/>}

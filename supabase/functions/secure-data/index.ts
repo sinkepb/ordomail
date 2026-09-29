@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     // 20260924_audit_logs_close_open_insert.sql pour la fermeture de la policy.
     if (resource === "audit_log_create") {
       const { action, ordonnanceId, posteNom } = params || {};
-      const ACTIONS_CONNUES = new Set(["view", "print", "download", "delete", "upload", "reopen", "login", "logout"]);
+      const ACTIONS_CONNUES = new Set(["view", "print", "download", "delete", "upload", "reopen", "login", "logout", "traiter"]);
       if (!ACTIONS_CONNUES.has(action)) {
         return new Response(JSON.stringify({ error: "action invalide" }), { status: 400, headers: CORS });
       }
@@ -695,6 +695,33 @@ Deno.serve(async (req) => {
       // fichier de sa propre pharmacie. En la générant ici avec la clé de
       // service (bypass RLS, appartenance déjà vérifiée ci-dessus), la popup
       // fonctionne aussi bien pour un vendeur que pour le titulaire.
+      const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(ordo.fichier_url, 300);
+      return new Response(JSON.stringify({
+        data: { name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image", signedUrl: signed?.signedUrl || null },
+      }), { headers: CORS });
+    }
+
+    // Fichier d'une ordonnance, pour la popup "voir" du Dashboard (28/09/2026)
+    // — même raison d'être que rappels_ordonnance_fichier ci-dessus (URL
+    // signée générée ici, clé de service, jamais côté client via
+    // sb.storage.createSignedUrl() : cassé pour un poste vendeur, qui n'a pas
+    // de session Supabase Auth donc pas de auth.uid() pour la policy
+    // storage.objects). Appartenance vérifiée par pharmacie_id avant de
+    // générer quoi que ce soit.
+    if (resource === "ordonnances_fichier") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { ordoId } = params || {};
+      if (!ordoId) {
+        return new Response(JSON.stringify({ error: "ordoId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: ordo } = await sb.from("ordonnances")
+        .select("fichier_url, fichier_nom, fichier_type")
+        .eq("id", ordoId).eq("pharmacie_id", pharmacieId).maybeSingle();
+      if (!ordo?.fichier_url) {
+        return new Response(JSON.stringify({ data: null }), { headers: CORS });
+      }
       const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(ordo.fichier_url, 300);
       return new Response(JSON.stringify({
         data: { name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image", signedUrl: signed?.signedUrl || null },

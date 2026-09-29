@@ -126,6 +126,20 @@ export async function createOrdonnanceManuelle(pharmacieId, file) {
   });
 }
 
+// URL signée du fichier d'une ordonnance, pour la popup "voir" du Dashboard
+// (28/09/2026) — générée côté serveur (voir secure-data:ordonnances_fichier),
+// jamais via getSignedUrl() côté client : cassé pour un poste vendeur (pas de
+// session Supabase Auth, donc pas de auth.uid() pour la policy storage.objects).
+export async function fetchOrdonnanceFichier(ordoId) {
+  if (IS_DEMO) return null;
+  try {
+    return await callSecureData('ordonnances_fichier', { ordoId });
+  } catch (e) {
+    console.error('[fetchOrdonnanceFichier]', e.message);
+    return null;
+  }
+}
+
 // ─── Normaliser une ordonnance DB Supabase → format UI ───────────────────────
 function normOrdo(row) {
   return {

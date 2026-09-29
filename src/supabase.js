@@ -49,6 +49,7 @@ export {
   updateOrdoExtracted,
   uploadOrdoFile,
   createOrdonnanceManuelle,
+  fetchOrdonnanceFichier,
   deleteOrdonnance,
   addOrdonnance,
 } from './lib/supabase/ordonnances.js';

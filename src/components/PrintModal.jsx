@@ -328,6 +328,40 @@ function TraiterConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
   );
 }
 
+// Marquer traitées TOUTES les ordonnances restantes d'un même patient en un
+// clic (29/09/2026, retour titulaire) — pour un patient à plusieurs
+// ordonnances (OrdoGroup), "traité" n'est pas une action liée à UNE
+// ordonnance précise comme Imprimer/Télécharger, elle se raisonne au niveau
+// du patient au même titre que la sonnette : ce bouton vit donc au pied de
+// la carte groupe, à côté de la sonnette, plutôt que noyé dans chaque ligne.
+function TraiterGroupeConfirmModal({ count, nom, onConfirm, onCancel }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: 24 }}>
+      <div style={{ position: "relative", background: "#fff", borderRadius: 20, padding: 32, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", animation: "popIn 0.2s ease" }}>
+        <button onClick={onCancel} title="Fermer sans action"
+          style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, border: "none", background: "#f1f5f9", borderRadius: "50%", color: "#64748b", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>
+          ✕
+        </button>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>✅</div>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#1a1a1a", marginBottom: 6 }}>
+            Marquer {count > 1 ? `les ${count} ordonnances` : "l'ordonnance"} de {nom} comme traitée{count > 1 ? "s" : ""} ?
+          </div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Toutes les ordonnances restantes de ce patient passeront de "À traiter" à "Traitées".</div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: "12px", border: "1.5px solid #e0e0e0", borderRadius: 10, background: "#fff", color: "#555", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} style={{ flex: 2, padding: "12px", border: "none", borderRadius: 10, background: "#2e7d32", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 12px rgba(46,125,50,0.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            ✅ Oui, {count > 1 ? "toutes traitées" : "traitée"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Confirmation de suppression (18/09/2026) — toujours affichée avant de
 // supprimer une ordonnance, jamais de suppression directe au clic (demande
 // explicite du titulaire). Distincte de TraiterConfirmModal par nature (issue
@@ -376,4 +410,4 @@ function DeleteConfirmModal({ ordo, couleur, onConfirm, onCancel, deleting, erro
   );
 }
 
-export { ViewerModal, PrintConfirmModal, TraiterConfirmModal, DeleteConfirmModal };
+export { ViewerModal, PrintConfirmModal, TraiterConfirmModal, TraiterGroupeConfirmModal, DeleteConfirmModal };
