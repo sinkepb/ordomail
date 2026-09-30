@@ -33,6 +33,7 @@ import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
+import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { escapeHtml } from "../_shared/html.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
@@ -589,10 +590,17 @@ Deno.serve(async (req) => {
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId, modeContact } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
+      // Mode de contact (30/09/2026, retour titulaire) — un patient âgé sans
+      // mobile ne recevra jamais le SMS ; auto-détecté par préfixe du numéro
+      // (voir _shared/telephone.ts), jamais fait confiance à une valeur
+      // client sans la valider contre les deux seules options possibles.
+      const modeContactFinal = (modeContact === "sms" || modeContact === "appel")
+        ? modeContact
+        : (estNumeroFixe(telephone) ? "appel" : "sms");
       // Lien vers l'ordonnance d'origine (26/09/2026) — optionnel, jamais fait
       // confiance sans vérification : un ordonnanceId fourni par le client
       // doit appartenir à CETTE pharmacie, sinon silencieusement ignoré (pas
@@ -642,6 +650,7 @@ Deno.serve(async (req) => {
         consentement_sms_horodatage: new Date().toISOString(),
         token: generateShortToken(),
         ordonnance_id: verifiedOrdonnanceId,
+        mode_contact: modeContactFinal,
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
@@ -656,6 +665,40 @@ Deno.serve(async (req) => {
         meta: { pharmacieId, rappelId: data.id },
       });
       return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Enregistrer le choix du patient après un appel téléphonique (30/09/2026)
+    // — pendant du POST anonyme de resolve-rappel (lien SMS), mais déclenché
+    // ici par le pharmacien lui-même pour un rappel en mode "appel" (patient
+    // sans mobile). Même effet final que resolve-rappel (statut "a_traiter",
+    // choix_patient, date_reponse_patient) pour rejoindre exactement le même
+    // circuit en aval, seul le déclencheur et le garde-fou de statut diffèrent
+    // (ici "a_appeler", pas "sms_envoye").
+    if (resource === "rappels_enregistrer_appel") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, choix } = params || {};
+      const CHOIX_VALIDES = new Set(["tout_renouveler", "rien", "partiel"]);
+      if (!rappelId || !CHOIX_VALIDES.has(choix)) {
+        return new Response(JSON.stringify({ error: "rappelId et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "a_appeler") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'appel" }), { status: 409, headers: CORS });
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_traiter",
+        choix_patient: choix,
+        date_reponse_patient: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "reponse_patient", meta: { choix, canal: "appel" } });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en
@@ -1020,7 +1063,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite } = params || {};
+      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -1032,6 +1075,14 @@ Deno.serve(async (req) => {
       if (nom?.trim()) patch.patient_nom = nom.trim();
       if (prenom?.trim()) patch.patient_prenom = prenom.trim();
       if (telephone?.trim()) patch.patient_telephone = telephone.trim();
+      // Mode de contact (30/09/2026) — un numéro modifié doit pouvoir changer
+      // de mode ; recalculé à partir du NOUVEAU numéro si aucune valeur
+      // explicite n'est fournie, jamais à partir de l'ancien.
+      if (modeContact === "sms" || modeContact === "appel") {
+        patch.mode_contact = modeContact;
+      } else if (telephone?.trim()) {
+        patch.mode_contact = estNumeroFixe(telephone) ? "appel" : "sms";
+      }
       if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
       if (medecinPrescripteur !== undefined) patch.medecin_prescripteur = medecinPrescripteur?.trim() || null;
       if (specialite !== undefined) patch.specialite = specialite?.trim() || null;
@@ -1133,6 +1184,35 @@ Deno.serve(async (req) => {
       }).eq("id", rappelId);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(emailDestination ? { to: emailDestination } : {}) } });
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
+    }
+
+    // Déclenchement manuel du passage en "à appeler" (30/09/2026) — pendant
+    // de rappels_envoyer_test pour un rappel en mode "appel" (numéro fixe) :
+    // même utilité (ne pas attendre le prochain passage du cron), mais sans
+    // SMS/email à envoyer, juste le même changement de statut que le cron
+    // effectue pour ce mode (voir _shared/rappelLogic.ts).
+    if (resource === "rappels_marquer_a_appeler") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "en_attente") {
+        return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse ou est terminé" }), { status: 409, headers: CORS });
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_appeler",
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "a_appeler", meta: { manuel: true } });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     // Module d'aide backoffice (14/09/2026) — "poser une question" quand la

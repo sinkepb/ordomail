@@ -2,12 +2,16 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
+  // Patient sans mobile (30/09/2026) — numéro fixe détecté à la création,
+  // le pharmacien doit appeler lui-même plutôt qu'attendre une réponse SMS
+  // qui ne viendra jamais (voir _shared/telephone.ts et rappelLogic.ts).
+  a_appeler:  { label: "À appeler",  bg: "#fef9c3", fg: "#a16207" },
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
   // @fix 26/09/2026 — étape "préparé" (médicament rangé en casier, en
   // attente de retrait patient), entre "à traiter" et la validation finale.
@@ -47,6 +51,7 @@ const JOURNAL_INFO = {
   cree:            { icon: "🆕", label: "Rappel créé" },
   sms_envoye:      { icon: "📱", label: "SMS envoyé" },
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
+  a_appeler:       { icon: "📞", label: "Passé à appeler (patient sans mobile)" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
   prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
@@ -57,6 +62,9 @@ function journalLigne(evt) {
   const info = JOURNAL_INFO[evt.type] || { icon: "•", label: evt.type };
   if (evt.type === "sms_envoye" && evt.meta?.canal === "email_test") {
     return { ...info, icon: "✉️", label: `Email envoyé (test${evt.meta?.to ? " → " + evt.meta.to : ""})` };
+  }
+  if (evt.type === "reponse_patient" && evt.meta?.canal === "appel" && evt.meta?.choix) {
+    return { ...info, icon: "📞", label: `Réponse enregistrée par téléphone : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
   if (evt.type === "reponse_patient" && evt.meta?.choix) {
     return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
@@ -73,6 +81,7 @@ function journalLigne(evt) {
 const FILTRES = [
   ["tous", "Tous"],
   ["en_attente", "En attente"],
+  ["a_appeler", "À appeler"],
   ["a_traiter", "À traiter"],
   ["prepare", "Préparés"],
   ["termine", "Terminés"],
@@ -83,6 +92,16 @@ function normalizeTel(v) {
 }
 function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
+}
+// Détection fixe/mobile par préfixe (30/09/2026) — même règle que
+// _shared/telephone.ts côté serveur (qui reste la source de vérité pour le
+// mode enregistré) : ici uniquement pour préremplir le choix à la création,
+// modifiable par le pharmacien avant validation.
+function estNumeroFixe(v) {
+  const digits = normalizeTel(v);
+  const local = digits.startsWith("+33") ? "0" + digits.slice(3) : digits;
+  const prefix = local[1];
+  return prefix !== undefined && prefix !== "6" && prefix !== "7";
 }
 // Format YYYY-MM-DD attendu par <input type="date">.
 function toDateInputValue(date) {
@@ -153,6 +172,17 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
   const canEditDate = !isEdit || editingRappel.statut === "en_attente";
+  // Mode de contact (30/09/2026) — auto-détecté par préfixe du numéro
+  // (patient sans mobile = numéro fixe → appel plutôt que SMS, voir
+  // secure-data:rappels_create pour la source de vérité côté serveur),
+  // modifiable tant que le pharmacien n'a pas touché au choix lui-même.
+  const [modeContact, setModeContact] = useState(() => editingRappel?.mode_contact || (telephone ? (estNumeroFixe(telephone) ? "appel" : "sms") : "sms"));
+  const [modeContactTouche, setModeContactTouche] = useState(false);
+
+  function handleTelephoneChange(v) {
+    setTelephone(v);
+    if (!modeContactTouche) setModeContact(estNumeroFixe(v) ? "appel" : "sms");
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -170,13 +200,13 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
       return;
     }
     if (!isEdit && !consentement) {
-      setError("Le patient doit avoir consenti à être recontacté par SMS.");
+      setError("Le patient doit avoir consenti à être recontacté.");
       return;
     }
     setCreating(true);
     try {
       const specialite = specialiteChoix === "__autre__" ? specialiteAutre.trim() : specialiteChoix;
-      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim(), specialite };
+      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim(), specialite, modeContact };
       if (canEditDate) payload.dateRappel = renouvellementVersEnvoi(dateRappel);
       if (!isEdit) payload.consentement = consentement;
       await onCreated(payload);
@@ -201,8 +231,32 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
-        <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+        <input value={telephone} onChange={e => handleTelephoneChange(e.target.value)} placeholder="06 12 34 56 78"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 8, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+
+        {/* Mode de contact (30/09/2026) — pré-rempli selon le numéro, mais
+            toujours modifiable : un patient peut préférer être appelé même
+            avec un mobile, ou l'inverse (fixe relié à une appli SMS). */}
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Mode de contact</label>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button type="button" onClick={() => { setModeContact("sms"); setModeContactTouche(true); }}
+            style={{ flex: 1, padding: "8px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13,
+              border: modeContact === "sms" ? "1.5px solid #4338ca" : "1.5px solid #e2e8f0",
+              background: modeContact === "sms" ? "#eef2ff" : "#fff", color: modeContact === "sms" ? "#4338ca" : "#64748b" }}>
+            📱 SMS
+          </button>
+          <button type="button" onClick={() => { setModeContact("appel"); setModeContactTouche(true); }}
+            style={{ flex: 1, padding: "8px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13,
+              border: modeContact === "appel" ? "1.5px solid #a16207" : "1.5px solid #e2e8f0",
+              background: modeContact === "appel" ? "#fef9c3" : "#fff", color: modeContact === "appel" ? "#a16207" : "#64748b" }}>
+            📞 Appel
+          </button>
+        </div>
+        {modeContact === "appel" && (
+          <div style={{ fontSize: 11.5, color: "#a16207", marginTop: -8, marginBottom: 12, lineHeight: 1.4 }}>
+            Numéro fixe détecté — à l'échéance, ce rappel passera en "À appeler" au lieu d'un SMS.
+          </div>
+        )}
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Spécialité / type d'ordonnance (optionnel)</label>
         <select value={specialiteChoix} onChange={e => setSpecialiteChoix(e.target.value)}
@@ -239,7 +293,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
         {!isEdit && (
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer" }}>
             <input type="checkbox" checked={consentement} onChange={e => setConsentement(e.target.checked)} style={{ marginTop: 3 }} />
-            <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient a été informé et consent à être recontacté par SMS au sujet du renouvellement de son ordonnance.</span>
+            <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient a été informé et consent à être recontacté {modeContact === "appel" ? "par téléphone" : "par SMS"} au sujet du renouvellement de son ordonnance.</span>
           </label>
         )}
 
@@ -432,6 +486,40 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
+// Enregistrer le choix du patient après un appel téléphonique (30/09/2026) —
+// pendant du choix fait par le patient lui-même sur la page publique
+// resolve-rappel (lien SMS), ici saisi par le pharmacien après avoir appelé
+// un patient en mode "appel" (numéro fixe, sans mobile).
+function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>📞 Quel est le choix du patient ?</div>
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>{rappel.patient_prenom} {rappel.patient_nom} — après l'avoir appelé(e)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <button type="button" disabled={submitting} onClick={() => onChoix("tout_renouveler")}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #86efac", background: "#f0fdf4", color: "#15803d", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            ✅ Tout renouveler
+          </button>
+          <button type="button" disabled={submitting} onClick={() => onChoix("partiel")}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            🔶 Renouvellement partiel
+          </button>
+          <button type="button" disabled={submitting} onClick={() => onChoix("rien")}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            🚫 Ne rien prendre
+          </button>
+        </div>
+        <button type="button" onClick={onCancel} disabled={submitting}
+          style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
@@ -501,6 +589,12 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // met à jour la ligne directement.
   const [preparingId, setPreparingId] = useState(null);
   const [preparingConfirm, setPreparingConfirm] = useState(null);
+  // Mode "appel" (30/09/2026) — déclenchement manuel anticipé (pendant de
+  // sendModalRappel pour le mode SMS) et enregistrement de la réponse après
+  // l'appel (pendant du POST anonyme de resolve-rappel).
+  const [marquantAppelId, setMarquantAppelId] = useState(null);
+  const [appelConfirm, setAppelConfirm] = useState(null);
+  const [enregistrantAppel, setEnregistrantAppel] = useState(false);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -597,6 +691,35 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       console.error("[handlePreparer]", e.message);
     }
     setPreparingId(null);
+  }
+
+  // Déclenchement anticipé du passage en "à appeler" (30/09/2026) — pendant
+  // de handleEnvoyer pour un rappel en mode SMS.
+  async function handleMarquerAAppeler(rappel) {
+    setMarquantAppelId(rappel.id);
+    try {
+      await marquerRappelAAppeler(rappel.id);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_appeler" } : r));
+    } catch (e) {
+      console.error("[handleMarquerAAppeler]", e.message);
+    }
+    setMarquantAppelId(null);
+  }
+
+  // Enregistrement du choix du patient après appel (30/09/2026) — pendant du
+  // POST anonyme de resolve-rappel (lien SMS), déclenché ici par le
+  // pharmacien lui-même.
+  async function handleEnregistrerAppel(choix) {
+    const rappel = appelConfirm;
+    setEnregistrantAppel(true);
+    try {
+      await enregistrerAppelRappel(rappel.id, choix);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_traiter", choix_patient: choix } : r));
+      setAppelConfirm(null);
+    } catch (e) {
+      console.error("[handleEnregistrerAppel]", e.message);
+    }
+    setEnregistrantAppel(false);
   }
 
   async function handleValiderConfirm(dateRappel) {
@@ -824,11 +947,33 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
               {/* Envoi manuel du SMS (06/09/2026) — déclenche l'envoi réel
                   sans attendre le prochain passage du cron. Masqué une fois
                   le patient déjà répondu ou le rappel terminé (voir
-                  secure-data:rappels_envoyer_test, même contrainte). */}
-              {(r.statut === "en_attente" || r.statut === "sms_envoye") && (
+                  secure-data:rappels_envoyer_test, même contrainte). Absent
+                  en mode "appel" (30/09/2026) : aucun SMS n'est jamais
+                  envoyé pour un patient sans mobile, voir le bouton
+                  "Marquer à appeler" juste en dessous. */}
+              {r.mode_contact !== "appel" && (r.statut === "en_attente" || r.statut === "sms_envoye") && (
                 <button onClick={() => { setSendError(""); setSendModalRappel(r); }} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   📱 Envoyer le SMS
+                </button>
+              )}
+              {/* Déclenchement manuel anticipé du mode "appel" (30/09/2026) —
+                  pendant du bouton SMS ci-dessus, pour un patient sans
+                  mobile : passe en "à appeler" sans attendre le prochain
+                  passage du cron (J-7). */}
+              {r.mode_contact === "appel" && r.statut === "en_attente" && (
+                <button onClick={() => handleMarquerAAppeler(r)} disabled={busy || marquantAppelId === r.id}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#a16207", fontWeight: 700, fontSize: 12.5, cursor: (busy || marquantAppelId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || marquantAppelId === r.id) ? 0.6 : 1 }}>
+                  {marquantAppelId === r.id ? "…" : "📞 Marquer à appeler"}
+                </button>
+              )}
+              {/* Enregistrer le choix du patient après l'avoir appelé
+                  (30/09/2026) — pendant du choix fait par le patient
+                  lui-même via le lien SMS (resolve-rappel). */}
+              {r.statut === "a_appeler" && (
+                <button onClick={() => setAppelConfirm(r)} disabled={busy}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                  📞 Enregistrer le choix
                 </button>
               )}
               {/* Préparation (26/09/2026) — étape intermédiaire réservée aux
@@ -915,6 +1060,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         onConfirm={async () => { await handlePreparer(preparingConfirm); setPreparingConfirm(null); }}
         submitting={preparingId === preparingConfirm.id} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
+      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => setAppelConfirm(null)} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );

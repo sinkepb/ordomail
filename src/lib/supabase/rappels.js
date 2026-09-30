@@ -41,7 +41,7 @@ export async function fetchRappelsStats() {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId, modeContact }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -51,6 +51,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
       id: `r${Date.now()}`, pharmacie_id: pharmacieId,
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
       commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, specialite: specialite || null, consentement_sms: !!consentement,
+      mode_contact: modeContact === 'appel' ? 'appel' : 'sms',
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
       ordonnance_id: ordonnanceId || null,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
@@ -59,7 +60,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId, modeContact });
 }
 
 // Fichier de l'ordonnance liée à un rappel (26/09/2026) — voir
@@ -102,9 +103,25 @@ export async function reactiverRappel(rappelId, dateRappel = null) {
   return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
 }
 
-export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite }) {
+export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact }) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite });
+  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact });
+}
+
+// Déclenchement manuel anticipé du passage en "à appeler" (30/09/2026) —
+// pendant de envoyerTestRappel pour un rappel en mode "appel" (numéro fixe,
+// patient sans mobile). Voir secure-data:rappels_marquer_a_appeler.
+export async function marquerRappelAAppeler(rappelId) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_marquer_a_appeler', { rappelId });
+}
+
+// Enregistre le choix du patient après un appel téléphonique (30/09/2026) —
+// pendant du POST anonyme de resolve-rappel (lien SMS), ici déclenché par le
+// pharmacien lui-même. Voir secure-data:rappels_enregistrer_appel.
+export async function enregistrerAppelRappel(rappelId, choix) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_enregistrer_appel', { rappelId, choix });
 }
 
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le

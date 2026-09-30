@@ -30,7 +30,7 @@ serve(async (req) => {
   try {
     const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
     const result = await runRappelScan(sb, appUrl);
-    console.log(`[rappel] ${result.scanned} échu(s) — ${result.sent} envoyé(s), ${result.failed} échec(s)`);
+    console.log(`[rappel] ${result.scanned} échu(s) — ${result.sent} envoyé(s), ${result.appeler} à appeler, ${result.failed} échec(s)`);
     return new Response(JSON.stringify({ success: true, ...result }), { headers: CORS });
   } catch (e) {
     console.error("[rappel] EXCEPTION:", (e as Error).message);

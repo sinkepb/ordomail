@@ -95,7 +95,7 @@ describe('runRappelScan', () => {
     const { sb, updates, inserts } = makeMockSupabase(dus);
     const result = await runRappelScan(sb, 'https://ordomail.fr');
 
-    expect(result).toEqual({ scanned: 3, sent: 2, failed: 1 });
+    expect(result).toEqual({ scanned: 3, sent: 2, failed: 1, appeler: 0 });
     // Seuls les 2 envois réussis mettent à jour rappels_ordonnance.
     expect(updates.filter((u) => u.table === 'rappels_ordonnance')).toHaveLength(2);
     // 3 événements journalisés (2 succès + 1 échec).
@@ -117,13 +117,31 @@ describe('runRappelScan', () => {
     const { sb } = makeMockSupabase(dus);
     const result = await runRappelScan(sb, 'https://ordomail.fr');
 
-    expect(result).toEqual({ scanned: 2, sent: 1, failed: 1 });
+    expect(result).toEqual({ scanned: 2, sent: 1, failed: 1, appeler: 0 });
   });
 
   it('aucun rappel dû : ne fait aucun appel SMS', async () => {
     const { sb } = makeMockSupabase([]);
     const result = await runRappelScan(sb, 'https://ordomail.fr');
-    expect(result).toEqual({ scanned: 0, sent: 0, failed: 0 });
+    expect(result).toEqual({ scanned: 0, sent: 0, failed: 0, appeler: 0 });
     expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('un rappel en mode "appel" (numéro fixe) passe directement en a_appeler, sans SMS', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0142345678', mode_contact: 'appel', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', pharmacie_id: 'ph1', patient_prenom: 'Marie', patient_nom: 'Durand', patient_telephone: '0600000002', mode_contact: 'sms', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb, updates, inserts } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 2, sent: 1, failed: 0, appeler: 1 });
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
+    expect(evenements.filter((e) => e.payload.type === 'a_appeler')).toHaveLength(1);
+    const majAAppeler = updates.find((u) => u.table === 'rappels_ordonnance' && u.payload.statut === 'a_appeler');
+    expect(majAAppeler).toBeTruthy();
   });
 });

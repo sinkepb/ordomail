@@ -725,7 +725,10 @@ Deno.serve(async (req) => {
       for (const r of rappels || []) {
         // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
         // retrait) est un cycle toujours en cours : compte comme actif.
-        if (r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare") {
+        // @fix 30/09/2026 — "a_appeler" (patient sans mobile, en attente que
+        // le pharmacien l'appelle) est le pendant de "sms_envoye" pour ce
+        // mode, tout aussi actif.
+        if (r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare") {
           bucket(r.pharmacie_id).rappelsActifs++;
         }
       }
@@ -758,7 +761,7 @@ Deno.serve(async (req) => {
       // renouvellement réel se calcule sur les rappels ayant déjà reçu une
       // réponse (choix_patient non nul) — pas sur le total, qui inclut des
       // cycles encore en_attente sans réponse à ce jour.
-      const parStatut = { en_attente: 0, sms_envoye: 0, a_traiter: 0, prepare: 0, termine: 0 } as Record<string, number>;
+      const parStatut = { en_attente: 0, sms_envoye: 0, a_appeler: 0, a_traiter: 0, prepare: 0, termine: 0 } as Record<string, number>;
       const parChoix = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
       let avecOrdonnance = 0, avecReponse = 0;
       for (const r of rappels || []) {
@@ -773,7 +776,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         data: {
           global: {
-            rappelsActifs: (rappels || []).filter(r => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length,
+            rappelsActifs: (rappels || []).filter(r => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare").length,
             rappelsTotal: (rappels || []).length,
             smsJour, sms7j, sms30j, sms90j,
             echecs90j, reponses90j, tauxReponse,

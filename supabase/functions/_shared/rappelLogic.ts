@@ -24,6 +24,7 @@ export interface RappelScanResult {
   scanned: number;
   sent: number;
   failed: number;
+  appeler: number;
 }
 
 // Construit le lien court (voir shortToken.ts) et le message patient — une
@@ -65,13 +66,29 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, pharmacies(nom)")
+    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
     .lte("date_prochaine_relance", new Date().toISOString());
   if (error) throw new Error(error.message);
 
-  const outcomes = await mapWithConcurrency(dus || [], RAPPEL_SCAN_CONCURRENCY, async (rappel): Promise<"sent" | "failed"> => {
+  const outcomes = await mapWithConcurrency(dus || [], RAPPEL_SCAN_CONCURRENCY, async (rappel): Promise<"sent" | "failed" | "appeler"> => {
+    // Patient sans mobile (30/09/2026, retour titulaire) — un numéro fixe ne
+    // recevra jamais le SMS : le rappel passe directement en "à appeler"
+    // (le pharmacien décroche lui-même), sans lien ni token à générer.
+    if (rappel.mode_contact === "appel") {
+      try {
+        await sb.from("rappels_ordonnance").update({
+          statut: "a_appeler",
+          updated_at: new Date().toISOString(),
+        }).eq("id", rappel.id);
+        await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler" });
+        return "appeler";
+      } catch (e) {
+        console.error(`[rappel] échec (mode appel) pour ${rappel.id}:`, (e as Error).message);
+        return "failed";
+      }
+    }
     try {
       const newToken = generateShortToken();
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
@@ -101,5 +118,6 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
 
   const sent = outcomes.filter((o) => o === "sent").length;
   const failed = outcomes.filter((o) => o === "failed").length;
-  return { scanned: (dus || []).length, sent, failed };
+  const appeler = outcomes.filter((o) => o === "appeler").length;
+  return { scanned: (dus || []).length, sent, failed, appeler };
 }

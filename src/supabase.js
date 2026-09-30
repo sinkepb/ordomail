@@ -104,4 +104,6 @@ export {
   envoyerTestRappel,
   fetchSmsConsommation,
   fetchRappelOrdonnance,
+  marquerRappelAAppeler,
+  enregistrerAppelRappel,
 } from './lib/supabase/rappels.js';
