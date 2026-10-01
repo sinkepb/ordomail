@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, runRappelScan } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, runRappelScan, runRelanceEtEscaladeScan } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -143,5 +143,110 @@ describe('runRappelScan', () => {
     expect(evenements.filter((e) => e.payload.type === 'a_appeler')).toHaveLength(1);
     const majAAppeler = updates.find((u) => u.table === 'rappels_ordonnance' && u.payload.statut === 'a_appeler');
     expect(majAAppeler).toBeTruthy();
+  });
+});
+
+// Faux client Supabase qui filtre réellement selon .eq()/.lte() (contrairement
+// à makeMockSupabase ci-dessus, qui renvoie toujours le même jeu de lignes) —
+// nécessaire ici car runRelanceEtEscaladeScan fait deux requêtes successives
+// sur la même table avec des filtres mutuellement exclusifs
+// (relance_sms_envoyee=false puis =true), qui doivent retourner des résultats
+// différents dans un même test.
+function makeFilterableMockSupabase(initialRows: any[]) {
+  const rows = initialRows.map((r) => ({ ...r }));
+  const inserts: any[] = [];
+  const sb: any = {
+    from(table: string) {
+      if (table === 'rappels_evenements') {
+        return { insert: (payload: any) => { inserts.push({ table, payload }); return Promise.resolve({ error: null }); } };
+      }
+      const filters: Array<(r: any) => boolean> = [];
+      const chain: any = {
+        select() { return chain; },
+        eq(col: string, val: any) { filters.push((r) => r[col] === val); return chain; },
+        lte(col: string, val: any) { filters.push((r) => r[col] <= val); return chain; },
+        update(payload: any) {
+          return {
+            eq: (col: string, val: any) => {
+              const row = rows.find((r) => r[col] === val);
+              if (row) Object.assign(row, payload);
+              return Promise.resolve({ error: null });
+            },
+          };
+        },
+        then(resolve: any) {
+          resolve({ data: rows.filter((r) => filters.every((f) => f(r))), error: null });
+        },
+      };
+      return chain;
+    },
+  };
+  return { sb, rows, inserts };
+}
+
+describe('runRelanceEtEscaladeScan', () => {
+  beforeEach(() => {
+    vi.mocked(sendSms).mockReset();
+  });
+
+  it('envoie une relance pour un rappel sans réponse depuis 3+ jours', async () => {
+    const il4jours = new Date(Date.now() - 4 * 86400000).toISOString();
+    const rows = [
+      { id: 'r1', token: 'TOK1', statut: 'sms_envoye', relance_sms_envoyee: false, date_dernier_sms_envoye: il4jours, patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb, rows: rowsApres, inserts } = makeFilterableMockSupabase(rows);
+    const result = await runRelanceEtEscaladeScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ relances: 1, escalades: 0 });
+    expect(rowsApres[0].relance_sms_envoyee).toBe(true);
+    expect(inserts.filter((i) => i.payload.type === 'relance_envoyee')).toHaveLength(1);
+    // Même token réutilisé (29/09/2026) — pas de régénération à la relance.
+    const [, message] = vi.mocked(sendSms).mock.calls[0];
+    expect(message).toContain('?r=TOK1');
+    expect(message).toContain('Rappel —');
+  });
+
+  it('ne relance pas un rappel envoyé il y a moins de 3 jours', async () => {
+    const ilUnJour = new Date(Date.now() - 86400000).toISOString();
+    const rows = [
+      { id: 'r1', token: 'TOK1', statut: 'sms_envoye', relance_sms_envoyee: false, date_dernier_sms_envoye: ilUnJour, patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', pharmacies: { nom: 'Pharma A' } },
+    ];
+    const { sb } = makeFilterableMockSupabase(rows);
+    const result = await runRelanceEtEscaladeScan(sb, 'https://ordomail.fr');
+    expect(result).toEqual({ relances: 0, escalades: 0 });
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('escalade en "à appeler" un rappel relancé sans réponse depuis 3+ jours', async () => {
+    const il4jours = new Date(Date.now() - 4 * 86400000).toISOString();
+    const rows = [
+      { id: 'r2', token: 'TOK2', statut: 'sms_envoye', relance_sms_envoyee: true, date_dernier_sms_envoye: il4jours, patient_prenom: 'Marie', patient_nom: 'Durand', patient_telephone: '0600000002', pharmacies: { nom: 'Pharma A' } },
+    ];
+    const { sb, rows: rowsApres, inserts } = makeFilterableMockSupabase(rows);
+    const result = await runRelanceEtEscaladeScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ relances: 0, escalades: 1 });
+    expect(rowsApres[0].statut).toBe('a_appeler');
+    const evt = inserts.find((i) => i.payload.type === 'a_appeler');
+    expect(evt?.payload.meta).toEqual({ motif: 'sans_reponse' });
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('traite relance et escalade dans le même passage, sans se marcher dessus', async () => {
+    const il4jours = new Date(Date.now() - 4 * 86400000).toISOString();
+    const rows = [
+      { id: 'r1', token: 'TOK1', statut: 'sms_envoye', relance_sms_envoyee: false, date_dernier_sms_envoye: il4jours, patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', token: 'TOK2', statut: 'sms_envoye', relance_sms_envoyee: true, date_dernier_sms_envoye: il4jours, patient_prenom: 'Marie', patient_nom: 'Durand', patient_telephone: '0600000002', pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb, rows: rowsApres } = makeFilterableMockSupabase(rows);
+    const result = await runRelanceEtEscaladeScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ relances: 1, escalades: 1 });
+    expect(rowsApres.find((r) => r.id === 'r1')?.relance_sms_envoyee).toBe(true);
+    expect(rowsApres.find((r) => r.id === 'r2')?.statut).toBe('a_appeler');
   });
 });

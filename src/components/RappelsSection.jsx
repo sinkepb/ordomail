@@ -53,6 +53,7 @@ const JOURNAL_INFO = {
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
   a_appeler:       { icon: "📞", label: "Passé à appeler (patient sans mobile)" },
   appel_effectue:  { icon: "☎️", label: "Appel de clarification effectué — passé à traiter" },
+  relance_envoyee: { icon: "🔁", label: "SMS de relance envoyé (sans réponse au premier)" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
   prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
@@ -71,7 +72,10 @@ function journalLigne(evt) {
     return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
   if (evt.type === "sms_echec" && evt.meta?.error) {
-    return { ...info, label: `Échec d'envoi — ${evt.meta.error}` };
+    return { ...info, label: `Échec d'envoi${evt.meta?.relance ? " (relance)" : ""} — ${evt.meta.error}` };
+  }
+  if (evt.type === "a_appeler" && evt.meta?.motif === "sans_reponse") {
+    return { ...info, label: "Passé à appeler — aucune réponse après relance" };
   }
   if (evt.type === "prepare" && evt.meta?.caseCode) {
     return { ...info, label: `Médicament préparé — casier ${evt.meta.caseCode}` };

@@ -7,7 +7,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
-import { runRappelScan } from "../_shared/rappelLogic.ts";
+import { runRappelScan, runRelanceEtEscaladeScan } from "../_shared/rappelLogic.ts";
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -30,8 +30,9 @@ serve(async (req) => {
   try {
     const appUrl = Deno.env.get("APP_URL") || "https://ordomail.fr";
     const result = await runRappelScan(sb, appUrl);
-    console.log(`[rappel] ${result.scanned} échu(s) — ${result.sent} envoyé(s), ${result.appeler} à appeler, ${result.failed} échec(s)`);
-    return new Response(JSON.stringify({ success: true, ...result }), { headers: CORS });
+    const relanceResult = await runRelanceEtEscaladeScan(sb, appUrl);
+    console.log(`[rappel] ${result.scanned} échu(s) — ${result.sent} envoyé(s), ${result.appeler} à appeler, ${result.failed} échec(s) — ${relanceResult.relances} relance(s), ${relanceResult.escalades} escalade(s) sans réponse`);
+    return new Response(JSON.stringify({ success: true, ...result, ...relanceResult }), { headers: CORS });
   } catch (e) {
     console.error("[rappel] EXCEPTION:", (e as Error).message);
     await reportAlert(sb, {
