@@ -19,6 +19,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel"];
 // Créneau de retrait (08/09/2026) — optionnel, indication large plutôt qu'un
@@ -125,6 +126,6 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ error: "Méthode non supportée" }), { status: 405, headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "resolve-rappel") }), { status: 500, headers: CORS });
   }
 });

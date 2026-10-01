@@ -13,6 +13,7 @@ import { verifyToken } from "../_shared/jwt.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 async function checkToken(bearer: string, jwtSecret: string): Promise<{ pharmacieId: string } | null> {
   const result = await verifyToken(bearer, jwtSecret);
@@ -137,6 +138,6 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ error: `Action inconnue: ${action}` }), { status: 400, headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "mobile-offre") }), { status: 500, headers: CORS });
   }
 });

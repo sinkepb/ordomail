@@ -108,9 +108,9 @@ export async function terminerRappel(rappelId) {
 
 // Réactive un rappel terminé (07/09/2026) — repart sur le même patient sans
 // recréer un rappel depuis zéro. Voir secure-data:rappels_reactiver.
-export async function reactiverRappel(rappelId, dateRappel = null) {
+export async function reactiverRappel(rappelId, dateRappel = null, consentement = false) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
+  return await callSecureData('rappels_reactiver', { rappelId, dateRappel, consentement });
 }
 
 export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite }) {

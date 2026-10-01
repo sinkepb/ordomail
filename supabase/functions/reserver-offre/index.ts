@@ -9,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode } from "../_shared/upload-validation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -71,6 +72,6 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ success: true, quantite }), { headers: CORS });
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "reserver-offre") }), { status: 500, headers: CORS });
   }
 });

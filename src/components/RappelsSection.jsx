@@ -587,6 +587,7 @@ function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting, e
 // validation (J+28 de renouvellement, soit J+21 d'envoi).
 function ReactiverModal({ rappel, onCancel, onConfirm, submitting, serverError }) {
   const [dateRappel, setDateRappel] = useState(defaultDateRenouvellement);
+  const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
 
   function handleSubmit(e) {
@@ -596,7 +597,15 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting, serverError }
       setError("La date de renouvellement ne peut pas être dans le passé.");
       return;
     }
-    onConfirm(renouvellementVersEnvoi(dateRappel));
+    // Consentement reconfirmé (01/10/2026, audit RGPD) — le serveur l'exige
+    // désormais à chaque réactivation, pas seulement à la création : un
+    // consentement recueilli des cycles plus tôt ne doit pas être présumé
+    // valide indéfiniment.
+    if (!consentement) {
+      setError("Confirmez que le patient consent toujours à être recontacté.");
+      return;
+    }
+    onConfirm(renouvellementVersEnvoi(dateRappel), consentement);
   }
 
   return (
@@ -612,6 +621,11 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting, serverError }
         <input type="date" value={dateRappel} min={todayDateInputValue()} onChange={e => setDateRappel(e.target.value)}
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
         <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Le SMS part 7 jours avant cette date — pré-remplie à J+28, modifiable si besoin.</div>
+
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer" }}>
+          <input type="checkbox" checked={consentement} onChange={e => setConsentement(e.target.checked)} style={{ marginTop: 3 }} />
+          <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient consent toujours à être recontacté au sujet du renouvellement de son ordonnance.</span>
+        </label>
 
         {(error || serverError) && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error || serverError}</div>}
 
@@ -873,12 +887,12 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setBusyId(null);
   }
 
-  async function handleReactiverConfirm(dateRappel) {
+  async function handleReactiverConfirm(dateRappel, consentement) {
     const rappel = reactivatingRappel;
     setBusyId(rappel.id);
     setActionError("");
     try {
-      await reactiverRappel(rappel.id, dateRappel);
+      await reactiverRappel(rappel.id, dateRappel, consentement);
       setRappels(prev => prev.map(r => r.id === rappel.id
         ? { ...r, statut: "en_attente", choix_patient: null, cycle_numero: (r.cycle_numero || 1) + 1, date_prochaine_relance: new Date(dateRappel).toISOString() }
         : r));

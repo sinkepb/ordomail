@@ -103,13 +103,25 @@ Deno.serve(async (req) => {
       if (!ACTIONS_CONNUES.has(action)) {
         return new Response(JSON.stringify({ error: "action invalide" }), { status: 400, headers: CORS });
       }
+      // ordonnanceId revérifié (01/10/2026, audit) — reconnu "cosmétique" avant
+      // ce correctif : un appelant pouvait journaliser l'ID d'une ordonnance
+      // appartenant à une AUTRE pharmacie (FK globale, non scopée par tenant),
+      // affaiblissant la valeur probante du journal en cas de litige. Même
+      // pattern que rappels_create pour ordonnanceId : silencieusement ignoré
+      // si invalide/étranger, jamais une erreur bloquante — une entrée de
+      // journal mal référencée ne doit pas empêcher l'action elle-même.
+      let verifiedOrdonnanceId: string | null = null;
+      if (ordonnanceId) {
+        const { data: ordo } = await sb.from("ordonnances").select("id").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+        if (ordo) verifiedOrdonnanceId = ordo.id;
+      }
       await sb.from("audit_logs").insert({
         pharmacie_id: pharmacieId,
         user_id: vendeurSub || callerUserId || null,
         user_role: vendeurSub ? "vendeur" : "admin",
         poste_nom: posteNom?.trim() || null,
         action,
-        ordonnance_id: ordonnanceId || null,
+        ordonnance_id: verifiedOrdonnanceId,
       });
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
@@ -1104,9 +1116,18 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, dateRappel } = params || {};
+      const { rappelId, dateRappel, consentement } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      // Consentement reconfirmé (01/10/2026, audit RGPD) — jusqu'ici, la
+      // réactivation réutilisait silencieusement le consentement d'origine,
+      // parfois recueilli des cycles plus tôt (art. 7(1) : un consentement
+      // doit pouvoir être réitéré, pas présumé indéfiniment valide quand un
+      // tiers — le pharmacien, pas le patient — relance le suivi). Exigé ici
+      // comme à la création (rappels_create), avec un nouvel horodatage.
+      if (!consentement) {
+        return new Response(JSON.stringify({ error: "Le consentement du patient à être recontacté doit être reconfirmé pour réactiver ce rappel" }), { status: 400, headers: CORS });
       }
       const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient").eq("id", rappelId).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
@@ -1141,6 +1162,9 @@ Deno.serve(async (req) => {
         // Rotation du token (01/10/2026, audit sécurité) — voir le même
         // correctif et sa justification complète dans rappels_traiter.
         token: generateShortToken(),
+        // Nouvel horodatage de consentement (01/10/2026) — preuve d'une
+        // reconfirmation à CETTE date, pas celle du cycle d'origine.
+        consentement_sms_horodatage: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);
