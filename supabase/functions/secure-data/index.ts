@@ -316,7 +316,12 @@ Deno.serve(async (req) => {
       const { data: ordo, error: insertError } = await sb.from("ordonnances").insert({
         pharmacie_id: pharmacieId,
         source: "upload",
-        status: "nouveau",
+        // Déjà traitée (01/10/2026, retour titulaire) — cette ordonnance
+        // n'existe que comme pièce jointe au rappel qu'on est en train de
+        // créer (seul appelant de cette ressource, voir commentaire plus
+        // haut) : jamais besoin de l'imprimer/traiter au comptoir, elle ne
+        // doit donc pas encombrer la file "Nouveau" de l'onglet Ordonnances.
+        status: "imprime",
         from_name: vendeurSub ? "Ajout manuel (poste)" : "Ajout manuel (titulaire)",
       }).select().single();
       if (insertError) throw new Error(insertError.message);
