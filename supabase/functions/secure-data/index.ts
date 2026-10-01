@@ -33,6 +33,7 @@ import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
 import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
+import { computeRappelsStats } from "../_shared/rappelsStatsLogic.ts";
 import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { escapeHtml } from "../_shared/html.ts";
@@ -880,64 +881,9 @@ Deno.serve(async (req) => {
         ? await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappelIds).gte("created_at", since90)
         : { data: [] as any[] };
 
-      const parRappel = new Map<string, any[]>();
-      for (const e of evenements || []) {
-        if (!parRappel.has(e.rappel_id)) parRappel.set(e.rappel_id, []);
-        parRappel.get(e.rappel_id)!.push(e);
-      }
-
-      // Dénominateur multi-canal (01/10/2026, audit) — tauxReponse/
-      // tauxRenouvellement divisaient par smsEnvoyes seul, alors qu'un
-      // patient en mode "appel" (sans mobile) n'a JAMAIS d'évènement
-      // sms_envoye : sa réponse (reponse_patient, canal "appel") gonflait le
-      // numérateur sans jamais compter dans le dénominateur, pouvant pousser
-      // le taux au-dessus de 100 % pour une pharmacie avec des patients sans
-      // mobile. `contactes` compte chaque rappel UNE fois s'il a été
-      // réellement contacté, SMS ou appel confondus.
-      let smsEnvoyes = 0, reponses = 0, echecs = 0, sommeDelaisMs = 0, nbDelais = 0, contactes = 0;
-      const choixCounts = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
-      for (const evts of parRappel.values()) {
-        evts.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        let dernierEnvoiAt: string | null = null;
-        let futContacte = false;
-        for (const e of evts) {
-          // relance_envoyee (01/10/2026) — un SMS de relance est un SMS réel
-          // envoyé (et facturé) comme le premier ; absent jusqu'ici du total.
-          if (e.type === "sms_envoye" || e.type === "relance_envoyee") {
-            smsEnvoyes++;
-            dernierEnvoiAt = e.created_at;
-            futContacte = true;
-          }
-          if (e.type === "a_appeler") futContacte = true;
-          if (e.type === "sms_echec") echecs++;
-          if (e.type === "reponse_patient") {
-            reponses++;
-            if (e.meta?.choix && choixCounts[e.meta.choix] !== undefined) choixCounts[e.meta.choix]++;
-            if (dernierEnvoiAt) {
-              sommeDelaisMs += new Date(e.created_at).getTime() - new Date(dernierEnvoiAt).getTime();
-              nbDelais++;
-            }
-          }
-        }
-        if (futContacte) contactes++;
-      }
-
-      // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
-      // retrait) est un cycle toujours en cours, pas résolu : compte comme
-      // actif. "a_appeler" (01/10/2026, audit) manquait ici — un patient en
-      // attente d'un coup de fil n'est pas moins actif qu'un SMS en attente
-      // de réponse.
-      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare").length;
-      const data = {
-        rappelsActifs,
-        rappelsTotal: (rappels || []).length,
-        smsEnvoyes90j: smsEnvoyes,
-        echecs90j: echecs,
-        tauxReponse: contactes > 0 ? Math.round((reponses / contactes) * 100) : 0,
-        tauxRenouvellement: contactes > 0 ? Math.round(((choixCounts.tout_renouveler + choixCounts.partiel) / contactes) * 100) : 0,
-        delaiReponseMoyenHeures: nbDelais > 0 ? Math.round((sommeDelaisMs / nbDelais / 3600000) * 10) / 10 : null,
-        choixCounts,
-      };
+      // Calcul extrait en fonction pure testable (01/10/2026, audit DevOps)
+      // — voir _shared/rappelsStatsLogic.ts et son fichier de test.
+      const data = computeRappelsStats(rappels || [], evenements || []);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
