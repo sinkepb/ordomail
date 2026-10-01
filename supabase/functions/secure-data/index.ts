@@ -867,16 +867,29 @@ Deno.serve(async (req) => {
         parRappel.get(e.rappel_id)!.push(e);
       }
 
-      let smsEnvoyes = 0, reponses = 0, echecs = 0, sommeDelaisMs = 0, nbDelais = 0;
+      // Dénominateur multi-canal (01/10/2026, audit) — tauxReponse/
+      // tauxRenouvellement divisaient par smsEnvoyes seul, alors qu'un
+      // patient en mode "appel" (sans mobile) n'a JAMAIS d'évènement
+      // sms_envoye : sa réponse (reponse_patient, canal "appel") gonflait le
+      // numérateur sans jamais compter dans le dénominateur, pouvant pousser
+      // le taux au-dessus de 100 % pour une pharmacie avec des patients sans
+      // mobile. `contactes` compte chaque rappel UNE fois s'il a été
+      // réellement contacté, SMS ou appel confondus.
+      let smsEnvoyes = 0, reponses = 0, echecs = 0, sommeDelaisMs = 0, nbDelais = 0, contactes = 0;
       const choixCounts = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
       for (const evts of parRappel.values()) {
         evts.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         let dernierEnvoiAt: string | null = null;
+        let futContacte = false;
         for (const e of evts) {
-          if (e.type === "sms_envoye") {
+          // relance_envoyee (01/10/2026) — un SMS de relance est un SMS réel
+          // envoyé (et facturé) comme le premier ; absent jusqu'ici du total.
+          if (e.type === "sms_envoye" || e.type === "relance_envoyee") {
             smsEnvoyes++;
             dernierEnvoiAt = e.created_at;
+            futContacte = true;
           }
+          if (e.type === "a_appeler") futContacte = true;
           if (e.type === "sms_echec") echecs++;
           if (e.type === "reponse_patient") {
             reponses++;
@@ -887,18 +900,22 @@ Deno.serve(async (req) => {
             }
           }
         }
+        if (futContacte) contactes++;
       }
 
       // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
-      // retrait) est un cycle toujours en cours, pas résolu : compte comme actif.
-      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length;
+      // retrait) est un cycle toujours en cours, pas résolu : compte comme
+      // actif. "a_appeler" (01/10/2026, audit) manquait ici — un patient en
+      // attente d'un coup de fil n'est pas moins actif qu'un SMS en attente
+      // de réponse.
+      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare").length;
       const data = {
         rappelsActifs,
         rappelsTotal: (rappels || []).length,
         smsEnvoyes90j: smsEnvoyes,
         echecs90j: echecs,
-        tauxReponse: smsEnvoyes > 0 ? Math.round((reponses / smsEnvoyes) * 100) : 0,
-        tauxRenouvellement: smsEnvoyes > 0 ? Math.round(((choixCounts.tout_renouveler + choixCounts.partiel) / smsEnvoyes) * 100) : 0,
+        tauxReponse: contactes > 0 ? Math.round((reponses / contactes) * 100) : 0,
+        tauxRenouvellement: contactes > 0 ? Math.round(((choixCounts.tout_renouveler + choixCounts.partiel) / contactes) * 100) : 0,
         delaiReponseMoyenHeures: nbDelais > 0 ? Math.round((sommeDelaisMs / nbDelais / 3600000) * 10) / 10 : null,
         choixCounts,
       };

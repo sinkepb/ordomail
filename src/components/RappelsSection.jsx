@@ -68,6 +68,9 @@ function journalLigne(evt) {
   if (evt.type === "reponse_patient" && evt.meta?.canal === "appel" && evt.meta?.choix) {
     return { ...info, icon: "📞", label: `Réponse enregistrée par téléphone : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
+  if (evt.type === "reponse_patient" && evt.meta?.apres_escalade && evt.meta?.choix) {
+    return { ...info, label: `Patient a répondu (après escalade "à appeler") : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix} — appel devenu inutile` };
+  }
   if (evt.type === "reponse_patient" && evt.meta?.choix) {
     return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
@@ -449,7 +452,7 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 // code de casier (compteur incrémenté, jamais réutilisé), donc une
 // confirmation explicite évite qu'un clic accidentel consomme un casier pour
 // rien plutôt qu'une fois le médicament réellement préparé et rangé.
-function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
@@ -458,6 +461,7 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
           Un identifiant de casier sera généré pour <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> — à faire uniquement une fois le médicament réellement préparé et rangé.
         </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -481,7 +485,7 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 // seul ne dit pas QUELS médicaments ; demandé ici car c'est le seul moment où
 // cette info existe (le pharmacien vient de raccrocher), sinon elle ne finit
 // nulle part sauf à rouvrir "Modifier" de soi-même en dehors du parcours guidé.
-function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
+function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting, error }) {
   const [choixPartiel, setChoixPartiel] = useState(false);
   const [detailPartiel, setDetailPartiel] = useState("");
 
@@ -495,6 +499,7 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
           <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
             placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
             style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+          {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
           <button type="button" disabled={submitting || !detailPartiel.trim()} onClick={() => onChoix("partiel", detailPartiel)}
             style={{ width: "100%", padding: "11px", borderRadius: 10, border: "none", background: "#92400e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (submitting || !detailPartiel.trim()) ? "default" : "pointer", fontFamily: "inherit", opacity: (submitting || !detailPartiel.trim()) ? 0.6 : 1, marginBottom: 8 }}>
             Confirmer
@@ -528,6 +533,7 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
             🚫 Ne rien prendre
           </button>
         </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <button type="button" onClick={onCancel} disabled={submitting}
           style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
           Annuler
@@ -541,7 +547,7 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
 // (01/10/2026) — le choix est déjà connu (répondu "partiel" via le lien
 // SMS), seul l'appel de clarification (quels médicaments renouveler) reste
 // à confirmer pour passer à "à traiter".
-function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting }) {
+function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting, error }) {
   const [detailPartiel, setDetailPartiel] = useState("");
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
@@ -558,6 +564,7 @@ function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting })
         <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
           placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 16, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -636,6 +643,12 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [sendModalRappel, setSendModalRappel] = useState(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  // Erreur d'action générique (01/10/2026, audit — erreurs silencieuses) —
+  // handlePreparer/handleMarquerAAppeler/handleEnregistrerAppel/
+  // handleConfirmerAppelPartiel ne faisaient que console.error en cas
+  // d'échec serveur (ex. conflit si le cron a changé le statut entre-temps) :
+  // le vendeur ne voyait rien, le bouton semblait juste ne rien faire.
+  const [actionError, setActionError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
   // Préparation (26/09/2026) — pas de modal de confirmation (action peu
   // risquée, contrairement à l'envoi SMS) : un clic attribue le casier et
@@ -743,26 +756,36 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setSending(false);
   }
 
+  // Retourne true/false (01/10/2026, audit — erreurs silencieuses) — le
+  // point d'appel ne doit fermer la modale de confirmation qu'en cas de
+  // succès réel, plus seulement après l'await quoi qu'il arrive.
   async function handlePreparer(rappel) {
     setPreparingId(rappel.id);
+    setActionError("");
     try {
       const result = await preparerRappel(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "prepare", case_code: result?.caseCode || null } : r));
+      setPreparingId(null);
+      return true;
     } catch (e) {
       console.error("[handlePreparer]", e.message);
+      setActionError(e.message || "Échec de la préparation du rappel.");
+      setPreparingId(null);
+      return false;
     }
-    setPreparingId(null);
   }
 
   // Déclenchement anticipé du passage en "à appeler" (30/09/2026) — pendant
   // de handleEnvoyer pour un rappel en mode SMS.
   async function handleMarquerAAppeler(rappel) {
     setMarquantAppelId(rappel.id);
+    setActionError("");
     try {
       await marquerRappelAAppeler(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_appeler" } : r));
     } catch (e) {
       console.error("[handleMarquerAAppeler]", e.message);
+      setActionError(e.message || "Échec du passage en mode appel.");
     }
     setMarquantAppelId(null);
   }
@@ -773,6 +796,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   async function handleEnregistrerAppel(choix, detailPartiel) {
     const rappel = appelConfirm;
     setEnregistrantAppel(true);
+    setActionError("");
     try {
       await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
       setRappels(prev => prev.map(r => {
@@ -784,6 +808,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setAppelConfirm(null);
     } catch (e) {
       console.error("[handleEnregistrerAppel]", e.message);
+      setActionError(e.message || "Échec de l'enregistrement du choix.");
     }
     setEnregistrantAppel(false);
   }
@@ -794,6 +819,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   async function handleConfirmerAppelPartiel(detailPartiel) {
     const rappel = partielAppelConfirm;
     setConfirmantPartiel(true);
+    setActionError("");
     try {
       await confirmerAppelPartiel(rappel.id, detailPartiel);
       const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
@@ -803,6 +829,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setPartielAppelConfirm(null);
     } catch (e) {
       console.error("[handleConfirmerAppelPartiel]", e.message);
+      setActionError(e.message || "Échec de la confirmation de l'appel.");
     }
     setConfirmantPartiel(false);
   }
@@ -986,6 +1013,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         })}
       </div>
 
+      {/* Erreur d'action (01/10/2026, audit) — seul "Marquer à appeler" n'a
+          pas de modale de confirmation où afficher l'erreur ; les autres
+          actions affichent la leur directement dans leur modale (prop
+          `error`), celle-ci reste donc masquée tant qu'une modale est ouverte. */}
+      {actionError && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fef2f2", border: "1.5px solid #fecaca", color: "#b91c1c", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13 }}>
+          <span>⚠️ {actionError}</span>
+          <button onClick={() => setActionError("")} style={{ background: "none", border: "none", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      )}
+
       {/* Recherche par nom + tri (07/09/2026) */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un patient…"
@@ -1087,7 +1125,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   l'appel. Pendant du choix fait par le patient lui-même via
                   le lien SMS (resolve-rappel). */}
               {r.statut === "a_appeler" && !r.choix_patient && (
-                <button onClick={() => setAppelConfirm(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setAppelConfirm(r); }} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   📞 Enregistrer le choix
                 </button>
@@ -1097,7 +1135,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   SMS), rien à ressaisir : juste confirmer que l'appel a eu
                   lieu pour passer à "à traiter". */}
               {r.statut === "a_appeler" && r.choix_patient && (
-                <button onClick={() => setPartielAppelConfirm(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setPartielAppelConfirm(r); }} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   ☎️ Appel effectué
                 </button>
@@ -1106,7 +1144,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   vrais renouvellements (tout/partiel) : "rien" continue
                   d'aller directement de à traiter à Valider, rien à préparer. */}
               {r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel") && (
-                <button onClick={() => setPreparingConfirm(r)} disabled={busy || preparingId === r.id}
+                <button onClick={() => { setActionError(""); setPreparingConfirm(r); }} disabled={busy || preparingId === r.id}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: (busy || preparingId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || preparingId === r.id) ? 0.6 : 1 }}>
                   {preparingId === r.id ? "…" : "📦 Marquer préparé"}
                 </button>
@@ -1183,11 +1221,11 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
       {preparingConfirm && <PreparerConfirmModal rappel={preparingConfirm}
         onCancel={() => setPreparingConfirm(null)}
-        onConfirm={async () => { await handlePreparer(preparingConfirm); setPreparingConfirm(null); }}
-        submitting={preparingId === preparingConfirm.id} />}
+        onConfirm={async () => { const ok = await handlePreparer(preparingConfirm); if (ok) setPreparingConfirm(null); }}
+        submitting={preparingId === preparingConfirm.id} error={actionError} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
-      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => setAppelConfirm(null)} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} />}
-      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => setPartielAppelConfirm(null)} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} />}
+      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => setAppelConfirm(null)} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} error={actionError} />}
+      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => setPartielAppelConfirm(null)} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} error={actionError} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );

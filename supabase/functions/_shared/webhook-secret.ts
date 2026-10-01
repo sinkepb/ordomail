@@ -33,3 +33,18 @@ export function verifyWebhookSecret(req: Request): boolean {
   if (!provided) return false;
   return timingSafeEqual(provided, expected);
 }
+
+// Variante pour les crons pg_cron, qui transmettent le secret via l'en-tête
+// x-cron-secret plutôt qu'un paramètre d'URL (01/10/2026, audit) —
+// send-rappel-sms avait exactement le pattern fail-open décrit plus haut
+// (`if (cronSecret && header !== cronSecret)`), jamais corrigé malgré le
+// commentaire ci-dessus qui le citait déjà en exemple. purge-ordonnances et
+// snapshot-metriques ont le même bug, non corrigé non plus — à migrer vers
+// cette fonction de la même façon quand on les traitera.
+export function verifyCronSecret(req: Request, envVar: string): boolean {
+  const expected = Deno.env.get(envVar) || "";
+  if (!expected) return false;
+  const provided = req.headers.get("x-cron-secret") || "";
+  if (!provided) return false;
+  return timingSafeEqual(provided, expected);
+}

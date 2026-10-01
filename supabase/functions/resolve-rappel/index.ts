@@ -11,7 +11,8 @@
 //                        pas une réservation de capacité) et fait passer le
 //                        rappel en "à traiter" côté pharmacien.
 //
-// N'accepte le POST que si le rappel est encore au statut "sms_envoye" — un
+// N'accepte le POST que si le rappel est encore "sms_envoye", OU "à appeler"
+// SANS choix déjà connu (01/10/2026, audit — voir peutEncoreRepondre) — un
 // token déjà répondu, ou d'un cycle précédent (régénéré à chaque envoi, voir
 // rappelLogic.ts), ne doit plus jamais pouvoir écrire une réponse.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -23,6 +24,16 @@ const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel"];
 // Créneau de retrait (08/09/2026) — optionnel, indication large plutôt qu'un
 // vrai système de réservation de capacité (voir migration correspondante).
 const CRENEAUX_VALIDES = ["ce_matin", "cet_apres_midi", "demain_matin", "demain_apres_midi"];
+
+// Un rappel escaladé en "à appeler" sans réponse (relance épuisée ou échecs
+// d'envoi répétés, voir rappelLogic.ts) n'a PAS reçu de réponse — le patient
+// peut encore cliquer son lien SMS et répondre lui-même, ce qui évite un
+// appel inutile au pharmacien. À l'inverse, un "à appeler" dont le choix est
+// déjà connu (ex. "partiel" répondu par SMS, en attente de l'appel de
+// clarification) a déjà répondu : un second POST ne doit pas l'écraser.
+function peutEncoreRepondre(rappel: { statut: string; choix_patient: string | null }): boolean {
+  return rappel.statut === "sms_envoye" || (rappel.statut === "a_appeler" && !rappel.choix_patient);
+}
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -53,7 +64,7 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("statut, patient_prenom, pharmacies(nom)")
+        .select("statut, choix_patient, patient_prenom, pharmacies(nom)")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
@@ -62,7 +73,7 @@ serve(async (req) => {
         data: {
           patientPrenom: rappel.patient_prenom,
           pharmacieNom: (rappel as any).pharmacies?.nom || "votre pharmacie",
-          dejaRepondu: rappel.statut !== "sms_envoye",
+          dejaRepondu: !peutEncoreRepondre(rappel),
         },
       }), { headers: CORS });
     }
@@ -78,13 +89,18 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("id, statut")
+        .select("id, statut, choix_patient")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
-      if (rappel.statut !== "sms_envoye") {
+      if (!peutEncoreRepondre(rappel)) {
         return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse" }), { status: 409, headers: CORS });
       }
+      // "Sauvetage" après escalade (01/10/2026, audit) — le patient répond
+      // enfin lui-même après avoir été basculé en "à appeler" faute de
+      // réponse : évite un appel du pharmacien devenu inutile. Tracé dans le
+      // journal pour qu'il voie que ce cas s'est résolu tout seul.
+      const apresEscalade = rappel.statut === "a_appeler";
 
       // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
       // ne dit pas QUELS médicaments renouveler, un simple clic sur le lien
@@ -102,7 +118,7 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
       if (error) throw new Error(error.message);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}) } });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}), ...(apresEscalade ? { apres_escalade: true } : {}) } });
 
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
