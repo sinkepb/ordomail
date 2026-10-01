@@ -976,6 +976,19 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 {(r.statut === "a_traiter" || r.statut === "prepare" || r.statut === "a_appeler") && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
                 )}
+                {/* Instruction vendeur (01/10/2026, retour titulaire) — un
+                    bouton seul ne dit pas quoi faire au téléphone : deux cas
+                    bien différents selon qu'un choix est déjà connu (réponse
+                    "partiel" reçue par SMS, l'appel sert juste à préciser
+                    quoi renouveler) ou pas encore (patient sans mobile ou
+                    sans réponse, l'appel sert à proposer le renouvellement). */}
+                {r.statut === "a_appeler" && (
+                  <div style={{ fontSize: 12, color: "#a16207", marginTop: 4, lineHeight: 1.4 }}>
+                    {r.choix_patient
+                      ? "📞 À faire : appelez le patient pour préciser quels médicaments renouveler, puis cliquez sur \"Appel effectué\"."
+                      : "📞 À faire : appelez le patient pour lui proposer le renouvellement de son ordonnance, puis cliquez sur \"Enregistrer le choix\" avec sa réponse."}
+                  </div>
+                )}
                 {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
                   <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
                 )}
