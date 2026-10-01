@@ -114,11 +114,17 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
     // (le pharmacien décroche lui-même), sans lien ni token à générer.
     if (rappel.mode_contact === "appel") {
       try {
-        await sb.from("rappels_ordonnance").update({
+        // Erreurs d'écriture vérifiées (01/10/2026, audit) — Supabase-js ne
+        // lève pas d'exception sur un échec Postgrest, le try/catch seul ne
+        // suffit pas : sans ce throw explicite, une écriture en échec passait
+        // inaperçue (comptée "appeler" alors que rien n'a été persisté).
+        const { error: updErr } = await sb.from("rappels_ordonnance").update({
           statut: "a_appeler",
           updated_at: new Date().toISOString(),
         }).eq("id", rappel.id);
-        await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler" });
+        if (updErr) throw new Error(updErr.message);
+        const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler" });
+        if (insErr) throw new Error(insErr.message);
         return "appeler";
       } catch (e) {
         console.error(`[rappel] échec (mode appel) pour ${rappel.id}:`, (e as Error).message);
@@ -142,27 +148,39 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
         // bascule en "à appeler" comme pour un numéro fixe.
         const echecs = (rappel.sms_echecs_consecutifs || 0) + 1;
         if (echecs >= SMS_ECHEC_MAX) {
-          await sb.from("rappels_ordonnance").update({
+          const { error: updErr } = await sb.from("rappels_ordonnance").update({
             statut: "a_appeler",
             sms_echecs_consecutifs: echecs,
             updated_at: new Date().toISOString(),
           }).eq("id", rappel.id);
-          await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "echec_envoi", echecs } });
+          if (updErr) throw new Error(updErr.message);
+          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "echec_envoi", echecs } });
+          if (insErr) throw new Error(insErr.message);
         } else {
-          await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).eq("id", rappel.id);
-          await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs } });
+          const { error: updErr } = await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).eq("id", rappel.id);
+          if (updErr) throw new Error(updErr.message);
+          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs } });
+          if (insErr) throw new Error(insErr.message);
         }
         return "failed";
       }
 
-      await sb.from("rappels_ordonnance").update({
+      // Écriture critique (01/10/2026, audit) — si CE update échoue après un
+      // SMS réellement envoyé, le patient reçoit un lien dont le token n'est
+      // jamais enregistré en base (inutilisable côté resolve-rappel) sans que
+      // rien ne le signale. Le throw fait retomber dans le catch ci-dessous :
+      // compté "failed" (donc visible), et le rappel reste "en_attente" pour
+      // être retenté au prochain passage plutôt que faussement marqué "sent".
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
         statut: "sms_envoye",
         token: newToken,
         date_dernier_sms_envoye: new Date().toISOString(),
         sms_echecs_consecutifs: 0,
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
+      if (updErr) throw new Error(updErr.message);
+      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
+      if (insErr) throw new Error(insErr.message);
       return "sent";
     } catch (e) {
       console.error(`[rappel] échec pour ${rappel.id}:`, (e as Error).message);
@@ -200,15 +218,18 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
       const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite, true);
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
       if (!result.success) {
-        await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", relance: true } });
+        const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", relance: true } });
+        if (insErr) throw new Error(insErr.message);
         return;
       }
-      await sb.from("rappels_ordonnance").update({
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
         relance_sms_envoyee: true,
         date_dernier_sms_envoye: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "relance_envoyee", meta: { mocked: result.mocked } });
+      if (updErr) throw new Error(updErr.message);
+      const { error: insErr2 } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "relance_envoyee", meta: { mocked: result.mocked } });
+      if (insErr2) throw new Error(insErr2.message);
       relances++;
     } catch (e) {
       console.error(`[rappel] échec relance pour ${rappel.id}:`, (e as Error).message);
@@ -228,11 +249,13 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
   let escalades = 0;
   await mapWithConcurrency(aEscalader || [], RAPPEL_SCAN_CONCURRENCY, async (rappel) => {
     try {
-      await sb.from("rappels_ordonnance").update({
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
         statut: "a_appeler",
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "sans_reponse" } });
+      if (updErr) throw new Error(updErr.message);
+      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "sans_reponse" } });
+      if (insErr) throw new Error(insErr.message);
       escalades++;
     } catch (e) {
       console.error(`[rappel] échec escalade pour ${rappel.id}:`, (e as Error).message);

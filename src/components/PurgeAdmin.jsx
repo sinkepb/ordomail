@@ -32,6 +32,11 @@ async function callSecureData(resource, params, adminToken) {
 
 function PurgeAdmin({ adminToken } = {}) {
   const [days, setDays]               = useState("");
+  // rappelsDays (01/10/2026, audit RGPD) — même mécanisme que `days`
+  // ci-dessus mais pour rappels_ordonnance/rappels_evenements (nom/prénom/
+  // téléphone/commentaire patient), qui ne faisaient l'objet d'aucune purge.
+  const [rappelsDays, setRappelsDays] = useState("");
+  const [savingRappels, setSavingRappels] = useState(false);
   const [currentRetention, setCurrentRetention] = useState(null);
   const [freqKey, setFreqKey]         = useState("daily");
   const [currentFreq, setCurrentFreq] = useState(null);
@@ -53,6 +58,7 @@ function PurgeAdmin({ adminToken } = {}) {
       ]);
       setCurrentRetention(retention);
       setDays(retention?.ordonnances_retention_days ? String(retention.ordonnances_retention_days) : "");
+      setRappelsDays(retention?.rappels_retention_days ? String(retention.rappels_retention_days) : "");
       setCurrentFreq(schedule);
       if (schedule?.presetKey) setFreqKey(schedule.presetKey);
     } catch (e) {
@@ -91,6 +97,24 @@ function PurgeAdmin({ adminToken } = {}) {
     setSaving(false);
   }
 
+  async function saveRappelsDays() {
+    setSavingRappels(true); setMsg(null);
+    try {
+      const value = rappelsDays.trim() === "" ? null : Number(rappelsDays);
+      if (value !== null && (!Number.isInteger(value) || value <= 0)) {
+        setMsg({ ok: false, text: "Entrez un nombre entier de jours positif, ou laissez vide pour désactiver la purge." });
+        setSavingRappels(false);
+        return;
+      }
+      await callSecureData("admin_retention_set", { rappelsDays: value, updatedBy: "backoffice" }, adminToken);
+      setMsg({ ok: true, text: value ? `Rétention des rappels fixée à ${value} jours.` : "Purge automatique des rappels désactivée." });
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setSavingRappels(false);
+  }
+
   async function saveFreq() {
     setSavingFreq(true); setMsg(null);
     try {
@@ -110,12 +134,16 @@ function PurgeAdmin({ adminToken } = {}) {
     if (!window.confirm(label)) return;
     setRunning(true); setMsg(null);
     try {
-      const { data } = await callSecureData("admin_purge_run", {}, adminToken);
-      if (data.skipped) {
-        setMsg({ ok: false, text: `Rien à purger : ${data.reason}` });
-      } else {
-        setMsg({ ok: true, text: `✅ ${data.deleted} ordonnance(s) supprimée(s) (rétention ${data.retentionDays} jours).` });
-      }
+      const { data, rappels } = await callSecureData("admin_purge_run", {}, adminToken);
+      const ordoMsg = data.skipped
+        ? `Ordonnances : rien à purger (${data.reason}).`
+        : `✅ ${data.deleted} ordonnance(s) supprimée(s) (rétention ${data.retentionDays} jours).`;
+      // rappels (01/10/2026) — résultat additionnel, affiché à la suite sans
+      // changer la logique ok/erreur existante (toujours basée sur data seul).
+      const rappelsMsg = rappels?.skipped
+        ? `Rappels : rien à purger (${rappels.reason}).`
+        : rappels ? `✅ ${rappels.deleted} rappel(s) terminé(s) supprimé(s) (rétention ${rappels.retentionDays} jours).` : "";
+      setMsg({ ok: !data.skipped, text: [ordoMsg, rappelsMsg].filter(Boolean).join(" ") });
       await loadHistory();
     } catch (e) {
       setMsg({ ok: false, text: e.message });
@@ -160,6 +188,29 @@ function PurgeAdmin({ adminToken } = {}) {
             <div style={{ fontSize: 11, color: "#475569", marginTop: 10 }}>
               {currentRetention?.ordonnances_retention_days
                 ? `Actuellement : ${currentRetention.ordonnances_retention_days} jours (dernière modification ${currentRetention.updated_at ? new Date(currentRetention.updated_at).toLocaleString("fr-FR") : "—"})`
+                : "Actuellement : purge désactivée"}
+            </div>
+          </div>
+
+          {/* ── Rétention des rappels (01/10/2026, audit RGPD) ── */}
+          <div style={cardStyle}>
+            <div style={{ fontWeight: 800, fontSize: 15, color: "#fff", marginBottom: 6 }}>Durée de rétention des rappels de renouvellement</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+              Durée après laquelle un rappel <strong>terminé</strong> (nom, téléphone, commentaire patient) est supprimé automatiquement, indépendamment de l'ordonnance. Un rappel encore actif n'est jamais purgé, quel que soit son âge. Laissez vide pour désactiver.
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input type="number" min="1" value={rappelsDays} onChange={e => setRappelsDays(e.target.value)}
+                placeholder="ex. 365"
+                style={{ ...selectStyle, width: 140 }}/>
+              <span style={{ fontSize: 12, color: "#64748b" }}>jours</span>
+              <button onClick={saveRappelsDays} disabled={savingRappels}
+                style={{ marginLeft: "auto", padding: "9px 18px", border: "none", borderRadius: 8, background: savingRappels ? "#1e3a5f" : "#3b82f6", color: "#fff", fontWeight: 700, fontSize: 13, cursor: savingRappels ? "wait" : "pointer", fontFamily: "inherit" }}>
+                {savingRappels ? "…" : "Enregistrer"}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 10 }}>
+              {currentRetention?.rappels_retention_days
+                ? `Actuellement : ${currentRetention.rappels_retention_days} jours`
                 : "Actuellement : purge désactivée"}
             </div>
           </div>

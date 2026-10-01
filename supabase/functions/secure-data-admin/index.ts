@@ -21,7 +21,7 @@ import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
-import { runPurge } from "../_shared/purgeLogic.ts";
+import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 
@@ -419,25 +419,44 @@ Deno.serve(async (req) => {
     }
 
     if (resource === "admin_retention_get") {
+      // rappels_retention_days (01/10/2026, audit RGPD) — champ additionnel,
+      // ordonnances_retention_days garde sa place pour ne rien casser côté
+      // appelants existants qui ne lisent que ce champ.
       const { data, error } = await sb.from("retention_settings")
-        .select("ordonnances_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
+        .select("ordonnances_retention_days, rappels_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
     if (resource === "admin_retention_set") {
-      const { days, updatedBy } = params || {};
-      const parsed = days === null ? null : Number(days);
+      const { days, rappelsDays, updatedBy } = params || {};
+      // days/rappelsDays tous deux optionnels (01/10/2026) — `undefined` =
+      // champ inchangé (PurgeAdmin.jsx a deux boutons "Enregistrer" séparés,
+      // un seul des deux champs est envoyé à la fois), `null` = désactive
+      // explicitement la purge pour ce champ, un nombre = nouvelle durée.
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: updatedBy || null };
       // @fix 23/09/2026 (audit critique) — aucun plafond n'était imposé,
       // rien n'empêchait techniquement une valeur du type 99999 jours.
       // 3650 (10 ans) est un garde-fou technique, pas une durée validée
       // juridiquement — la durée réelle reste à confirmer avec le DPO.
-      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0 || parsed > 3650)) {
-        return new Response(JSON.stringify({ error: "days doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
-          { status: 400, headers: CORS });
+      if (days !== undefined) {
+        const parsed = days === null ? null : Number(days);
+        if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0 || parsed > 3650)) {
+          return new Response(JSON.stringify({ error: "days doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
+            { status: 400, headers: CORS });
+        }
+        patch.ordonnances_retention_days = parsed;
+      }
+      if (rappelsDays !== undefined) {
+        const parsedRappels = rappelsDays === null ? null : Number(rappelsDays);
+        if (parsedRappels !== null && (!Number.isInteger(parsedRappels) || parsedRappels <= 0 || parsedRappels > 3650)) {
+          return new Response(JSON.stringify({ error: "rappelsDays doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
+            { status: 400, headers: CORS });
+        }
+        patch.rappels_retention_days = parsedRappels;
       }
       const { error } = await sb.from("retention_settings")
-        .update({ ordonnances_retention_days: parsed, updated_at: new Date().toISOString(), updated_by: updatedBy || null })
+        .update(patch)
         .eq("id", 1);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
@@ -470,7 +489,11 @@ Deno.serve(async (req) => {
 
     if (resource === "admin_purge_run") {
       const result = await runPurge(sb, "backoffice-manuel");
-      return new Response(JSON.stringify({ data: result }), { headers: CORS });
+      // Rappels de renouvellement terminés (01/10/2026, audit RGPD) — champ
+      // additionnel, `data` garde exactement sa forme d'origine (lue
+      // directement par PurgeAdmin.jsx) pour ne rien casser côté affichage.
+      const rappelsResult = await runRappelsPurge(sb, "backoffice-manuel");
+      return new Response(JSON.stringify({ data: result, rappels: rappelsResult }), { headers: CORS });
     }
 
     // Recherche RGPD (droits patient — art. 12-22) : localiser les ordonnances

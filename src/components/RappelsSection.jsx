@@ -353,7 +353,7 @@ function defaultDateForChoix(rappel) {
 // selon le cas — un renouvellement partiel suppose d'avoir déjà appelé le
 // patient pour préciser sa demande), mais pas pour "ne rien prendre" où
 // seule la prochaine date compte.
-function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
+function ValiderModal({ rappel, onCancel, onConfirm, submitting, serverError }) {
   const [dateRappel, setDateRappel] = useState(() => defaultDateForChoix(rappel));
   const [livre, setLivre] = useState(false);
   const [error, setError] = useState("");
@@ -405,7 +405,7 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
           Le SMS part 7 jours avant cette date{rappel.choix_patient === "rien" ? " — espacée automatiquement (le patient a décliné), modifiable si besoin." : " — pré-remplie à J+28, modifiable si besoin."}
         </div>
 
-        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        {(error || serverError) && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error || serverError}</div>}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={submitting}
@@ -424,7 +424,7 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
 
 // Confirmation avant fin de traitement définitive (04/09/2026) — irréversible
 // (plus aucune relance), une confirmation explicite évite un clic accidentel.
-function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
@@ -433,6 +433,7 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
           Le suivi de <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> s'arrêtera définitivement — aucune nouvelle relance ne sera envoyée.
         </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -584,7 +585,7 @@ function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting, e
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
 // validation (J+28 de renouvellement, soit J+21 d'envoi).
-function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
+function ReactiverModal({ rappel, onCancel, onConfirm, submitting, serverError }) {
   const [dateRappel, setDateRappel] = useState(defaultDateRenouvellement);
   const [error, setError] = useState("");
 
@@ -612,7 +613,7 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
         <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Le SMS part 7 jours avant cette date — pré-remplie à J+28, modifiable si besoin.</div>
 
-        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        {(error || serverError) && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error || serverError}</div>}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={submitting}
@@ -834,9 +835,16 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setConfirmantPartiel(false);
   }
 
+  // Erreur affichée dans la modale (01/10/2026, audit) — Valider est
+  // l'action la plus sensible du flux (déclenche un nouveau cycle) ; elle
+  // restait pourtant totalement silencieuse en cas de conflit serveur (ex.
+  // le cron a changé le statut entre-temps), même après le premier passage
+  // de correctifs qui avait couvert Préparer/Marquer à appeler/Enregistrer
+  // le choix/Confirmer l'appel mais pas Valider/Terminer/Réactiver.
   async function handleValiderConfirm(dateRappel) {
     const rappel = validatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
       await traiterRappel(rappel.id, dateRappel);
       setRappels(prev => prev.map(r => r.id === rappel.id
@@ -845,6 +853,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setValidatingRappel(null);
     } catch (e) {
       console.error("[handleValiderConfirm]", e.message);
+      setActionError(e.message || "Échec de la validation du rappel.");
     }
     setBusyId(null);
   }
@@ -852,12 +861,14 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   async function handleTerminerConfirm() {
     const rappel = terminatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
       await terminerRappel(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "termine" } : r));
       setTerminatingRappel(null);
     } catch (e) {
       console.error("[handleTerminerConfirm]", e.message);
+      setActionError(e.message || "Échec de la fin de traitement.");
     }
     setBusyId(null);
   }
@@ -865,6 +876,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   async function handleReactiverConfirm(dateRappel) {
     const rappel = reactivatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
       await reactiverRappel(rappel.id, dateRappel);
       setRappels(prev => prev.map(r => r.id === rappel.id
@@ -873,6 +885,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setReactivatingRappel(null);
     } catch (e) {
       console.error("[handleReactiverConfirm]", e.message);
+      setActionError(e.message || "Échec de la réactivation du rappel.");
     }
     setBusyId(null);
   }
@@ -1150,13 +1163,13 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 </button>
               )}
               {((r.statut === "a_traiter" && r.choix_patient === "rien") || r.statut === "prepare") && (
-                <button onClick={() => setValidatingRappel(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setValidatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "…" : "✅ Valider"}
                 </button>
               )}
               {r.statut !== "termine" && (
-                <button onClick={() => setTerminatingRappel(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setTerminatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   Fin de traitement
                 </button>
@@ -1164,7 +1177,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
               {/* Réactivation (07/09/2026) — reprendre un rappel terminé sans
                   en recréer un nouveau depuis zéro. */}
               {r.statut === "termine" && (
-                <button onClick={() => setReactivatingRappel(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setReactivatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   🔄 Réactiver
                 </button>
@@ -1217,15 +1230,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
 
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
-      {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
-      {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
+      {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => { setActionError(""); setValidatingRappel(null); }} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} serverError={actionError} />}
+      {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => { setActionError(""); setTerminatingRappel(null); }} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} error={actionError} />}
       {preparingConfirm && <PreparerConfirmModal rappel={preparingConfirm}
-        onCancel={() => setPreparingConfirm(null)}
+        onCancel={() => { setActionError(""); setPreparingConfirm(null); }}
         onConfirm={async () => { const ok = await handlePreparer(preparingConfirm); if (ok) setPreparingConfirm(null); }}
         submitting={preparingId === preparingConfirm.id} error={actionError} />}
-      {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
-      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => setAppelConfirm(null)} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} error={actionError} />}
-      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => setPartielAppelConfirm(null)} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} error={actionError} />}
+      {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => { setActionError(""); setReactivatingRappel(null); }} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} serverError={actionError} />}
+      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => { setActionError(""); setAppelConfirm(null); }} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} error={actionError} />}
+      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => { setActionError(""); setPartielAppelConfirm(null); }} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} error={actionError} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );

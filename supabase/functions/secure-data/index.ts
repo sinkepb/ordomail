@@ -1057,6 +1057,16 @@ Deno.serve(async (req) => {
         // — un échec d'il y a 3 cycles ne doit pas compter pour celui-ci.
         relance_sms_envoyee: false,
         sms_echecs_consecutifs: 0,
+        // Rotation du token (01/10/2026, audit sécurité) — `token` n'était
+        // jamais régénéré ici : un ancien lien SMS (cycle précédent, déjà
+        // répondu) restait valide pour peutEncoreRepondre() dès que CE
+        // nouveau cycle retombait en "à appeler" sans choix connu, permettant
+        // à quiconque a accès à l'ancien SMS (numéro réattribué, téléphone
+        // partagé) de répondre à la place du patient sur le mauvais cycle.
+        // `token` est NOT NULL (voir 20260904_rappels_short_token.sql) : on
+        // le fait pivoter plutôt que de l'effacer — le prochain envoi réel
+        // (runRappelScan/rappels_envoyer_test) le régénère de toute façon.
+        token: generateShortToken(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (error) throw new Error(error.message);
@@ -1128,6 +1138,9 @@ Deno.serve(async (req) => {
         case_code: null,
         relance_sms_envoyee: false,
         sms_echecs_consecutifs: 0,
+        // Rotation du token (01/10/2026, audit sécurité) — voir le même
+        // correctif et sa justification complète dans rappels_traiter.
+        token: generateShortToken(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);

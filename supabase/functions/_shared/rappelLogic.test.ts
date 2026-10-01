@@ -49,7 +49,11 @@ describe('buildRappelMessage', () => {
 // Faux client Supabase minimal — reproduit uniquement les chaînes utilisées
 // par runRappelScan : .from(...).select().eq().eq().lte() (lecture, thenable)
 // et .from(...).update(...).eq(...) / .from(...).insert(...) (écriture).
-function makeMockSupabase(dus: any[]) {
+// opts.updateError (01/10/2026, audit DevOps) — les écritures renvoyaient
+// toujours { error: null } jusqu'ici, donc aucun test ne pouvait détecter
+// qu'un échec Postgrest (Supabase-js ne lève pas d'exception) était ignoré
+// par rappelLogic.ts. Permet de simuler un UPDATE qui échoue réellement.
+function makeMockSupabase(dus: any[], opts: { updateError?: string } = {}) {
   const updates: any[] = [];
   const inserts: any[] = [];
   const sb: any = {
@@ -61,7 +65,7 @@ function makeMockSupabase(dus: any[]) {
         limit() { return chain; },
         update(payload: any) {
           updates.push({ table, payload });
-          return { eq: () => Promise.resolve({ error: null }) };
+          return { eq: () => Promise.resolve(opts.updateError ? { error: { message: opts.updateError } } : { error: null }) };
         },
         insert(payload: any) {
           inserts.push({ table, payload });
@@ -185,6 +189,22 @@ describe('runRappelScan', () => {
     const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
     expect(evenements).toHaveLength(1);
     expect(evenements[0].payload).toMatchObject({ type: 'a_appeler', meta: { motif: 'echec_envoi', echecs: 3 } });
+  });
+
+  // 01/10/2026 (audit DevOps) — avant ce correctif, un SMS envoyé avec
+  // succès mais dont l'UPDATE échoue ensuite (verrou, timeout DB...) était
+  // quand même compté "sent" : le patient reçoit un lien dont le token n'est
+  // jamais enregistré en base, sans que rien ne le signale.
+  it('un envoi SMS réussi mais dont l\'UPDATE échoue est compté "failed", pas "sent"', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb } = makeMockSupabase(dus, { updateError: 'connexion DB perdue' });
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 1, sent: 0, failed: 1, appeler: 0 });
   });
 });
 

@@ -13,6 +13,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { verifyCronSecret } from "../_shared/webhook-secret.ts";
 
 Deno.serve(async (req: Request) => {
   const CORS = corsHeaders(req, {
@@ -24,8 +25,15 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: CORS });
   }
 
-  const cronSecret = Deno.env.get("SNAPSHOT_CRON_SECRET");
-  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+  // Fail-closed (01/10/2026, audit) — même correctif que send-rappel-sms et
+  // purge-ordonnances : l'ancien `if (cronSecret && header !== cronSecret)`
+  // laissait passer tous les appels si SNAPSHOT_CRON_SECRET n'était pas
+  // configuré. ⚠️ Ce secret n'est pour l'instant PAS présent dans les
+  // secrets du projet (vérifié via `supabase secrets list`) — tant qu'il
+  // n'est pas défini, cet endpoint refusera tous les appels, y compris un
+  // cron légitime déjà en place avec le bon en-tête mais sans valeur à
+  // comparer côté serveur. À définir avant/au moment du déploiement.
+  if (!verifyCronSecret(req, "SNAPSHOT_CRON_SECRET")) {
     return new Response(JSON.stringify({ error: "Non autorisé" }), { status: 401, headers: CORS });
   }
 
