@@ -114,10 +114,13 @@ serve(async (req) => {
       // d'aller directement à "à traiter" comme pour tout_renouveler/rien
       // (choix non ambigus, aucun appel nécessaire). Voir
       // secure-data:rappels_confirmer_appel_partiel pour la suite.
-      // "stop" termine directement le suivi (01/10/2026) — pas de créneau à
-      // choisir, pas d'étape "à traiter" côté pharmacien, ce n'est pas un
-      // renouvellement à préparer.
-      const statutSuivant = choix === "stop" ? "termine" : choix === "partiel" ? "a_appeler" : "a_traiter";
+      // "stop" passe par "à traiter" (01/10/2026, demande titulaire) — pas
+      // directement "terminé" : le pharmacien doit voir explicitement
+      // l'opposition (badge CHOIX_LABEL "⛔ Ne plus être recontacté" sur la
+      // carte) et la clore lui-même via "Fin de traitement", seul bouton actif
+      // pour ce choix (ni "Marquer préparé" ni "Valider" ne s'affichent pour
+      // un choix autre que tout_renouveler/partiel/rien — voir RappelsSection.jsx).
+      const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
       const { error } = await sb.from("rappels_ordonnance").update({
         statut: statutSuivant,
         choix_patient: choix,

@@ -716,8 +716,11 @@ Deno.serve(async (req) => {
       if (rappel.statut !== "a_appeler") {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'appel" }), { status: 409, headers: CORS });
       }
+      // "stop" passe par "à traiter" comme les autres choix (01/10/2026,
+      // demande titulaire), pas directement "terminé" — voir resolve-rappel
+      // pour la justification complète (visibilité + clôture explicite).
       const patch: Record<string, unknown> = {
-        statut: choix === "stop" ? "termine" : "a_traiter",
+        statut: "a_traiter",
         choix_patient: choix,
         opt_out: choix === "stop",
         date_reponse_patient: new Date().toISOString(),

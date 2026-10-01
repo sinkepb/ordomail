@@ -827,7 +827,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       const result = await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
       setRappels(prev => prev.map(r => {
         if (r.id !== rappel.id) return r;
-        if (choix === "stop") return { ...r, statut: "termine", choix_patient: choix, opt_out: true };
+        // "stop" passe par "à traiter" comme les autres choix (01/10/2026,
+        // demande titulaire) — opt_out reste true, mais la clôture se fait
+        // explicitement via "Fin de traitement", seul bouton actif pour ce choix.
+        if (choix === "stop") return { ...r, statut: "a_traiter", choix_patient: choix, opt_out: true };
         if (choix !== "partiel") return { ...r, statut: "a_traiter", choix_patient: choix };
         return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: result?.commentaire ?? r.commentaire };
       }));
