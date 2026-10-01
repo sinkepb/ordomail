@@ -912,12 +912,21 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        {FILTRES.map(([k, label]) => (
-          <button key={k} onClick={() => setFiltre(k)}
-            style={{ padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${filtre === k ? "#1a3a6e" : "#e2e8f0"}`, background: filtre === k ? "#1a3a6e" : "#fff", color: filtre === k ? "#fff" : "#64748b", fontWeight: filtre === k ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            {label}
-          </button>
-        ))}
+        {FILTRES.map(([k, label]) => {
+          // Badges rouges "à appeler"/"à traiter" (01/10/2026, retour
+          // titulaire) — comptés sur la liste complète, pas sur le filtre
+          // actif, pour rester visibles même quand un autre onglet est ouvert.
+          const compte = (k === "a_appeler" || k === "a_traiter") ? rappels.filter(r => r.statut === k).length : 0;
+          return (
+            <button key={k} onClick={() => setFiltre(k)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${filtre === k ? "#1a3a6e" : "#e2e8f0"}`, background: filtre === k ? "#1a3a6e" : "#fff", color: filtre === k ? "#fff" : "#64748b", fontWeight: filtre === k ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              {label}
+              {compte > 0 && (
+                <span style={{ background: "#dc2626", color: "#fff", borderRadius: 999, padding: "1px 6px", fontSize: 10, fontWeight: 800, lineHeight: 1.4 }}>{compte}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Recherche par nom + tri (07/09/2026) */}

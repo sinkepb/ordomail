@@ -605,7 +605,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   const [ordonnanceUploading, setOrdonnanceUploading] = useState(false);
   const [ordonnanceUploadError, setOrdonnanceUploadError] = useState("");
   const [rappelCreating, setRappelCreating] = useState(false);
-  const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels
+  const [rappelsATraiter, setRappelsATraiter] = useState(0); // badge sur l'onglet Rappels — somme "à traiter" + "à appeler"
 
   // Chargé indépendamment de l'onglet Rappels (04/09/2026, retour direct) —
   // RappelsSection ne fetch/n'appelle onCountATraiter qu'une fois montée,
@@ -613,9 +613,20 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   // première fois. Le badge de la barre du haut doit être visible dès
   // l'arrivée sur le dashboard, sans dépendre de ça — même logique que
   // "nouveaux" (ordonnances), déjà calculé indépendamment de l'onglet actif.
+  // Compte "à traiter" + "à appeler" (01/10/2026, retour titulaire) — un
+  // patient sans mobile en attente d'appel est tout aussi urgent qu'une
+  // réponse déjà reçue à traiter, le badge global doit refléter les deux.
+  async function chargerCompteRappelsATraiter(pharmacieId) {
+    const [aTraiter, aAppeler] = await Promise.all([
+      fetchRappels(pharmacieId, "a_traiter"),
+      fetchRappels(pharmacieId, "a_appeler"),
+    ]);
+    return (aTraiter || []).length + (aAppeler || []).length;
+  }
+
   useEffect(() => {
     if (!pharmacieId) return;
-    fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
+    chargerCompteRappelsATraiter(pharmacieId).then(setRappelsATraiter);
   }, [pharmacieId]);
 
   // PIN unique (06/09/2026) — signale la présence de ce poste tant que le
@@ -637,7 +648,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   useEffect(() => {
     if (!pharmacieId) return;
     return subscribeToRappels(pharmacieId, () => {
-      fetchRappels(pharmacieId, "a_traiter").then(data => setRappelsATraiter((data || []).length));
+      chargerCompteRappelsATraiter(pharmacieId).then(setRappelsATraiter);
     });
   }, [pharmacieId]);
 
