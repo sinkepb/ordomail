@@ -668,8 +668,12 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     });
   }, [pharmacie?.id]);
 
+  // Remonté au Dashboard pour le badge global (01/10/2026) — doit compter
+  // "à traiter" ET "à appeler" : sinon ce callback, appelé à chaque
+  // changement de liste tant que l'onglet reste ouvert, écrase silencieusement
+  // le compte combiné initial du Dashboard par un compte "à traiter" seul.
   useEffect(() => {
-    onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter").length);
+    onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length);
   }, [rappels, onCountATraiter]);
 
   async function handleUpdated(payload) {
@@ -849,7 +853,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     }
     return new Date(b.created_at) - new Date(a.created_at); // "recent" (défaut historique)
   });
-  const countATraiter = rappels.filter(r => r.statut === "a_traiter").length;
+  // Combine "à traiter" + "à appeler" (01/10/2026, retour titulaire) — les
+  // deux demandent une action du pharmacien, le badge d'en-tête ne doit pas
+  // sous-compter en ignorant les patients sans mobile en attente d'appel.
+  const countATraiter = rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length;
 
   return (
     <div>
@@ -860,7 +867,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         <div style={{ fontWeight: 800, fontSize: 15 }}>
           🔔 Rappels
           {countATraiter > 0 && (
-            <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} à traiter</span>
+            <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} nécessite{countATraiter > 1 ? "nt" : ""} une action</span>
           )}
         </div>
       </div>
