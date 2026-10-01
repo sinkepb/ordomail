@@ -106,4 +106,5 @@ export {
   fetchRappelOrdonnance,
   marquerRappelAAppeler,
   enregistrerAppelRappel,
+  confirmerAppelPartiel,
 } from './lib/supabase/rappels.js';

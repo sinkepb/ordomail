@@ -2,7 +2,7 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
 
 const STATUT_INFO = {
@@ -52,6 +52,7 @@ const JOURNAL_INFO = {
   sms_envoye:      { icon: "📱", label: "SMS envoyé" },
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
   a_appeler:       { icon: "📞", label: "Passé à appeler (patient sans mobile)" },
+  appel_effectue:  { icon: "☎️", label: "Appel de clarification effectué — passé à traiter" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
   prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
@@ -388,10 +389,12 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
   const titre = rappel.choix_patient === "tout_renouveler" ? "✅ Confirmer le renouvellement"
     : rappel.choix_patient === "partiel" ? "🔶 Confirmer le renouvellement partiel"
     : "🚫 Confirmer";
-  const consigne = rappel.choix_patient === "tout_renouveler"
+  // @fix 01/10/2026 — l'appel de clarification d'un renouvellement partiel
+  // est désormais une étape obligatoire distincte avant d'arriver ici (voir
+  // statut "à appeler"), plus une simple case à cocher au moment de valider :
+  // même consigne que tout_renouveler, il ne reste que la livraison à confirmer.
+  const consigne = (rappel.choix_patient === "tout_renouveler" || rappel.choix_patient === "partiel")
     ? "Le médicament a bien été livré au patient."
-    : rappel.choix_patient === "partiel"
-    ? "Après avoir appelé le patient pour préciser sa demande, le médicament a bien été livré."
     : null;
 
   return (
@@ -520,6 +523,34 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
   );
 }
 
+// Confirmer l'appel de clarification d'un renouvellement partiel
+// (01/10/2026) — le choix est déjà connu (répondu "partiel" via le lien
+// SMS), seul l'appel de clarification (quels médicaments renouveler) reste
+// à confirmer pour passer à "à traiter".
+function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>☎️ Appel effectué ?</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+          Confirmez avoir appelé <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> pour préciser son renouvellement partiel — le rappel passera à "À traiter".
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? "…" : "☎️ Oui, appel effectué"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
@@ -595,6 +626,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [marquantAppelId, setMarquantAppelId] = useState(null);
   const [appelConfirm, setAppelConfirm] = useState(null);
   const [enregistrantAppel, setEnregistrantAppel] = useState(false);
+  // Renouvellement partiel répondu par SMS (01/10/2026) — choix déjà connu,
+  // juste besoin de confirmer que l'appel de clarification a eu lieu.
+  const [partielAppelConfirm, setPartielAppelConfirm] = useState(null);
+  const [confirmantPartiel, setConfirmantPartiel] = useState(false);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -720,6 +755,22 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       console.error("[handleEnregistrerAppel]", e.message);
     }
     setEnregistrantAppel(false);
+  }
+
+  // Confirmation de l'appel de clarification d'un renouvellement partiel
+  // (01/10/2026) — le choix ("partiel") est déjà connu, l'appel ne fait que
+  // débloquer le passage à "à traiter".
+  async function handleConfirmerAppelPartiel() {
+    const rappel = partielAppelConfirm;
+    setConfirmantPartiel(true);
+    try {
+      await confirmerAppelPartiel(rappel.id);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_traiter" } : r));
+      setPartielAppelConfirm(null);
+    } catch (e) {
+      console.error("[handleConfirmerAppelPartiel]", e.message);
+    }
+    setConfirmantPartiel(false);
   }
 
   async function handleValiderConfirm(dateRappel) {
@@ -922,7 +973,11 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   </div>
                 )}
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
-                {(r.statut === "a_traiter" || r.statut === "prepare") && r.choix_patient && (
+                {/* Affiché aussi sur "à appeler" (01/10/2026) — un renouvellement
+                    partiel répondu par SMS y transite déjà avec son choix
+                    connu, le pharmacien doit voir pourquoi cet appel est
+                    nécessaire avant même de décrocher. */}
+                {(r.statut === "a_traiter" || r.statut === "prepare" || r.statut === "a_appeler") && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
                 )}
                 {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
@@ -968,12 +1023,24 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 </button>
               )}
               {/* Enregistrer le choix du patient après l'avoir appelé
-                  (30/09/2026) — pendant du choix fait par le patient
-                  lui-même via le lien SMS (resolve-rappel). */}
-              {r.statut === "a_appeler" && (
+                  (30/09/2026) — patient sans mobile (mode "appel"), le choix
+                  n'est pas encore connu : le pharmacien le saisit après
+                  l'appel. Pendant du choix fait par le patient lui-même via
+                  le lien SMS (resolve-rappel). */}
+              {r.statut === "a_appeler" && !r.choix_patient && (
                 <button onClick={() => setAppelConfirm(r)} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   📞 Enregistrer le choix
+                </button>
+              )}
+              {/* Confirmer l'appel de clarification d'un renouvellement
+                  partiel (01/10/2026) — le choix est déjà connu (répondu par
+                  SMS), rien à ressaisir : juste confirmer que l'appel a eu
+                  lieu pour passer à "à traiter". */}
+              {r.statut === "a_appeler" && r.choix_patient && (
+                <button onClick={() => setPartielAppelConfirm(r)} disabled={busy}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                  ☎️ Appel effectué
                 </button>
               )}
               {/* Préparation (26/09/2026) — étape intermédiaire réservée aux
@@ -1061,6 +1128,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         submitting={preparingId === preparingConfirm.id} />}
       {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
       {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => setAppelConfirm(null)} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} />}
+      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => setPartielAppelConfirm(null)} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );

@@ -701,6 +701,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
+    // Confirmer l'appel de clarification d'un renouvellement partiel
+    // (01/10/2026, retour titulaire) — un patient qui répond "partiel" via
+    // le lien SMS n'a précisé AUCUN médicament (choix_patient="partiel" déjà
+    // enregistré par resolve-rappel, statut déjà "a_appeler") : contrairement
+    // à rappels_enregistrer_appel ci-dessus, le choix n'est pas à ressaisir,
+    // seulement à confirmer que l'appel a eu lieu pour passer à "à traiter".
+    if (resource === "rappels_confirmer_appel_partiel") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "a_appeler" || rappel.choix_patient !== "partiel") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'un appel de clarification" }), { status: 409, headers: CORS });
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_traiter",
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "appel_effectue" });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en
     // un clic à l'ordonnance depuis la liste des rappels, sans exposer un
     // resource générique "ordonnance par id" (surface d'attaque plus large

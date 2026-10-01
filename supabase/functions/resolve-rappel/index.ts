@@ -86,8 +86,16 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse" }), { status: 409, headers: CORS });
       }
 
+      // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
+      // ne dit pas QUELS médicaments renouveler, un simple clic sur le lien
+      // SMS ne suffit pas à le savoir : passe par "à appeler" pour que le
+      // pharmacien rappelle le patient préciser sa demande, plutôt que
+      // d'aller directement à "à traiter" comme pour tout_renouveler/rien
+      // (choix non ambigus, aucun appel nécessaire). Voir
+      // secure-data:rappels_confirmer_appel_partiel pour la suite.
+      const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
       const { error } = await sb.from("rappels_ordonnance").update({
-        statut: "a_traiter",
+        statut: statutSuivant,
         choix_patient: choix,
         creneau_retrait: creneau || null,
         date_reponse_patient: new Date().toISOString(),

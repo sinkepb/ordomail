@@ -124,6 +124,15 @@ export async function enregistrerAppelRappel(rappelId, choix) {
   return await callSecureData('rappels_enregistrer_appel', { rappelId, choix });
 }
 
+// Confirme l'appel de clarification d'un renouvellement partiel (01/10/2026)
+// — le choix ("partiel") est déjà connu (répondu par le patient via SMS),
+// seul l'appel reste à confirmer pour passer à "à traiter". Voir
+// secure-data:rappels_confirmer_appel_partiel.
+export async function confirmerAppelPartiel(rappelId) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_confirmer_appel_partiel', { rappelId });
+}
+
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le
 // 11/09/2026). `email` reste géré côté serveur pour du débogage ponctuel
 // mais n'est plus exposé dans l'interface — voir secure-data:rappels_envoyer_test.
