@@ -514,8 +514,9 @@ Deno.serve(async (req) => {
           { status: 400, headers: CORS });
       }
       const { data: settings } = await sb.from("retention_settings")
-        .select("ordonnances_retention_days").eq("id", 1).maybeSingle();
+        .select("ordonnances_retention_days, rappels_retention_days").eq("id", 1).maybeSingle();
       const days = settings?.ordonnances_retention_days;
+      const rappelsDays = settings?.rappels_retention_days;
 
       // Échappe les caractères réservés à la syntaxe de filtre PostgREST (`,` `.`
       // `(` `)`) via son mécanisme de guillemettage documenté — sans ça, un nom
@@ -528,7 +529,58 @@ Deno.serve(async (req) => {
       if (days) query = query.gte("received_at", new Date(Date.now() - days * 86400000).toISOString());
       const { data, error } = await query.order("received_at", { ascending: false }).limit(100);
       if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data, retentionDays: days ?? null }), { headers: CORS });
+      // Rappels de renouvellement (01/10/2026, audit RGPD) — l'outil de
+      // recherche DPO ne cherchait jusqu'ici que dans `ordonnances` : une
+      // demande d'effacement/accès ciblée sur un patient ne trouvait jamais
+      // ses données de rappel (nom/prénom/téléphone/commentaire), même
+      // lisibles par le titulaire concerné. Même logique de recherche/fenêtre.
+      let rappelsQuery = sb.from("rappels_ordonnance")
+        .select("id, pharmacie_id, patient_nom, patient_prenom, patient_telephone, statut, created_at, pharmacies(nom)")
+        .or(`patient_nom.ilike."%${esc}%",patient_prenom.ilike."%${esc}%"`);
+      if (rappelsDays) rappelsQuery = rappelsQuery.gte("created_at", new Date(Date.now() - rappelsDays * 86400000).toISOString());
+      const { data: rappelsData, error: rappelsErr } = await rappelsQuery.order("created_at", { ascending: false }).limit(100);
+      if (rappelsErr) throw new Error(rappelsErr.message);
+      return new Response(JSON.stringify({ data, retentionDays: days ?? null, rappels: rappelsData, rappelsRetentionDays: rappelsDays ?? null }), { headers: CORS });
+    }
+
+    // Export/portabilité (01/10/2026, audit RGPD — art. 15/20) — jusqu'ici,
+    // seule la suppression était outillée ; aucun moyen de répondre à une
+    // demande d'accès/portabilité autrement qu'en extrayant manuellement les
+    // données en base. Consolide une ordonnance ou un rappel (avec son
+    // historique d'événements) en JSON téléchargeable par l'admin, qui le
+    // transmet ensuite au demandeur par le canal de son choix — un outil
+    // manuel suffit légalement, l'obligation est de pouvoir répondre, pas
+    // d'avoir un self-service patient.
+    if (resource === "admin_export_patient_data") {
+      const { ordoIds, rappelIds } = params || {};
+      const ordos = Array.isArray(ordoIds) ? ordoIds.filter(Boolean) : [];
+      const rappels = Array.isArray(rappelIds) ? rappelIds.filter(Boolean) : [];
+      if (!ordos.length && !rappels.length) {
+        return new Response(JSON.stringify({ error: "ordoIds ou rappelIds requis" }), { status: 400, headers: CORS });
+      }
+      const [ordonnancesRes, rappelsRes] = await Promise.all([
+        ordos.length
+          ? sb.from("ordonnances").select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, medecin, medicaments, fichier_url, fichier_nom, pharmacies(nom)").in("id", ordos)
+          : Promise.resolve({ data: [], error: null }),
+        rappels.length
+          ? sb.from("rappels_ordonnance").select("*, pharmacies(nom)").in("id", rappels)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (ordonnancesRes.error) throw new Error(ordonnancesRes.error.message);
+      if (rappelsRes.error) throw new Error(rappelsRes.error.message);
+      let evenements: unknown[] = [];
+      if (rappels.length) {
+        const { data: evts, error: evtsErr } = await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappels).order("created_at", { ascending: true });
+        if (evtsErr) throw new Error(evtsErr.message);
+        evenements = evts || [];
+      }
+      return new Response(JSON.stringify({
+        data: {
+          exporte_le: new Date().toISOString(),
+          ordonnances: ordonnancesRes.data || [],
+          rappels: (rappelsRes.data || []).map((r: any) => ({ ...r, evenements: evenements.filter((e: any) => e.rappel_id === r.id) })),
+        },
+      }), { headers: CORS });
     }
 
     if (resource === "admin_delete_ordonnance") {
