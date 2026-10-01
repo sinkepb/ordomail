@@ -24,6 +24,7 @@ import { trimExcessPostes } from "../_shared/trimPostes.ts";
 import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -602,6 +603,69 @@ Deno.serve(async (req) => {
       }
       const { error: delErr } = await sb.from("ordonnances").delete().eq("id", ordoId);
       if (delErr) throw new Error(delErr.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Suppression de compte pharmacie (01/10/2026, audit RGPD) — les CGU
+    // (LegalPage.jsx art. 10) promettent la suppression des données patient à
+    // la résiliation, sans qu'aucun outil ne l'exécute jusqu'ici. Irréversible
+    // et à fort rayon d'impact : deux garde-fous avant toute suppression —
+    // (1) l'abonnement Stripe doit déjà être résilié (plan_status='canceled')
+    // ou n'avoir jamais existé (pharmacie de test sans stripe_customer_id),
+    // jamais de résiliation Stripe déclenchée depuis cette action elle-même ;
+    // (2) le nom exact de la pharmacie doit être retapé en confirmation,
+    // garde-fou contre un mauvais ID copié-collé.
+    //
+    // Vérifié (information_schema.referential_constraints, 01/10/2026) : la
+    // quasi-totalité des tables portant pharmacie_id ont déjà ON DELETE
+    // CASCADE vers pharmacies (rappels_ordonnance → rappels_evenements inclus,
+    // ordonnances, pharmacie_postes, audit_logs, abonnements, offres/stories,
+    // métriques...) — supprimer la ligne pharmacies suffit à tout emporter.
+    // Deux exceptions à traiter explicitement avant : `promotion_redemptions`
+    // est en NO ACTION (bloquerait la suppression s'il reste une ligne) et
+    // `pharmacie_users` est en SET NULL (orphelinerait la ligne au lieu de la
+    // supprimer). `qr_codes` est aussi en SET NULL, volontairement laissé tel
+    // quel — un QR pré-imprimé redevient du stock disponible, pas une donnée
+    // patient à effacer. Ne touche jamais aux comptes Supabase Auth
+    // eux-mêmes (hors périmètre de cette action).
+    if (resource === "admin_delete_pharmacie") {
+      const { pharmacieId: targetId, confirmNom } = params || {};
+      if (!targetId || !confirmNom?.trim()) {
+        return new Response(JSON.stringify({ error: "pharmacieId et confirmNom requis" }), { status: 400, headers: CORS });
+      }
+      const { data: ph, error: phErr } = await sb.from("pharmacies").select("id, nom, plan_status, stripe_customer_id").eq("id", targetId).maybeSingle();
+      if (phErr) throw new Error(phErr.message);
+      if (!ph) {
+        return new Response(JSON.stringify({ error: "Pharmacie introuvable" }), { status: 404, headers: CORS });
+      }
+      if (confirmNom.trim() !== ph.nom) {
+        return new Response(JSON.stringify({ error: "Le nom saisi ne correspond pas exactement au nom de la pharmacie" }), { status: 400, headers: CORS });
+      }
+      if (ph.stripe_customer_id && ph.plan_status !== "canceled") {
+        return new Response(JSON.stringify({ error: "L'abonnement Stripe doit d'abord être résilié (plan_status actuel : " + (ph.plan_status || "inconnu") + ")" }), { status: 409, headers: CORS });
+      }
+
+      const { data: ordos } = await sb.from("ordonnances").select("fichier_url").eq("pharmacie_id", targetId);
+      const paths = (ordos || []).filter((o: any) => o.fichier_url).map((o: any) => o.fichier_url as string);
+      if (paths.length) {
+        const { error: rmErr } = await sb.storage.from("ordonnances-files").remove(paths);
+        if (rmErr) console.error("[admin_delete_pharmacie] fichiers:", rmErr.message);
+      }
+      // Les deux exceptions au CASCADE, à vider avant la ligne pharmacies.
+      const { error: promoErr } = await sb.from("promotion_redemptions").delete().eq("pharmacie_id", targetId);
+      if (promoErr) throw new Error(`promotion_redemptions: ${promoErr.message}`);
+      const { error: usersErr } = await sb.from("pharmacie_users").delete().eq("pharmacie_id", targetId);
+      if (usersErr) throw new Error(`pharmacie_users: ${usersErr.message}`);
+
+      const { error: delPhErr } = await sb.from("pharmacies").delete().eq("id", targetId);
+      if (delPhErr) throw new Error(delPhErr.message);
+
+      await reportAlert(sb, {
+        source: "secure-data-admin",
+        severity: "info",
+        message: `Compte pharmacie supprimé définitivement : ${ph.nom} (${(ordos || []).length} ordonnance(s), fichiers et données liées effacés en cascade)`,
+        meta: { pharmacieId: targetId, ordonnances: (ordos || []).length },
+      });
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
