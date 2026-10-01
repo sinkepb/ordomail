@@ -20,6 +20,24 @@ import { mapWithConcurrency } from "./concurrency.ts";
 // SMS (et le futur prestataire réel) de dizaines d'envois simultanés.
 const RAPPEL_SCAN_CONCURRENCY = 5;
 
+// Lot borné par passage (01/10/2026, audit) — les 3 requêtes de ce fichier
+// n'avaient aucune limite : si le nombre de rappels dus le même jour grossit
+// (beaucoup de pharmacies créées à la même période, échéances J+21 groupées),
+// rien ne bornait la taille traitée en une seule invocation de fonction, avec
+// un risque de timeout. Le reste attend simplement le passage suivant — sans
+// conséquence si le cron tourne au moins chaque heure (voir
+// DEPLOIEMENT_CHECKLIST.md, passé de quotidien à horaire le même jour).
+const SCAN_BATCH_SIZE = 200;
+
+// Échecs d'envoi consécutifs avant abandon du SMS pour ce cycle (01/10/2026)
+// — un échec isolé (panne transitoire du prestataire) est ré-essayé tout
+// seul au prochain passage (voir sms_echecs_consecutifs, remis à zéro dès
+// qu'un envoi réussit). Au-delà, l'échec est probablement permanent (numéro
+// invalide...) : continuer à retenter indéfiniment serait un retry muet,
+// sans jamais prévenir le pharmacien. Bascule en "à appeler", même filet de
+// sécurité que pour un numéro fixe ou un silence du patient.
+const SMS_ECHEC_MAX = 3;
+
 // Relance puis escalade (01/10/2026, retour titulaire) — un patient qui ne
 // répond jamais au premier SMS restait bloqué indéfiniment en "sms_envoye",
 // sans aucune action. Un seul SMS de relance (J+3 sans réponse) avant de
@@ -83,10 +101,11 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, pharmacies(nom)")
+    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, sms_echecs_consecutifs, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
-    .lte("date_prochaine_relance", new Date().toISOString());
+    .lte("date_prochaine_relance", new Date().toISOString())
+    .limit(SCAN_BATCH_SIZE);
   if (error) throw new Error(error.message);
 
   const outcomes = await mapWithConcurrency(dus || [], RAPPEL_SCAN_CONCURRENCY, async (rappel): Promise<"sent" | "failed" | "appeler"> => {
@@ -115,7 +134,24 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
       const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
 
       if (!result.success) {
-        await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu" } });
+        // Retry + escalade (01/10/2026) — un échec isolé reste "en_attente"
+        // tel quel, ré-essayé tout seul au prochain passage (voir
+        // SCAN_BATCH_SIZE plus haut sur la fréquence). Au bout de
+        // SMS_ECHEC_MAX échecs D'AFFILÉE, probablement permanent (numéro
+        // invalide...) : plutôt que de continuer à retenter en silence,
+        // bascule en "à appeler" comme pour un numéro fixe.
+        const echecs = (rappel.sms_echecs_consecutifs || 0) + 1;
+        if (echecs >= SMS_ECHEC_MAX) {
+          await sb.from("rappels_ordonnance").update({
+            statut: "a_appeler",
+            sms_echecs_consecutifs: echecs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", rappel.id);
+          await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "echec_envoi", echecs } });
+        } else {
+          await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).eq("id", rappel.id);
+          await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs } });
+        }
         return "failed";
       }
 
@@ -123,6 +159,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
         statut: "sms_envoye",
         token: newToken,
         date_dernier_sms_envoye: new Date().toISOString(),
+        sms_echecs_consecutifs: 0,
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
       await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
@@ -151,7 +188,8 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
     .select("id, token, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, pharmacies(nom)")
     .eq("statut", "sms_envoye")
     .eq("relance_sms_envoyee", false)
-    .lte("date_dernier_sms_envoye", relanceAvant);
+    .lte("date_dernier_sms_envoye", relanceAvant)
+    .limit(SCAN_BATCH_SIZE);
   if (errRelance) throw new Error(errRelance.message);
 
   let relances = 0;
@@ -183,7 +221,8 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
     .select("id")
     .eq("statut", "sms_envoye")
     .eq("relance_sms_envoyee", true)
-    .lte("date_dernier_sms_envoye", escaladeAvant);
+    .lte("date_dernier_sms_envoye", escaladeAvant)
+    .limit(SCAN_BATCH_SIZE);
   if (errEscalade) throw new Error(errEscalade.message);
 
   let escalades = 0;

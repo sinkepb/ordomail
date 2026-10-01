@@ -1035,8 +1035,11 @@ Deno.serve(async (req) => {
         case_code: null,
         // Nouveau cycle = nouvelle chance de répondre au premier SMS
         // (01/10/2026) — sinon un rappel réactivé hériterait du flag de
-        // l'ancien cycle et sauterait directement la relance.
+        // l'ancien cycle et sauterait directement la relance. Même principe
+        // pour le compteur d'échecs d'envoi (voir 20261001_rappels_retry_sms.sql)
+        // — un échec d'il y a 3 cycles ne doit pas compter pour celui-ci.
         relance_sms_envoyee: false,
+        sms_echecs_consecutifs: 0,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (error) throw new Error(error.message);
@@ -1107,6 +1110,7 @@ Deno.serve(async (req) => {
         date_prochaine_relance: dateProchaineRelance,
         case_code: null,
         relance_sms_envoyee: false,
+        sms_echecs_consecutifs: 0,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);

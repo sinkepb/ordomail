@@ -58,6 +58,7 @@ function makeMockSupabase(dus: any[]) {
         select() { return chain; },
         eq() { return chain; },
         lte() { return chain; },
+        limit() { return chain; },
         update(payload: any) {
           updates.push({ table, payload });
           return { eq: () => Promise.resolve({ error: null }) };
@@ -96,8 +97,11 @@ describe('runRappelScan', () => {
     const result = await runRappelScan(sb, 'https://ordomail.fr');
 
     expect(result).toEqual({ scanned: 3, sent: 2, failed: 1, appeler: 0 });
-    // Seuls les 2 envois réussis mettent à jour rappels_ordonnance.
-    expect(updates.filter((u) => u.table === 'rappels_ordonnance')).toHaveLength(2);
+    // 2 envois réussis + 1 échec qui incrémente son compteur (voir
+    // sms_echecs_consecutifs) sans changer de statut (sous le seuil d'escalade).
+    expect(updates.filter((u) => u.table === 'rappels_ordonnance')).toHaveLength(3);
+    const majEchec = updates.find((u) => u.payload.sms_echecs_consecutifs === 1 && !u.payload.statut);
+    expect(majEchec).toBeTruthy();
     // 3 événements journalisés (2 succès + 1 échec).
     const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
     expect(evenements).toHaveLength(3);
@@ -144,6 +148,44 @@ describe('runRappelScan', () => {
     const majAAppeler = updates.find((u) => u.table === 'rappels_ordonnance' && u.payload.statut === 'a_appeler');
     expect(majAAppeler).toBeTruthy();
   });
+
+  // 01/10/2026 (audit) — un échec isolé reste "en_attente" (ré-essayé tout
+  // seul au prochain passage), mais un échec permanent (numéro invalide...)
+  // ne doit pas retenter indéfiniment en silence : voir SMS_ECHEC_MAX.
+  it('bascule en "à appeler" après 3 échecs d\'envoi consécutifs, pas avant', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', sms_echecs_consecutifs: 1, medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: false, mocked: false, error: 'numéro invalide' });
+
+    const { sb, updates, inserts } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 1, sent: 0, failed: 1, appeler: 0 });
+    // 2e échec (1 + 1) — sous le seuil de 3, reste "en_attente".
+    const maj = updates.find((u) => u.table === 'rappels_ordonnance');
+    expect(maj?.payload).toEqual({ sms_echecs_consecutifs: 2 });
+    const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
+    expect(evenements).toHaveLength(1);
+    expect(evenements[0].payload.type).toBe('sms_echec');
+  });
+
+  it('bascule en "à appeler" au 3e échec d\'envoi consécutif', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', sms_echecs_consecutifs: 2, medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: false, mocked: false, error: 'numéro invalide' });
+
+    const { sb, updates, inserts } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 1, sent: 0, failed: 1, appeler: 0 });
+    const maj = updates.find((u) => u.table === 'rappels_ordonnance');
+    expect(maj?.payload).toMatchObject({ statut: 'a_appeler', sms_echecs_consecutifs: 3 });
+    const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
+    expect(evenements).toHaveLength(1);
+    expect(evenements[0].payload).toMatchObject({ type: 'a_appeler', meta: { motif: 'echec_envoi', echecs: 3 } });
+  });
 });
 
 // Faux client Supabase qui filtre réellement selon .eq()/.lte() (contrairement
@@ -165,6 +207,7 @@ function makeFilterableMockSupabase(initialRows: any[]) {
         select() { return chain; },
         eq(col: string, val: any) { filters.push((r) => r[col] === val); return chain; },
         lte(col: string, val: any) { filters.push((r) => r[col] <= val); return chain; },
+        limit() { return chain; },
         update(payload: any) {
           return {
             eq: (col: string, val: any) => {

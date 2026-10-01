@@ -72,10 +72,14 @@ function journalLigne(evt) {
     return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
   if (evt.type === "sms_echec" && evt.meta?.error) {
-    return { ...info, label: `Échec d'envoi${evt.meta?.relance ? " (relance)" : ""} — ${evt.meta.error}` };
+    const compte = evt.meta?.echecs ? ` (échec n°${evt.meta.echecs})` : "";
+    return { ...info, label: `Échec d'envoi${evt.meta?.relance ? " (relance)" : ""}${compte} — ${evt.meta.error}` };
   }
   if (evt.type === "a_appeler" && evt.meta?.motif === "sans_reponse") {
     return { ...info, label: "Passé à appeler — aucune réponse après relance" };
+  }
+  if (evt.type === "a_appeler" && evt.meta?.motif === "echec_envoi") {
+    return { ...info, label: `Passé à appeler — le SMS n'a pas pu être envoyé (${evt.meta.echecs} échecs)` };
   }
   if (evt.type === "prepare" && evt.meta?.caseCode) {
     return { ...info, label: `Médicament préparé — casier ${evt.meta.caseCode}` };
