@@ -158,9 +158,14 @@ function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOr
       setPostes(prev => [...prev, newPoste]);
     } else {
       const sb = getSupabaseClient();
+      // Colonnes explicites, pas select() nu (01/10/2026) — le titulaire n'a
+      // plus GRANT SELECT sur pin_hash/pin (voir
+      // 20261001_postes_pin_hash_restriction.sql), et le RETURNING par défaut
+      // de PostgREST demande l'équivalent de `*` : la requête entière échoue
+      // en 403 si une seule colonne demandée n'est pas accordée.
       const { data, error } = await sb.from("pharmacie_postes")
         .insert({ pharmacie_id: pharmacie.id, nom, actif: true })
-        .select().single();
+        .select("id, pharmacie_id, nom, actif, created_at").single();
       if (!error && data) {
         setPostes(prev => [...prev, data]);
       }

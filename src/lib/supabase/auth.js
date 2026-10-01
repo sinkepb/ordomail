@@ -30,9 +30,14 @@ async function _fetchPharmacieForUser(sb, userId) {
   // (PGRST200 "no relationship between pharmacies and postes") jusqu'à ce
   // correctif, repéré en testant la nouvelle fonctionnalité Rappels : cette
   // fonction était la seule à avoir manqué le renommage.
+  // pharmacie_postes : colonnes explicites, pas `*` (01/10/2026) — le
+  // titulaire n'a plus GRANT SELECT sur pin_hash/pin (voir
+  // 20261001_postes_pin_hash_restriction.sql) ; PostgREST refuse
+  // l'intégralité de la requête imbriquée avec 403 si une seule colonne
+  // demandée via `*` n'est pas accordée.
   const { data: ph, error: phErr } = await sb
     .from('pharmacies')
-    .select('*, pharmacie_postes(*)')
+    .select('*, pharmacie_postes(id, pharmacie_id, nom, actif, created_at)')
     .eq('id', link.pharmacie_id)
     .maybeSingle();
 
