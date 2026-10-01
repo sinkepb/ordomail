@@ -15,6 +15,8 @@
 // Nécessite POSTMARK_SERVER_TOKEN (Server API Token — différent du secret de
 // webhook POSTMARK_WEBHOOK_SECRET déjà configuré) et un expéditeur vérifié
 // dans Postmark (Sender Signature ou domaine authentifié) via EMAIL_FROM.
+import { fetchWithTimeout } from "./fetchTimeout.ts";
+
 export interface SendEmailResult {
   success: boolean;
   error?: string;
@@ -46,7 +48,7 @@ export async function sendTransactionalEmail(
     return { success: false, error: "Envoi d'email non configuré (POSTMARK_SERVER_TOKEN manquant)" };
   }
   try {
-    const res = await fetch("https://api.postmarkapp.com/email", {
+    const res = await fetchWithTimeout("https://api.postmarkapp.com/email", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

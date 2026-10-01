@@ -160,8 +160,10 @@ function CguContent() {
         <p>
           <strong>Sous-traitants ultérieurs.</strong> OrdoMail a recours aux sous-traitants
           suivants pour l'exécution du service : Supabase (hébergement base de données et
-          stockage de fichiers), Stripe (paiement), Postmark (envoi et réception des e-mails).
-          Le Client est informé de tout ajout ou remplacement d'un sous-traitant ultérieur et
+          stockage de fichiers), Stripe (paiement), Postmark (envoi et réception des e-mails),
+          OVHcloud (envoi des SMS de rappel de renouvellement — nom, prénom et numéro de
+          téléphone du patient transmis pour cet unique usage). Le Client est informé de tout
+          ajout ou remplacement d'un sous-traitant ultérieur et
           dispose d'un délai de <Placeholder>[30 jours — à confirmer]</Placeholder> pour
           s'opposer au changement pour un motif légitime.
         </p>
@@ -239,16 +241,33 @@ function ConfidentialiteContent() {
       <Section title="Destinataires et sous-traitants">
         <p>
           Les données sont hébergées et traitées par nos sous-traitants techniques : Supabase
-          (base de données et stockage), Stripe (paiement), et Postmark (envoi et réception des
-          e-mails). Aucune donnée n'est vendue à des tiers.
+          (base de données et stockage), Stripe (paiement), Postmark (envoi et réception des
+          e-mails), et OVHcloud (envoi des SMS de rappel de renouvellement, lorsque la pharmacie
+          active cette fonctionnalité — voir "Rappels de renouvellement" ci-dessous). Aucune
+          donnée n'est vendue à des tiers.
+        </p>
+      </Section>
+      <Section title="Rappels de renouvellement d'ordonnance">
+        <p>
+          Lorsque la pharmacie active cette fonctionnalité optionnelle, le patient peut être
+          recontacté avant le renouvellement prévu de son traitement, par SMS (via notre
+          sous-traitant OVHcloud) ou par appel téléphonique du pharmacien lorsque le patient n'a
+          pas de mobile. Sont alors conservés : nom, prénom, numéro de téléphone, et le cas
+          échéant un commentaire du pharmacien sur le traitement concerné. Ce traitement repose
+          sur le consentement explicite du patient, recueilli à la création du rappel et
+          horodaté. Le patient peut à tout moment demander la suppression de ce suivi en
+          contactant sa pharmacie ou {" "}dpo@ordomail.fr.
         </p>
       </Section>
       <Section title="Durée de conservation">
         <p>
-          Les ordonnances (fichier et métadonnées) sont conservées 3 jours après leur dépôt, puis
+          Les ordonnances (fichier et métadonnées) sont conservées selon une durée de rétention
+          courte fixée dans nos systèmes (actuellement 3 jours après le dépôt, révisable), puis
           supprimées automatiquement chaque nuit — délai retenu pour rester dans le cadre d'une
-          prestation de courte durée (voir DEPLOIEMENT_CHECKLIST.md). Les autres données
-          (compte pharmacie, facturation) sont conservées jusqu'à la suppression du compte.
+          prestation de courte durée (voir DEPLOIEMENT_CHECKLIST.md). Un rappel de renouvellement
+          clos (aucune relance en cours) est conservé selon une durée de rétention définie par
+          OrdoMail, également révisable. Les autres données (compte pharmacie, facturation) sont
+          conservées jusqu'à la suppression du compte.
         </p>
       </Section>
       <Section title="Sécurité">

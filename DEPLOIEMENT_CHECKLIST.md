@@ -84,7 +84,7 @@ une lecture anon large sur la table pour fonctionner.
 ## 1. Frontend (Vercel)
 
 - [ ] `npm run build` passe sans erreur
-- [ ] `npm test` passe (44 tests Vitest — JWT, validation upload, checkout, plan webhook, masquage logs, XSS, dates)
+- [ ] `npm test` passe (113 tests Vitest au 01/10/2026 — JWT, validation upload, checkout, plan webhook, masquage logs, XSS, dates, logique des rappels)
 - [ ] `npm run lint` sans erreur (warnings tolérés, voir historique du nettoyage ESLint)
 - [ ] `npm run test:rls` passe (nécessite `RLS_TEST_SERVICE_ROLE_KEY` et `RLS_TEST_JWT_SECRET`
       en secrets — voir en-tête de `src/lib/supabase/__tests__/rls.live.test.js`). Skippé
@@ -125,7 +125,7 @@ supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
 - [ ] `APP_URL` — utilisé pour l'allowlist CORS (`_shared/cors.ts`) ET les URLs de retour Stripe Checkout — **doit matcher le domaine de production exact**
 - [ ] `ALERT_WEBHOOK_URL` — **optionnel** (07/08/2026), webhook entrant Slack/Discord/Teams pour une notification immédiate sur les alertes critiques (`_shared/alert.ts`). Sans lui, les alertes restent visibles dans le panneau Monitoring du backoffice (table `alerts`), juste sans push immédiat.
 - [ ] `PURGE_CRON_SECRET` — **(09/08/2026)** partagé avec le job pg_cron qui appelle `purge-ordonnances`, même schéma que `SNAPSHOT_CRON_SECRET`.
-- [x] `RAPPEL_CRON_SECRET` — **(04/09/2026)** partagé avec le job pg_cron qui appelle `send-rappel-sms` (rappels de renouvellement d'ordonnance) — déjà configuré + job créé sur preview et production lors du lancement de la fonctionnalité. **⚠️ L'envoi SMS est un adaptateur mock (`_shared/sms.ts`) — aucun SMS réel n'est envoyé tant qu'un prestataire (Brevo, décidé) n'est branché.**
+- [x] `RAPPEL_CRON_SECRET` — **(04/09/2026)** partagé avec le job pg_cron qui appelle `send-rappel-sms` (rappels de renouvellement d'ordonnance) — déjà configuré + job créé sur preview et production lors du lancement de la fonctionnalité. **OVHcloud SMS est le prestataire intégré et en production depuis le 06/09/2026 (`_shared/sms.ts`) — l'envoi SMS est réel, plus un mock.** Cron passé de quotidien à horaire le 01/10/2026 (voir `20260904_rappels_ordonnance.sql` pour la commande `cron.alter_job` à rejouer en production).
 - [x] `POSTMARK_SERVER_TOKEN` — **(04/09/2026)** Server API Token Postmark (sortant — différent de `POSTMARK_WEBHOOK_SECRET`, qui sécurise seulement le webhook entrant) nécessaire au bouton "Envoyer (test)" des rappels (`_shared/email.ts`, `secure-data:rappels_envoyer_test`) : envoie le lien de rappel par email pour tester le parcours patient avant que le SMS réel soit branché. Configuré + envoi confirmé en direct (Postmark a accepté l'appel, statut du rappel passé à `sms_envoye`) sur preview et production. `EMAIL_FROM` configuré à `OrdoMail <contact@ordomail.fr>`.
 
 **24/09/2026 — déploiement CI disponible, opt-in.** Un job `deploy-functions`

@@ -21,9 +21,10 @@ import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { trimExcessPostes } from "../_shared/trimPostes.ts";
-import { runPurge } from "../_shared/purgeLogic.ts";
+import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { reportAlert } from "../_shared/alert.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -419,25 +420,44 @@ Deno.serve(async (req) => {
     }
 
     if (resource === "admin_retention_get") {
+      // rappels_retention_days (01/10/2026, audit RGPD) — champ additionnel,
+      // ordonnances_retention_days garde sa place pour ne rien casser côté
+      // appelants existants qui ne lisent que ce champ.
       const { data, error } = await sb.from("retention_settings")
-        .select("ordonnances_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
+        .select("ordonnances_retention_days, rappels_retention_days, updated_at, updated_by").eq("id", 1).maybeSingle();
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
     if (resource === "admin_retention_set") {
-      const { days, updatedBy } = params || {};
-      const parsed = days === null ? null : Number(days);
+      const { days, rappelsDays, updatedBy } = params || {};
+      // days/rappelsDays tous deux optionnels (01/10/2026) — `undefined` =
+      // champ inchangé (PurgeAdmin.jsx a deux boutons "Enregistrer" séparés,
+      // un seul des deux champs est envoyé à la fois), `null` = désactive
+      // explicitement la purge pour ce champ, un nombre = nouvelle durée.
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: updatedBy || null };
       // @fix 23/09/2026 (audit critique) — aucun plafond n'était imposé,
       // rien n'empêchait techniquement une valeur du type 99999 jours.
       // 3650 (10 ans) est un garde-fou technique, pas une durée validée
       // juridiquement — la durée réelle reste à confirmer avec le DPO.
-      if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0 || parsed > 3650)) {
-        return new Response(JSON.stringify({ error: "days doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
-          { status: 400, headers: CORS });
+      if (days !== undefined) {
+        const parsed = days === null ? null : Number(days);
+        if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0 || parsed > 3650)) {
+          return new Response(JSON.stringify({ error: "days doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
+            { status: 400, headers: CORS });
+        }
+        patch.ordonnances_retention_days = parsed;
+      }
+      if (rappelsDays !== undefined) {
+        const parsedRappels = rappelsDays === null ? null : Number(rappelsDays);
+        if (parsedRappels !== null && (!Number.isInteger(parsedRappels) || parsedRappels <= 0 || parsedRappels > 3650)) {
+          return new Response(JSON.stringify({ error: "rappelsDays doit être un entier compris entre 1 et 3650 (10 ans), ou null (désactive la purge)" }),
+            { status: 400, headers: CORS });
+        }
+        patch.rappels_retention_days = parsedRappels;
       }
       const { error } = await sb.from("retention_settings")
-        .update({ ordonnances_retention_days: parsed, updated_at: new Date().toISOString(), updated_by: updatedBy || null })
+        .update(patch)
         .eq("id", 1);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
@@ -470,7 +490,11 @@ Deno.serve(async (req) => {
 
     if (resource === "admin_purge_run") {
       const result = await runPurge(sb, "backoffice-manuel");
-      return new Response(JSON.stringify({ data: result }), { headers: CORS });
+      // Rappels de renouvellement terminés (01/10/2026, audit RGPD) — champ
+      // additionnel, `data` garde exactement sa forme d'origine (lue
+      // directement par PurgeAdmin.jsx) pour ne rien casser côté affichage.
+      const rappelsResult = await runRappelsPurge(sb, "backoffice-manuel");
+      return new Response(JSON.stringify({ data: result, rappels: rappelsResult }), { headers: CORS });
     }
 
     // Recherche RGPD (droits patient — art. 12-22) : localiser les ordonnances
@@ -491,8 +515,9 @@ Deno.serve(async (req) => {
           { status: 400, headers: CORS });
       }
       const { data: settings } = await sb.from("retention_settings")
-        .select("ordonnances_retention_days").eq("id", 1).maybeSingle();
+        .select("ordonnances_retention_days, rappels_retention_days").eq("id", 1).maybeSingle();
       const days = settings?.ordonnances_retention_days;
+      const rappelsDays = settings?.rappels_retention_days;
 
       // Échappe les caractères réservés à la syntaxe de filtre PostgREST (`,` `.`
       // `(` `)`) via son mécanisme de guillemettage documenté — sans ça, un nom
@@ -505,7 +530,58 @@ Deno.serve(async (req) => {
       if (days) query = query.gte("received_at", new Date(Date.now() - days * 86400000).toISOString());
       const { data, error } = await query.order("received_at", { ascending: false }).limit(100);
       if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data, retentionDays: days ?? null }), { headers: CORS });
+      // Rappels de renouvellement (01/10/2026, audit RGPD) — l'outil de
+      // recherche DPO ne cherchait jusqu'ici que dans `ordonnances` : une
+      // demande d'effacement/accès ciblée sur un patient ne trouvait jamais
+      // ses données de rappel (nom/prénom/téléphone/commentaire), même
+      // lisibles par le titulaire concerné. Même logique de recherche/fenêtre.
+      let rappelsQuery = sb.from("rappels_ordonnance")
+        .select("id, pharmacie_id, patient_nom, patient_prenom, patient_telephone, statut, created_at, pharmacies(nom)")
+        .or(`patient_nom.ilike."%${esc}%",patient_prenom.ilike."%${esc}%"`);
+      if (rappelsDays) rappelsQuery = rappelsQuery.gte("created_at", new Date(Date.now() - rappelsDays * 86400000).toISOString());
+      const { data: rappelsData, error: rappelsErr } = await rappelsQuery.order("created_at", { ascending: false }).limit(100);
+      if (rappelsErr) throw new Error(rappelsErr.message);
+      return new Response(JSON.stringify({ data, retentionDays: days ?? null, rappels: rappelsData, rappelsRetentionDays: rappelsDays ?? null }), { headers: CORS });
+    }
+
+    // Export/portabilité (01/10/2026, audit RGPD — art. 15/20) — jusqu'ici,
+    // seule la suppression était outillée ; aucun moyen de répondre à une
+    // demande d'accès/portabilité autrement qu'en extrayant manuellement les
+    // données en base. Consolide une ordonnance ou un rappel (avec son
+    // historique d'événements) en JSON téléchargeable par l'admin, qui le
+    // transmet ensuite au demandeur par le canal de son choix — un outil
+    // manuel suffit légalement, l'obligation est de pouvoir répondre, pas
+    // d'avoir un self-service patient.
+    if (resource === "admin_export_patient_data") {
+      const { ordoIds, rappelIds } = params || {};
+      const ordos = Array.isArray(ordoIds) ? ordoIds.filter(Boolean) : [];
+      const rappels = Array.isArray(rappelIds) ? rappelIds.filter(Boolean) : [];
+      if (!ordos.length && !rappels.length) {
+        return new Response(JSON.stringify({ error: "ordoIds ou rappelIds requis" }), { status: 400, headers: CORS });
+      }
+      const [ordonnancesRes, rappelsRes] = await Promise.all([
+        ordos.length
+          ? sb.from("ordonnances").select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, medecin, medicaments, fichier_url, fichier_nom, pharmacies(nom)").in("id", ordos)
+          : Promise.resolve({ data: [], error: null }),
+        rappels.length
+          ? sb.from("rappels_ordonnance").select("*, pharmacies(nom)").in("id", rappels)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (ordonnancesRes.error) throw new Error(ordonnancesRes.error.message);
+      if (rappelsRes.error) throw new Error(rappelsRes.error.message);
+      let evenements: unknown[] = [];
+      if (rappels.length) {
+        const { data: evts, error: evtsErr } = await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappels).order("created_at", { ascending: true });
+        if (evtsErr) throw new Error(evtsErr.message);
+        evenements = evts || [];
+      }
+      return new Response(JSON.stringify({
+        data: {
+          exporte_le: new Date().toISOString(),
+          ordonnances: ordonnancesRes.data || [],
+          rappels: (rappelsRes.data || []).map((r: any) => ({ ...r, evenements: evenements.filter((e: any) => e.rappel_id === r.id) })),
+        },
+      }), { headers: CORS });
     }
 
     if (resource === "admin_delete_ordonnance") {
@@ -527,6 +603,69 @@ Deno.serve(async (req) => {
       }
       const { error: delErr } = await sb.from("ordonnances").delete().eq("id", ordoId);
       if (delErr) throw new Error(delErr.message);
+      return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Suppression de compte pharmacie (01/10/2026, audit RGPD) — les CGU
+    // (LegalPage.jsx art. 10) promettent la suppression des données patient à
+    // la résiliation, sans qu'aucun outil ne l'exécute jusqu'ici. Irréversible
+    // et à fort rayon d'impact : deux garde-fous avant toute suppression —
+    // (1) l'abonnement Stripe doit déjà être résilié (plan_status='canceled')
+    // ou n'avoir jamais existé (pharmacie de test sans stripe_customer_id),
+    // jamais de résiliation Stripe déclenchée depuis cette action elle-même ;
+    // (2) le nom exact de la pharmacie doit être retapé en confirmation,
+    // garde-fou contre un mauvais ID copié-collé.
+    //
+    // Vérifié (information_schema.referential_constraints, 01/10/2026) : la
+    // quasi-totalité des tables portant pharmacie_id ont déjà ON DELETE
+    // CASCADE vers pharmacies (rappels_ordonnance → rappels_evenements inclus,
+    // ordonnances, pharmacie_postes, audit_logs, abonnements, offres/stories,
+    // métriques...) — supprimer la ligne pharmacies suffit à tout emporter.
+    // Deux exceptions à traiter explicitement avant : `promotion_redemptions`
+    // est en NO ACTION (bloquerait la suppression s'il reste une ligne) et
+    // `pharmacie_users` est en SET NULL (orphelinerait la ligne au lieu de la
+    // supprimer). `qr_codes` est aussi en SET NULL, volontairement laissé tel
+    // quel — un QR pré-imprimé redevient du stock disponible, pas une donnée
+    // patient à effacer. Ne touche jamais aux comptes Supabase Auth
+    // eux-mêmes (hors périmètre de cette action).
+    if (resource === "admin_delete_pharmacie") {
+      const { pharmacieId: targetId, confirmNom } = params || {};
+      if (!targetId || !confirmNom?.trim()) {
+        return new Response(JSON.stringify({ error: "pharmacieId et confirmNom requis" }), { status: 400, headers: CORS });
+      }
+      const { data: ph, error: phErr } = await sb.from("pharmacies").select("id, nom, plan_status, stripe_customer_id").eq("id", targetId).maybeSingle();
+      if (phErr) throw new Error(phErr.message);
+      if (!ph) {
+        return new Response(JSON.stringify({ error: "Pharmacie introuvable" }), { status: 404, headers: CORS });
+      }
+      if (confirmNom.trim() !== ph.nom) {
+        return new Response(JSON.stringify({ error: "Le nom saisi ne correspond pas exactement au nom de la pharmacie" }), { status: 400, headers: CORS });
+      }
+      if (ph.stripe_customer_id && ph.plan_status !== "canceled") {
+        return new Response(JSON.stringify({ error: "L'abonnement Stripe doit d'abord être résilié (plan_status actuel : " + (ph.plan_status || "inconnu") + ")" }), { status: 409, headers: CORS });
+      }
+
+      const { data: ordos } = await sb.from("ordonnances").select("fichier_url").eq("pharmacie_id", targetId);
+      const paths = (ordos || []).filter((o: any) => o.fichier_url).map((o: any) => o.fichier_url as string);
+      if (paths.length) {
+        const { error: rmErr } = await sb.storage.from("ordonnances-files").remove(paths);
+        if (rmErr) console.error("[admin_delete_pharmacie] fichiers:", rmErr.message);
+      }
+      // Les deux exceptions au CASCADE, à vider avant la ligne pharmacies.
+      const { error: promoErr } = await sb.from("promotion_redemptions").delete().eq("pharmacie_id", targetId);
+      if (promoErr) throw new Error(`promotion_redemptions: ${promoErr.message}`);
+      const { error: usersErr } = await sb.from("pharmacie_users").delete().eq("pharmacie_id", targetId);
+      if (usersErr) throw new Error(`pharmacie_users: ${usersErr.message}`);
+
+      const { error: delPhErr } = await sb.from("pharmacies").delete().eq("id", targetId);
+      if (delPhErr) throw new Error(delPhErr.message);
+
+      await reportAlert(sb, {
+        source: "secure-data-admin",
+        severity: "info",
+        message: `Compte pharmacie supprimé définitivement : ${ph.nom} (${(ordos || []).length} ordonnance(s), fichiers et données liées effacés en cascade)`,
+        meta: { pharmacieId: targetId, ordonnances: (ordos || []).length },
+      });
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
@@ -725,7 +864,10 @@ Deno.serve(async (req) => {
       for (const r of rappels || []) {
         // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
         // retrait) est un cycle toujours en cours : compte comme actif.
-        if (r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare") {
+        // @fix 30/09/2026 — "a_appeler" (patient sans mobile, en attente que
+        // le pharmacien l'appelle) est le pendant de "sms_envoye" pour ce
+        // mode, tout aussi actif.
+        if (r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare") {
           bucket(r.pharmacie_id).rappelsActifs++;
         }
       }
@@ -758,7 +900,7 @@ Deno.serve(async (req) => {
       // renouvellement réel se calcule sur les rappels ayant déjà reçu une
       // réponse (choix_patient non nul) — pas sur le total, qui inclut des
       // cycles encore en_attente sans réponse à ce jour.
-      const parStatut = { en_attente: 0, sms_envoye: 0, a_traiter: 0, prepare: 0, termine: 0 } as Record<string, number>;
+      const parStatut = { en_attente: 0, sms_envoye: 0, a_appeler: 0, a_traiter: 0, prepare: 0, termine: 0 } as Record<string, number>;
       const parChoix = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
       let avecOrdonnance = 0, avecReponse = 0;
       for (const r of rappels || []) {
@@ -773,7 +915,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         data: {
           global: {
-            rappelsActifs: (rappels || []).filter(r => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length,
+            rappelsActifs: (rappels || []).filter(r => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_appeler" || r.statut === "a_traiter" || r.statut === "prepare").length,
             rappelsTotal: (rappels || []).length,
             smsJour, sms7j, sms30j, sms90j,
             echecs90j, reponses90j, tauxReponse,

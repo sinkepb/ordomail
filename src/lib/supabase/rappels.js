@@ -4,6 +4,16 @@
 // [cycle suivant] → … → termine).
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 
+// Détection fixe/mobile par préfixe (01/10/2026) — même règle que
+// supabase/functions/_shared/telephone.ts, dupliquée ici car le mode démo
+// (sans appel serveur) doit déterminer lui-même le mode de contact.
+function estNumeroFixe(v) {
+  const digits = (v || '').replace(/[\s.-]/g, '');
+  const local = digits.startsWith('+33') ? '0' + digits.slice(3) : digits;
+  const prefix = local[1];
+  return prefix !== undefined && prefix !== '6' && prefix !== '7';
+}
+
 export async function fetchRappels(pharmacieId, statut = null) {
   if (IS_DEMO) {
     const db = getDB();
@@ -51,6 +61,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
       id: `r${Date.now()}`, pharmacie_id: pharmacieId,
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
       commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, specialite: specialite || null, consentement_sms: !!consentement,
+      mode_contact: estNumeroFixe(telephone) ? 'appel' : 'sms',
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
       ordonnance_id: ordonnanceId || null,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
@@ -97,14 +108,39 @@ export async function terminerRappel(rappelId) {
 
 // Réactive un rappel terminé (07/09/2026) — repart sur le même patient sans
 // recréer un rappel depuis zéro. Voir secure-data:rappels_reactiver.
-export async function reactiverRappel(rappelId, dateRappel = null) {
+export async function reactiverRappel(rappelId, dateRappel = null, consentement = false) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
+  return await callSecureData('rappels_reactiver', { rappelId, dateRappel, consentement });
 }
 
 export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite }) {
   if (IS_DEMO) return { success: true };
   return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite });
+}
+
+// Déclenchement manuel anticipé du passage en "à appeler" (30/09/2026) —
+// pendant de envoyerTestRappel pour un rappel en mode "appel" (numéro fixe,
+// patient sans mobile). Voir secure-data:rappels_marquer_a_appeler.
+export async function marquerRappelAAppeler(rappelId) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_marquer_a_appeler', { rappelId });
+}
+
+// Enregistre le choix du patient après un appel téléphonique (30/09/2026) —
+// pendant du POST anonyme de resolve-rappel (lien SMS), ici déclenché par le
+// pharmacien lui-même. Voir secure-data:rappels_enregistrer_appel.
+export async function enregistrerAppelRappel(rappelId, choix, detailPartiel) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_enregistrer_appel', { rappelId, choix, detailPartiel });
+}
+
+// Confirme l'appel de clarification d'un renouvellement partiel (01/10/2026)
+// — le choix ("partiel") est déjà connu (répondu par le patient via SMS),
+// seul l'appel reste à confirmer pour passer à "à traiter". Voir
+// secure-data:rappels_confirmer_appel_partiel.
+export async function confirmerAppelPartiel(rappelId, detailPartiel) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_confirmer_appel_partiel', { rappelId, detailPartiel });
 }
 
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le

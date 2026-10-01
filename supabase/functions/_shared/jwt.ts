@@ -24,7 +24,20 @@ function base64urlDecode(input: string): Uint8Array {
   return bytes;
 }
 
+// Échoue fort si le secret est absent (01/10/2026, audit) — `Deno.env.get(...)!`
+// côté appelant n'a aucun effet au runtime (assertion TypeScript compile-time
+// seulement) ; sans ce garde-fou, un secret manquant produisait une clé HMAC
+// calculée sur une chaîne vide, cohérente entre émission et vérification mais
+// triviale à reproduire par quiconque lit ce fichier (code source public du
+// dépôt) — un token admin/vendeur forgeable sans jamais passer par
+// verify-pin/verify-admin. Un environnement mal configuré doit planter
+// bruyamment plutôt que fonctionner avec un secret vide.
+function assertSecret(secret: string): void {
+  if (!secret) throw new Error("Secret JWT manquant (ORDOMAIL_JWT_SECRET non configuré) — signature/vérification refusée");
+}
+
 async function hmacKey(secret: string): Promise<CryptoKey> {
+  assertSecret(secret);
   return crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),

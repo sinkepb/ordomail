@@ -142,8 +142,8 @@ confirmer explicitement**, ça change les obligations contractuelles
 | **Catégories de données** | Nom, prénom, numéro de téléphone du patient, commentaire libre du pharmacien (peut mentionner un traitement — **donnée de santé, catégorie particulière RGPD art. 9**, à traiter avec la même rigueur que le Traitement 1), choix exprimé par le patient (tout renouveler / rien / partiel). |
 | **Table(s)** | `rappels_ordonnance`, `rappels_evenements` (historique/traçabilité). |
 | **Destinataires internes** | Titulaire de la pharmacie concernée (RLS scopée, accès via `secure-data`). |
-| **Sous-traitants techniques** | Prestataire SMS — **[à trancher, Brevo envisagé — voir ci-dessous]**. Aucun envoi réel actuellement : l'adaptateur (`supabase/functions/_shared/sms.ts`) est un mock qui journalise sans transmettre à un tiers, le temps de valider le prestataire et le DPA correspondant. |
-| **Durée de conservation** | **[À définir]** — pas de purge automatique actuellement, comme les autres traitements de ce document. |
+| **Sous-traitants techniques** | OVHcloud SMS — **en production depuis le 06/09/2026** (`supabase/functions/_shared/sms.ts`), expéditeur alphanumérique validé par OVH le 11/09/2026. Envoi réel, pas un mock. **[DPA à confirmer avec le DPO.]** |
+| **Durée de conservation** | Purge automatique disponible depuis le 01/10/2026 (`retention_settings.rappels_retention_days`, même mécanisme que les ordonnances) — ne supprime que les rappels au cycle clos ("terminé"), jamais un suivi actif. **Désactivée par défaut, durée à valider et configurer avec le DPO** (voir onglet Purge du backoffice). |
 | **Mesures de sécurité** | RLS deny-all (accès exclusivement via `secure-data`/cron service_role), lien patient à usage unique par cycle (token régénéré à chaque SMS, invalidé dès la réponse), rate limiting sur l'endpoint public (`resolve-rappel`), consentement obligatoire côté création (refusé serveur si absent). |
 
 ---
@@ -157,7 +157,7 @@ confirmer explicitement**, ça change les obligations contractuelles
 | Postmark | Transit des emails entrants (ordonnances en pièce jointe) | Potentiellement données de santé en transit | **[À vérifier — point signalé au DPO]** |
 | Vercel/Netlify | Hébergement frontend | Aucune donnée persistée côté serveur applicatif | **[À vérifier]** |
 | Sentry (si `VITE_SENTRY_DSN` configuré) | Monitoring d'erreurs frontend | Logs techniques, masquage des PII déjà en place (`log-mask.ts`) | **[À vérifier]** |
-| Brevo (envisagé, 04/09/2026) | Envoi des SMS de rappel de renouvellement (Traitement 8) | Numéro de téléphone patient, prénom | **Pas encore intégré — adaptateur mock en attendant validation DPO/DPA** |
+| OVHcloud SMS (intégré 06/09/2026, en production) | Envoi des SMS de rappel de renouvellement (Traitement 8) | Numéro de téléphone patient, prénom, médecin/spécialité le cas échéant | **[À vérifier — DPA à formaliser]** |
 
 ---
 

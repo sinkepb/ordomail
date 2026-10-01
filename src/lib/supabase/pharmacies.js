@@ -15,7 +15,12 @@ export async function fetchPharmacie(pharmacieId) {
     return data ? { ...data, emailReception: data.email_reception, postes: [] } : null;
   }
   const sb = getSupabase();
-  const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(*), pharmacie_users(nom, role)').eq('id', pharmacieId).single();
+  // pharmacie_postes : colonnes explicites, pas `*` (01/10/2026) — le titulaire
+  // n'a plus GRANT SELECT sur pin_hash/pin (voir
+  // 20261001_postes_pin_hash_restriction.sql) ; PostgREST refuse l'intégralité
+  // de la requête imbriquée avec 403 si une seule colonne demandée via `*`
+  // n'est pas accordée, ça ne se limite pas à omettre cette colonne.
+  const { data, error } = await sb.from('pharmacies').select('*, pharmacie_postes(id, pharmacie_id, nom, actif, created_at), pharmacie_users(nom, role)').eq('id', pharmacieId).single();
   if (error) throw error;
   // Normaliser pharmacie_postes → postes pour compatibilité dashboard
   if (data && data.pharmacie_postes) {
@@ -89,7 +94,11 @@ export async function savePostes(pharmacieId, postes, pinChanges = {}) {
   // silencieusement un changement de PIN fait entre-temps via la sauvegarde
   // au blur/bouton dédié (update-pin, seule source légitime de ce champ).
   const rows = postes.map(({ pin_hash: _pin_hash, pin: _pin, ...p }) => ({ ...p, pharmacie_id: pharmacieId }));
-  const { data, error } = await sb.from('pharmacie_postes').upsert(rows).select();
+  // Colonnes explicites, pas select() nu (01/10/2026) — le titulaire n'a plus
+  // GRANT SELECT sur pin_hash/pin (voir 20261001_postes_pin_hash_restriction.sql),
+  // et le RETURNING par défaut de PostgREST demande l'équivalent de `*` : la
+  // requête entière échoue en 403 si une seule colonne demandée n'est pas accordée.
+  const { data, error } = await sb.from('pharmacie_postes').upsert(rows).select('id, pharmacie_id, nom, actif, created_at');
   if (error) throw error;
   // Mettre à jour les PINs via Edge Function (bcrypt)
   for (const [posteId, newPin] of Object.entries(pinChanges)) {

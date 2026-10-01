@@ -81,16 +81,27 @@ COMMIT;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Après exécution : déployer secure-data (nouvelles resources rappels_*),
--- send-rappel-sms et resolve-rappel, puis créer le job pg_cron quotidien
+-- send-rappel-sms et resolve-rappel, puis créer le job pg_cron
 -- (voir DEPLOIEMENT_CHECKLIST.md — même principe que purge-ordonnances,
 -- secret partagé RAPPEL_CRON_SECRET) :
 --
 --   select cron.schedule(
---     'send-rappel-sms', '0 8 * * *',
+--     'send-rappel-sms', '0 * * * *',
 --     $$ select net.http_post(
 --          url:='https://<project-ref>.functions.supabase.co/send-rappel-sms',
 --          headers:=jsonb_build_object('x-cron-secret', '<RAPPEL_CRON_SECRET>'),
 --          body:='{}'::jsonb
 --        ) $$
+--   );
+--
+-- Horaire, pas quotidien (01/10/2026, audit — bottleneck) : les requêtes du
+-- scan sont désormais bornées par lot (SCAN_BATCH_SIZE, voir rappelLogic.ts),
+-- donc un passage plus fréquent répartit la charge au lieu de risquer un
+-- timeout si le volume dû un jour donné grossit ; ça raccourcit aussi le
+-- délai de retry d'un SMS en échec transitoire (jusqu'à 24h avant → 1h).
+-- Un job déjà déployé en quotidien se met à jour sans le recréer :
+--   select cron.alter_job(
+--     job_id := (select jobid from cron.job where jobname = 'send-rappel-sms'),
+--     schedule := '0 * * * *'
 --   );
 -- ─────────────────────────────────────────────────────────────────────────────

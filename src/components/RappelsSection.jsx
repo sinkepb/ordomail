@@ -2,12 +2,16 @@
 // supabase/migrations/20260904_rappels_ordonnance.sql pour le cycle de statut.
 // Découpage autonome (props + état local), même convention que OffresSection.jsx.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
 
 const STATUT_INFO = {
   en_attente: { label: "En attente", bg: "#eef2ff", fg: "#4338ca" },
   sms_envoye: { label: "SMS envoyé", bg: "#eff6ff", fg: "#1d4ed8" },
+  // Patient sans mobile (30/09/2026) — numéro fixe détecté à la création,
+  // le pharmacien doit appeler lui-même plutôt qu'attendre une réponse SMS
+  // qui ne viendra jamais (voir _shared/telephone.ts et rappelLogic.ts).
+  a_appeler:  { label: "À appeler",  bg: "#fef9c3", fg: "#a16207" },
   a_traiter:  { label: "À traiter",  bg: "#fef2f2", fg: "#dc2626" },
   // @fix 26/09/2026 — étape "préparé" (médicament rangé en casier, en
   // attente de retrait patient), entre "à traiter" et la validation finale.
@@ -28,6 +32,7 @@ const CHOIX_LABEL = {
   tout_renouveler: "✅ Tout renouveler",
   rien: "🚫 Ne rien prendre",
   partiel: "🔶 Renouvellement partiel",
+  stop: "⛔ Ne plus être recontacté",
 };
 
 // Créneau de retrait choisi par le patient à la confirmation (08/09/2026) —
@@ -47,6 +52,9 @@ const JOURNAL_INFO = {
   cree:            { icon: "🆕", label: "Rappel créé" },
   sms_envoye:      { icon: "📱", label: "SMS envoyé" },
   sms_echec:       { icon: "⚠️", label: "Échec d'envoi" },
+  a_appeler:       { icon: "📞", label: "Passé à appeler (patient sans mobile)" },
+  appel_effectue:  { icon: "☎️", label: "Appel de clarification effectué — passé à traiter" },
+  relance_envoyee: { icon: "🔁", label: "SMS de relance envoyé (sans réponse au premier)" },
   reponse_patient: { icon: "💬", label: "Patient a répondu" },
   prepare:         { icon: "📦", label: "Médicament préparé" },
   traite:          { icon: "✅", label: "Rappel validé — nouveau cycle lancé" },
@@ -58,11 +66,24 @@ function journalLigne(evt) {
   if (evt.type === "sms_envoye" && evt.meta?.canal === "email_test") {
     return { ...info, icon: "✉️", label: `Email envoyé (test${evt.meta?.to ? " → " + evt.meta.to : ""})` };
   }
+  if (evt.type === "reponse_patient" && evt.meta?.canal === "appel" && evt.meta?.choix) {
+    return { ...info, icon: "📞", label: `Réponse enregistrée par téléphone : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
+  }
+  if (evt.type === "reponse_patient" && evt.meta?.apres_escalade && evt.meta?.choix) {
+    return { ...info, label: `Patient a répondu (après escalade "à appeler") : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix} — appel devenu inutile` };
+  }
   if (evt.type === "reponse_patient" && evt.meta?.choix) {
     return { ...info, label: `Patient a répondu : ${CHOIX_LABEL[evt.meta.choix] || evt.meta.choix}` };
   }
   if (evt.type === "sms_echec" && evt.meta?.error) {
-    return { ...info, label: `Échec d'envoi — ${evt.meta.error}` };
+    const compte = evt.meta?.echecs ? ` (échec n°${evt.meta.echecs})` : "";
+    return { ...info, label: `Échec d'envoi${evt.meta?.relance ? " (relance)" : ""}${compte} — ${evt.meta.error}` };
+  }
+  if (evt.type === "a_appeler" && evt.meta?.motif === "sans_reponse") {
+    return { ...info, label: "Passé à appeler — aucune réponse après relance" };
+  }
+  if (evt.type === "a_appeler" && evt.meta?.motif === "echec_envoi") {
+    return { ...info, label: `Passé à appeler — le SMS n'a pas pu être envoyé (${evt.meta.echecs} échecs)` };
   }
   if (evt.type === "prepare" && evt.meta?.caseCode) {
     return { ...info, label: `Médicament préparé — casier ${evt.meta.caseCode}` };
@@ -73,6 +94,7 @@ function journalLigne(evt) {
 const FILTRES = [
   ["tous", "Tous"],
   ["en_attente", "En attente"],
+  ["a_appeler", "À appeler"],
   ["a_traiter", "À traiter"],
   ["prepare", "Préparés"],
   ["termine", "Terminés"],
@@ -83,6 +105,16 @@ function normalizeTel(v) {
 }
 function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
+}
+// Détection fixe/mobile par préfixe (30/09/2026) — même règle que
+// _shared/telephone.ts côté serveur (qui reste la source de vérité pour le
+// mode enregistré) : ici uniquement pour préremplir le choix à la création,
+// modifiable par le pharmacien avant validation.
+function estNumeroFixe(v) {
+  const digits = normalizeTel(v);
+  const local = digits.startsWith("+33") ? "0" + digits.slice(3) : digits;
+  const prefix = local[1];
+  return prefix !== undefined && prefix !== "6" && prefix !== "7";
 }
 // Format YYYY-MM-DD attendu par <input type="date">.
 function toDateInputValue(date) {
@@ -153,6 +185,11 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
   const canEditDate = !isEdit || editingRappel.statut === "en_attente";
+  // Mode de contact (01/10/2026, retour titulaire) — plus de choix manuel à
+  // la création : entièrement déduit du préfixe du numéro saisi (numéro fixe
+  // = appel, mobile = SMS), même règle que secure-data:rappels_create qui
+  // reste la seule source de vérité enregistrée en base.
+  const modeContact = estNumeroFixe(telephone) ? "appel" : "sms";
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -170,7 +207,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
       return;
     }
     if (!isEdit && !consentement) {
-      setError("Le patient doit avoir consenti à être recontacté par SMS.");
+      setError("Le patient doit avoir consenti à être recontacté.");
       return;
     }
     setCreating(true);
@@ -202,7 +239,13 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
         <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 8, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
+
+        {modeContact === "appel" && (
+          <div style={{ fontSize: 11.5, color: "#a16207", marginBottom: 12, lineHeight: 1.4 }}>
+            📞 Numéro fixe détecté — à l'échéance, ce rappel passera en "À appeler" au lieu d'un SMS.
+          </div>
+        )}
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Spécialité / type d'ordonnance (optionnel)</label>
         <select value={specialiteChoix} onChange={e => setSpecialiteChoix(e.target.value)}
@@ -239,7 +282,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
         {!isEdit && (
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer" }}>
             <input type="checkbox" checked={consentement} onChange={e => setConsentement(e.target.checked)} style={{ marginTop: 3 }} />
-            <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient a été informé et consent à être recontacté par SMS au sujet du renouvellement de son ordonnance.</span>
+            <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient a été informé et consent à être recontacté {modeContact === "appel" ? "par téléphone" : "par SMS"} au sujet du renouvellement de son ordonnance.</span>
           </label>
         )}
 
@@ -311,7 +354,7 @@ function defaultDateForChoix(rappel) {
 // selon le cas — un renouvellement partiel suppose d'avoir déjà appelé le
 // patient pour préciser sa demande), mais pas pour "ne rien prendre" où
 // seule la prochaine date compte.
-function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
+function ValiderModal({ rappel, onCancel, onConfirm, submitting, serverError }) {
   const [dateRappel, setDateRappel] = useState(() => defaultDateForChoix(rappel));
   const [livre, setLivre] = useState(false);
   const [error, setError] = useState("");
@@ -334,10 +377,12 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
   const titre = rappel.choix_patient === "tout_renouveler" ? "✅ Confirmer le renouvellement"
     : rappel.choix_patient === "partiel" ? "🔶 Confirmer le renouvellement partiel"
     : "🚫 Confirmer";
-  const consigne = rappel.choix_patient === "tout_renouveler"
+  // @fix 01/10/2026 — l'appel de clarification d'un renouvellement partiel
+  // est désormais une étape obligatoire distincte avant d'arriver ici (voir
+  // statut "à appeler"), plus une simple case à cocher au moment de valider :
+  // même consigne que tout_renouveler, il ne reste que la livraison à confirmer.
+  const consigne = (rappel.choix_patient === "tout_renouveler" || rappel.choix_patient === "partiel")
     ? "Le médicament a bien été livré au patient."
-    : rappel.choix_patient === "partiel"
-    ? "Après avoir appelé le patient pour préciser sa demande, le médicament a bien été livré."
     : null;
 
   return (
@@ -361,7 +406,7 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
           Le SMS part 7 jours avant cette date{rappel.choix_patient === "rien" ? " — espacée automatiquement (le patient a décliné), modifiable si besoin." : " — pré-remplie à J+28, modifiable si besoin."}
         </div>
 
-        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        {(error || serverError) && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error || serverError}</div>}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={submitting}
@@ -380,7 +425,7 @@ function ValiderModal({ rappel, onCancel, onConfirm, submitting }) {
 
 // Confirmation avant fin de traitement définitive (04/09/2026) — irréversible
 // (plus aucune relance), une confirmation explicite évite un clic accidentel.
-function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
@@ -389,6 +434,7 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
           Le suivi de <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> s'arrêtera définitivement — aucune nouvelle relance ne sera envoyée.
         </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -408,7 +454,7 @@ function TerminerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 // code de casier (compteur incrémenté, jamais réutilisé), donc une
 // confirmation explicite évite qu'un clic accidentel consomme un casier pour
 // rien plutôt qu'une fois le médicament réellement préparé et rangé.
-function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
+function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
@@ -417,6 +463,7 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
           Un identifiant de casier sera généré pour <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> — à faire uniquement une fois le médicament réellement préparé et rangé.
         </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -432,12 +479,123 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
   );
 }
 
+// Enregistrer le choix du patient après un appel téléphonique (30/09/2026) —
+// pendant du choix fait par le patient lui-même sur la page publique
+// resolve-rappel (lien SMS), ici saisi par le pharmacien après avoir appelé
+// un patient en mode "appel" (numéro fixe, sans mobile).
+// Détail du renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
+// seul ne dit pas QUELS médicaments ; demandé ici car c'est le seul moment où
+// cette info existe (le pharmacien vient de raccrocher), sinon elle ne finit
+// nulle part sauf à rouvrir "Modifier" de soi-même en dehors du parcours guidé.
+function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting, error }) {
+  const [choixPartiel, setChoixPartiel] = useState(false);
+  const [detailPartiel, setDetailPartiel] = useState("");
+
+  if (choixPartiel) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🔶 Quels médicaments renouveler ?</div>
+          <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 12 }}>{rappel.patient_prenom} {rappel.patient_nom}</div>
+          <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
+            placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+          {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+          <button type="button" disabled={submitting || !detailPartiel.trim()} onClick={() => onChoix("partiel", detailPartiel)}
+            style={{ width: "100%", padding: "11px", borderRadius: 10, border: "none", background: "#92400e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (submitting || !detailPartiel.trim()) ? "default" : "pointer", fontFamily: "inherit", opacity: (submitting || !detailPartiel.trim()) ? 0.6 : 1, marginBottom: 8 }}>
+            Confirmer
+          </button>
+          <button type="button" onClick={() => setChoixPartiel(false)} disabled={submitting}
+            style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>📞 Quel est le choix du patient ?</div>
+        <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>{rappel.patient_prenom} {rappel.patient_nom} — après l'avoir appelé(e)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <button type="button" disabled={submitting} onClick={() => onChoix("tout_renouveler")}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #86efac", background: "#f0fdf4", color: "#15803d", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            ✅ Tout renouveler
+          </button>
+          <button type="button" disabled={submitting} onClick={() => setChoixPartiel(true)}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            🔶 Renouvellement partiel
+          </button>
+          <button type="button" disabled={submitting} onClick={() => onChoix("rien")}
+            style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            🚫 Ne rien prendre
+          </button>
+        </div>
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button type="button" onClick={onCancel} disabled={submitting}
+          style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+          Annuler
+        </button>
+        {/* Canal d'opposition (01/10/2026, audit RGPD) — même logique que
+            RappelChoixPage.jsx, pour un patient qui le demande pendant
+            l'appel plutôt que via le lien SMS. */}
+        <button type="button" disabled={submitting} onClick={() => onChoix("stop")}
+          style={{ width: "100%", marginTop: 10, background: "none", border: "none", color: "#94a3b8", fontSize: 12, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+          Le patient demande à ne plus être recontacté
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Confirmer l'appel de clarification d'un renouvellement partiel
+// (01/10/2026) — le choix est déjà connu (répondu "partiel" via le lien
+// SMS), seul l'appel de clarification (quels médicaments renouveler) reste
+// à confirmer pour passer à "à traiter".
+function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting, error }) {
+  const [detailPartiel, setDetailPartiel] = useState("");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>☎️ Appel effectué ?</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12, lineHeight: 1.5 }}>
+          Confirmez avoir appelé <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> pour préciser son renouvellement partiel — le rappel passera à "À traiter".
+        </div>
+        {/* Détail du renouvellement partiel (01/10/2026) — même exigence que
+            EnregistrerAppelModal : sans ce champ, l'info précisée pendant
+            l'appel ne finit nulle part. */}
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Quels médicaments renouveler ?</label>
+        <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
+          placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 16, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} disabled={submitting}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            Annuler
+          </button>
+          <button onClick={() => onConfirm(detailPartiel)} disabled={submitting || !detailPartiel.trim()}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (submitting || !detailPartiel.trim()) ? "default" : "pointer", fontFamily: "inherit", opacity: (submitting || !detailPartiel.trim()) ? 0.6 : 1 }}>
+            {submitting ? "…" : "☎️ Oui, appel effectué"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Réactivation d'un rappel terminé (07/09/2026) — repart sur le même
 // patient (nom/téléphone/consentement déjà recueillis) plutôt que d'obliger
 // à recréer un rappel depuis zéro. Même choix de date par défaut que la
 // validation (J+28 de renouvellement, soit J+21 d'envoi).
-function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
+function ReactiverModal({ rappel, onCancel, onConfirm, submitting, serverError }) {
   const [dateRappel, setDateRappel] = useState(defaultDateRenouvellement);
+  const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
 
   function handleSubmit(e) {
@@ -447,7 +605,15 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
       setError("La date de renouvellement ne peut pas être dans le passé.");
       return;
     }
-    onConfirm(renouvellementVersEnvoi(dateRappel));
+    // Consentement reconfirmé (01/10/2026, audit RGPD) — le serveur l'exige
+    // désormais à chaque réactivation, pas seulement à la création : un
+    // consentement recueilli des cycles plus tôt ne doit pas être présumé
+    // valide indéfiniment.
+    if (!consentement) {
+      setError("Confirmez que le patient consent toujours à être recontacté.");
+      return;
+    }
+    onConfirm(renouvellementVersEnvoi(dateRappel), consentement);
   }
 
   return (
@@ -464,7 +630,12 @@ function ReactiverModal({ rappel, onCancel, onConfirm, submitting }) {
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 4, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
         <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 16 }}>Le SMS part 7 jours avant cette date — pré-remplie à J+28, modifiable si besoin.</div>
 
-        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer" }}>
+          <input type="checkbox" checked={consentement} onChange={e => setConsentement(e.target.checked)} style={{ marginTop: 3 }} />
+          <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.4 }}>Le patient consent toujours à être recontacté au sujet du renouvellement de son ordonnance.</span>
+        </label>
+
+        {(error || serverError) && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error || serverError}</div>}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onCancel} disabled={submitting}
@@ -495,12 +666,28 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [sendModalRappel, setSendModalRappel] = useState(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  // Erreur d'action générique (01/10/2026, audit — erreurs silencieuses) —
+  // handlePreparer/handleMarquerAAppeler/handleEnregistrerAppel/
+  // handleConfirmerAppelPartiel ne faisaient que console.error en cas
+  // d'échec serveur (ex. conflit si le cron a changé le statut entre-temps) :
+  // le vendeur ne voyait rien, le bouton semblait juste ne rien faire.
+  const [actionError, setActionError] = useState("");
   const [validatingRappel, setValidatingRappel] = useState(null);
   // Préparation (26/09/2026) — pas de modal de confirmation (action peu
   // risquée, contrairement à l'envoi SMS) : un clic attribue le casier et
   // met à jour la ligne directement.
   const [preparingId, setPreparingId] = useState(null);
   const [preparingConfirm, setPreparingConfirm] = useState(null);
+  // Mode "appel" (30/09/2026) — déclenchement manuel anticipé (pendant de
+  // sendModalRappel pour le mode SMS) et enregistrement de la réponse après
+  // l'appel (pendant du POST anonyme de resolve-rappel).
+  const [marquantAppelId, setMarquantAppelId] = useState(null);
+  const [appelConfirm, setAppelConfirm] = useState(null);
+  const [enregistrantAppel, setEnregistrantAppel] = useState(false);
+  // Renouvellement partiel répondu par SMS (01/10/2026) — choix déjà connu,
+  // juste besoin de confirmer que l'appel de clarification a eu lieu.
+  const [partielAppelConfirm, setPartielAppelConfirm] = useState(null);
+  const [confirmantPartiel, setConfirmantPartiel] = useState(false);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
@@ -559,8 +746,12 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     });
   }, [pharmacie?.id]);
 
+  // Remonté au Dashboard pour le badge global (01/10/2026) — doit compter
+  // "à traiter" ET "à appeler" : sinon ce callback, appelé à chaque
+  // changement de liste tant que l'onglet reste ouvert, écrase silencieusement
+  // le compte combiné initial du Dashboard par un compte "à traiter" seul.
   useEffect(() => {
-    onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter").length);
+    onCountATraiter?.(rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length);
   }, [rappels, onCountATraiter]);
 
   async function handleUpdated(payload) {
@@ -588,20 +779,99 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setSending(false);
   }
 
+  // Retourne true/false (01/10/2026, audit — erreurs silencieuses) — le
+  // point d'appel ne doit fermer la modale de confirmation qu'en cas de
+  // succès réel, plus seulement après l'await quoi qu'il arrive.
   async function handlePreparer(rappel) {
     setPreparingId(rappel.id);
+    setActionError("");
     try {
       const result = await preparerRappel(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "prepare", case_code: result?.caseCode || null } : r));
+      setPreparingId(null);
+      return true;
     } catch (e) {
       console.error("[handlePreparer]", e.message);
+      setActionError(e.message || "Échec de la préparation du rappel.");
+      setPreparingId(null);
+      return false;
     }
-    setPreparingId(null);
   }
 
+  // Déclenchement anticipé du passage en "à appeler" (30/09/2026) — pendant
+  // de handleEnvoyer pour un rappel en mode SMS.
+  async function handleMarquerAAppeler(rappel) {
+    setMarquantAppelId(rappel.id);
+    setActionError("");
+    try {
+      await marquerRappelAAppeler(rappel.id);
+      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_appeler" } : r));
+    } catch (e) {
+      console.error("[handleMarquerAAppeler]", e.message);
+      setActionError(e.message || "Échec du passage en mode appel.");
+    }
+    setMarquantAppelId(null);
+  }
+
+  // Enregistrement du choix du patient après appel (30/09/2026) — pendant du
+  // POST anonyme de resolve-rappel (lien SMS), déclenché ici par le
+  // pharmacien lui-même.
+  async function handleEnregistrerAppel(choix, detailPartiel) {
+    const rappel = appelConfirm;
+    setEnregistrantAppel(true);
+    setActionError("");
+    try {
+      // commentaire fusionné renvoyé par le serveur (01/10/2026, audit
+      // architecture) — plus de recalcul local à partir d'un état qui peut
+      // être périmé (édition concurrente depuis un autre poste).
+      const result = await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
+      setRappels(prev => prev.map(r => {
+        if (r.id !== rappel.id) return r;
+        // "stop" passe par "à traiter" comme les autres choix (01/10/2026,
+        // demande titulaire) — opt_out reste true, mais la clôture se fait
+        // explicitement via "Fin de traitement", seul bouton actif pour ce choix.
+        if (choix === "stop") return { ...r, statut: "a_traiter", choix_patient: choix, opt_out: true };
+        if (choix !== "partiel") return { ...r, statut: "a_traiter", choix_patient: choix };
+        return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: result?.commentaire ?? r.commentaire };
+      }));
+      setAppelConfirm(null);
+    } catch (e) {
+      console.error("[handleEnregistrerAppel]", e.message);
+      setActionError(e.message || "Échec de l'enregistrement du choix.");
+    }
+    setEnregistrantAppel(false);
+  }
+
+  // Confirmation de l'appel de clarification d'un renouvellement partiel
+  // (01/10/2026) — le choix ("partiel") est déjà connu, l'appel ne fait que
+  // débloquer le passage à "à traiter".
+  async function handleConfirmerAppelPartiel(detailPartiel) {
+    const rappel = partielAppelConfirm;
+    setConfirmantPartiel(true);
+    setActionError("");
+    try {
+      const result = await confirmerAppelPartiel(rappel.id, detailPartiel);
+      setRappels(prev => prev.map(r => r.id === rappel.id
+        ? { ...r, statut: "a_traiter", commentaire: result?.commentaire ?? r.commentaire }
+        : r));
+      setPartielAppelConfirm(null);
+    } catch (e) {
+      console.error("[handleConfirmerAppelPartiel]", e.message);
+      setActionError(e.message || "Échec de la confirmation de l'appel.");
+    }
+    setConfirmantPartiel(false);
+  }
+
+  // Erreur affichée dans la modale (01/10/2026, audit) — Valider est
+  // l'action la plus sensible du flux (déclenche un nouveau cycle) ; elle
+  // restait pourtant totalement silencieuse en cas de conflit serveur (ex.
+  // le cron a changé le statut entre-temps), même après le premier passage
+  // de correctifs qui avait couvert Préparer/Marquer à appeler/Enregistrer
+  // le choix/Confirmer l'appel mais pas Valider/Terminer/Réactiver.
   async function handleValiderConfirm(dateRappel) {
     const rappel = validatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
       await traiterRappel(rappel.id, dateRappel);
       setRappels(prev => prev.map(r => r.id === rappel.id
@@ -610,6 +880,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       setValidatingRappel(null);
     } catch (e) {
       console.error("[handleValiderConfirm]", e.message);
+      setActionError(e.message || "Échec de la validation du rappel.");
     }
     setBusyId(null);
   }
@@ -617,27 +888,31 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   async function handleTerminerConfirm() {
     const rappel = terminatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
       await terminerRappel(rappel.id);
       setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "termine" } : r));
       setTerminatingRappel(null);
     } catch (e) {
       console.error("[handleTerminerConfirm]", e.message);
+      setActionError(e.message || "Échec de la fin de traitement.");
     }
     setBusyId(null);
   }
 
-  async function handleReactiverConfirm(dateRappel) {
+  async function handleReactiverConfirm(dateRappel, consentement) {
     const rappel = reactivatingRappel;
     setBusyId(rappel.id);
+    setActionError("");
     try {
-      await reactiverRappel(rappel.id, dateRappel);
+      await reactiverRappel(rappel.id, dateRappel, consentement);
       setRappels(prev => prev.map(r => r.id === rappel.id
         ? { ...r, statut: "en_attente", choix_patient: null, cycle_numero: (r.cycle_numero || 1) + 1, date_prochaine_relance: new Date(dateRappel).toISOString() }
         : r));
       setReactivatingRappel(null);
     } catch (e) {
       console.error("[handleReactiverConfirm]", e.message);
+      setActionError(e.message || "Échec de la réactivation du rappel.");
     }
     setBusyId(null);
   }
@@ -695,7 +970,10 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     }
     return new Date(b.created_at) - new Date(a.created_at); // "recent" (défaut historique)
   });
-  const countATraiter = rappels.filter(r => r.statut === "a_traiter").length;
+  // Combine "à traiter" + "à appeler" (01/10/2026, retour titulaire) — les
+  // deux demandent une action du pharmacien, le badge d'en-tête ne doit pas
+  // sous-compter en ignorant les patients sans mobile en attente d'appel.
+  const countATraiter = rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length;
 
   return (
     <div>
@@ -706,7 +984,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         <div style={{ fontWeight: 800, fontSize: 15 }}>
           🔔 Rappels
           {countATraiter > 0 && (
-            <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} à traiter</span>
+            <span style={{ marginLeft: 8, background: "#dc2626", color: "#fff", borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 800 }}>{countATraiter} nécessite{countATraiter > 1 ? "nt" : ""} une action</span>
           )}
         </div>
       </div>
@@ -758,13 +1036,33 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        {FILTRES.map(([k, label]) => (
-          <button key={k} onClick={() => setFiltre(k)}
-            style={{ padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${filtre === k ? "#1a3a6e" : "#e2e8f0"}`, background: filtre === k ? "#1a3a6e" : "#fff", color: filtre === k ? "#fff" : "#64748b", fontWeight: filtre === k ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            {label}
-          </button>
-        ))}
+        {FILTRES.map(([k, label]) => {
+          // Badges rouges "à appeler"/"à traiter" (01/10/2026, retour
+          // titulaire) — comptés sur la liste complète, pas sur le filtre
+          // actif, pour rester visibles même quand un autre onglet est ouvert.
+          const compte = (k === "a_appeler" || k === "a_traiter") ? rappels.filter(r => r.statut === k).length : 0;
+          return (
+            <button key={k} onClick={() => setFiltre(k)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${filtre === k ? "#1a3a6e" : "#e2e8f0"}`, background: filtre === k ? "#1a3a6e" : "#fff", color: filtre === k ? "#fff" : "#64748b", fontWeight: filtre === k ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              {label}
+              {compte > 0 && (
+                <span style={{ background: "#dc2626", color: "#fff", borderRadius: 999, padding: "1px 6px", fontSize: 10, fontWeight: 800, lineHeight: 1.4 }}>{compte}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
+
+      {/* Erreur d'action (01/10/2026, audit) — seul "Marquer à appeler" n'a
+          pas de modale de confirmation où afficher l'erreur ; les autres
+          actions affichent la leur directement dans leur modale (prop
+          `error`), celle-ci reste donc masquée tant qu'une modale est ouverte. */}
+      {actionError && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fef2f2", border: "1.5px solid #fecaca", color: "#b91c1c", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13 }}>
+          <span>⚠️ {actionError}</span>
+          <button onClick={() => setActionError("")} style={{ background: "none", border: "none", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      )}
 
       {/* Recherche par nom + tri (07/09/2026) */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -799,8 +1097,25 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                   </div>
                 )}
                 {r.commentaire && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{r.commentaire}</div>}
-                {(r.statut === "a_traiter" || r.statut === "prepare") && r.choix_patient && (
+                {/* Affiché aussi sur "à appeler" (01/10/2026) — un renouvellement
+                    partiel répondu par SMS y transite déjà avec son choix
+                    connu, le pharmacien doit voir pourquoi cet appel est
+                    nécessaire avant même de décrocher. */}
+                {(r.statut === "a_traiter" || r.statut === "prepare" || r.statut === "a_appeler") && r.choix_patient && (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626", marginTop: 4 }}>{CHOIX_LABEL[r.choix_patient] || r.choix_patient}</div>
+                )}
+                {/* Instruction vendeur (01/10/2026, retour titulaire) — un
+                    bouton seul ne dit pas quoi faire au téléphone : deux cas
+                    bien différents selon qu'un choix est déjà connu (réponse
+                    "partiel" reçue par SMS, l'appel sert juste à préciser
+                    quoi renouveler) ou pas encore (patient sans mobile ou
+                    sans réponse, l'appel sert à proposer le renouvellement). */}
+                {r.statut === "a_appeler" && (
+                  <div style={{ fontSize: 12, color: "#a16207", marginTop: 4, lineHeight: 1.4 }}>
+                    {r.choix_patient
+                      ? "📞 À faire : appelez le patient pour préciser quels médicaments renouveler, puis cliquez sur \"Appel effectué\"."
+                      : "📞 À faire : appelez le patient pour lui proposer le renouvellement de son ordonnance, puis cliquez sur \"Enregistrer le choix\" avec sa réponse."}
+                  </div>
                 )}
                 {(r.statut === "a_traiter" || r.statut === "prepare") && r.creneau_retrait && (
                   <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>🕐 Retrait souhaité : {CRENEAU_LABEL[r.creneau_retrait] || r.creneau_retrait}</div>
@@ -824,41 +1139,83 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
               {/* Envoi manuel du SMS (06/09/2026) — déclenche l'envoi réel
                   sans attendre le prochain passage du cron. Masqué une fois
                   le patient déjà répondu ou le rappel terminé (voir
-                  secure-data:rappels_envoyer_test, même contrainte). */}
-              {(r.statut === "en_attente" || r.statut === "sms_envoye") && (
+                  secure-data:rappels_envoyer_test, même contrainte). Absent
+                  en mode "appel" (30/09/2026) : aucun SMS n'est jamais
+                  envoyé pour un patient sans mobile, voir le bouton
+                  "Marquer à appeler" juste en dessous. */}
+              {r.mode_contact !== "appel" && (r.statut === "en_attente" || r.statut === "sms_envoye") && (
                 <button onClick={() => { setSendError(""); setSendModalRappel(r); }} disabled={busy}
                   style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   📱 Envoyer le SMS
+                </button>
+              )}
+              {/* Déclenchement manuel anticipé du mode "appel" (30/09/2026) —
+                  pendant du bouton SMS ci-dessus, pour un patient sans
+                  mobile : passe en "à appeler" sans attendre le prochain
+                  passage du cron (J-7). */}
+              {r.mode_contact === "appel" && r.statut === "en_attente" && (
+                <button onClick={() => handleMarquerAAppeler(r)} disabled={busy || marquantAppelId === r.id}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#a16207", fontWeight: 700, fontSize: 12.5, cursor: (busy || marquantAppelId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || marquantAppelId === r.id) ? 0.6 : 1 }}>
+                  {marquantAppelId === r.id ? "…" : "📞 Marquer à appeler"}
+                </button>
+              )}
+              {/* Enregistrer le choix du patient après l'avoir appelé
+                  (30/09/2026) — patient sans mobile (mode "appel"), le choix
+                  n'est pas encore connu : le pharmacien le saisit après
+                  l'appel. Pendant du choix fait par le patient lui-même via
+                  le lien SMS (resolve-rappel). */}
+              {r.statut === "a_appeler" && !r.choix_patient && (
+                <button onClick={() => { setActionError(""); setAppelConfirm(r); }} disabled={busy}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                  📞 Enregistrer le choix
+                </button>
+              )}
+              {/* Confirmer l'appel de clarification d'un renouvellement
+                  partiel (01/10/2026) — le choix est déjà connu (répondu par
+                  SMS), rien à ressaisir : juste confirmer que l'appel a eu
+                  lieu pour passer à "à traiter". */}
+              {r.statut === "a_appeler" && r.choix_patient && (
+                <button onClick={() => { setActionError(""); setPartielAppelConfirm(r); }} disabled={busy}
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                  ☎️ Appel effectué
                 </button>
               )}
               {/* Préparation (26/09/2026) — étape intermédiaire réservée aux
                   vrais renouvellements (tout/partiel) : "rien" continue
                   d'aller directement de à traiter à Valider, rien à préparer. */}
               {r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel") && (
-                <button onClick={() => setPreparingConfirm(r)} disabled={busy || preparingId === r.id}
+                <button onClick={() => { setActionError(""); setPreparingConfirm(r); }} disabled={busy || preparingId === r.id}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#c2410c", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: (busy || preparingId === r.id) ? "default" : "pointer", fontFamily: "inherit", opacity: (busy || preparingId === r.id) ? 0.6 : 1 }}>
                   {preparingId === r.id ? "…" : "📦 Marquer préparé"}
                 </button>
               )}
               {((r.statut === "a_traiter" && r.choix_patient === "rien") || r.statut === "prepare") && (
-                <button onClick={() => setValidatingRappel(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setValidatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "…" : "✅ Valider"}
                 </button>
               )}
               {r.statut !== "termine" && (
-                <button onClick={() => setTerminatingRappel(r)} disabled={busy}
+                <button onClick={() => { setActionError(""); setTerminatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   Fin de traitement
                 </button>
               )}
               {/* Réactivation (07/09/2026) — reprendre un rappel terminé sans
-                  en recréer un nouveau depuis zéro. */}
-              {r.statut === "termine" && (
-                <button onClick={() => setReactivatingRappel(r)} disabled={busy}
+                  en recréer un nouveau depuis zéro. Masqué si le patient a
+                  demandé à ne plus être recontacté (01/10/2026, audit RGPD) —
+                  le serveur refuse de toute façon, mais ne pas même proposer
+                  le bouton évite la confusion ("pourquoi ça ne marche pas ?"). */}
+              {r.statut === "termine" && !r.opt_out && (
+                <button onClick={() => { setActionError(""); setReactivatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   🔄 Réactiver
                 </button>
+              )}
+              {r.statut === "termine" && r.opt_out && (
+                <span style={{ padding: "8px 14px", borderRadius: 8, background: "#f1f5f9", color: "#64748b", fontWeight: 700, fontSize: 12.5 }}>
+                  ⛔ A demandé à ne plus être recontacté
+                </span>
               )}
               {/* Ordonnance liée (26/09/2026) — accès direct au fichier
                   depuis la liste, sans quitter l'application (jamais de
@@ -908,13 +1265,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
 
       {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
-      {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => setValidatingRappel(null)} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} />}
-      {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => setTerminatingRappel(null)} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} />}
+      {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => { setActionError(""); setValidatingRappel(null); }} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} serverError={actionError} />}
+      {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => { setActionError(""); setTerminatingRappel(null); }} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} error={actionError} />}
       {preparingConfirm && <PreparerConfirmModal rappel={preparingConfirm}
-        onCancel={() => setPreparingConfirm(null)}
-        onConfirm={async () => { await handlePreparer(preparingConfirm); setPreparingConfirm(null); }}
-        submitting={preparingId === preparingConfirm.id} />}
-      {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => setReactivatingRappel(null)} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} />}
+        onCancel={() => { setActionError(""); setPreparingConfirm(null); }}
+        onConfirm={async () => { const ok = await handlePreparer(preparingConfirm); if (ok) setPreparingConfirm(null); }}
+        submitting={preparingId === preparingConfirm.id} error={actionError} />}
+      {reactivatingRappel && <ReactiverModal rappel={reactivatingRappel} onCancel={() => { setActionError(""); setReactivatingRappel(null); }} onConfirm={handleReactiverConfirm} submitting={busyId === reactivatingRappel.id} serverError={actionError} />}
+      {appelConfirm && <EnregistrerAppelModal rappel={appelConfirm} onCancel={() => { setActionError(""); setAppelConfirm(null); }} onChoix={handleEnregistrerAppel} submitting={enregistrantAppel} error={actionError} />}
+      {partielAppelConfirm && <ConfirmerAppelPartielModal rappel={partielAppelConfirm} onCancel={() => { setActionError(""); setPartielAppelConfirm(null); }} onConfirm={handleConfirmerAppelPartiel} submitting={confirmantPartiel} error={actionError} />}
       {viewerAtt && <OrdonnanceViewerModal att={viewerAtt} onClose={() => setViewerAtt(null)} />}
     </div>
   );

@@ -11,18 +11,34 @@
 //                        pas une réservation de capacité) et fait passer le
 //                        rappel en "à traiter" côté pharmacien.
 //
-// N'accepte le POST que si le rappel est encore au statut "sms_envoye" — un
+// N'accepte le POST que si le rappel est encore "sms_envoye", OU "à appeler"
+// SANS choix déjà connu (01/10/2026, audit — voir peutEncoreRepondre) — un
 // token déjà répondu, ou d'un cycle précédent (régénéré à chaque envoi, voir
 // rappelLogic.ts), ne doit plus jamais pouvoir écrire une réponse.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
+import { safeErrorMessage } from "../_shared/errors.ts";
 
-const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel"];
+// "stop" (01/10/2026, audit RGPD) — canal d'opposition : jusqu'ici le patient
+// n'avait aucun moyen de signifier "ne plus me recontacter" (seuls choix
+// tout_renouveler/rien/partiel). Termine définitivement le suivi et marque
+// opt_out=true pour empêcher toute réactivation ultérieure de ce rappel.
+const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel", "stop"];
 // Créneau de retrait (08/09/2026) — optionnel, indication large plutôt qu'un
 // vrai système de réservation de capacité (voir migration correspondante).
 const CRENEAUX_VALIDES = ["ce_matin", "cet_apres_midi", "demain_matin", "demain_apres_midi"];
+
+// Un rappel escaladé en "à appeler" sans réponse (relance épuisée ou échecs
+// d'envoi répétés, voir rappelLogic.ts) n'a PAS reçu de réponse — le patient
+// peut encore cliquer son lien SMS et répondre lui-même, ce qui évite un
+// appel inutile au pharmacien. À l'inverse, un "à appeler" dont le choix est
+// déjà connu (ex. "partiel" répondu par SMS, en attente de l'appel de
+// clarification) a déjà répondu : un second POST ne doit pas l'écraser.
+function peutEncoreRepondre(rappel: { statut: string; choix_patient: string | null }): boolean {
+  return rappel.statut === "sms_envoye" || (rappel.statut === "a_appeler" && !rappel.choix_patient);
+}
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -53,7 +69,7 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("statut, patient_prenom, pharmacies(nom)")
+        .select("statut, choix_patient, patient_prenom, pharmacies(nom)")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
@@ -62,7 +78,7 @@ serve(async (req) => {
         data: {
           patientPrenom: rappel.patient_prenom,
           pharmacieNom: (rappel as any).pharmacies?.nom || "votre pharmacie",
-          dejaRepondu: rappel.statut !== "sms_envoye",
+          dejaRepondu: !peutEncoreRepondre(rappel),
         },
       }), { headers: CORS });
     }
@@ -70,7 +86,7 @@ serve(async (req) => {
     if (req.method === "POST") {
       const { token, choix, creneau } = await req.json();
       if (!token || !CHOIX_VALIDES.includes(choix)) {
-        return new Response(JSON.stringify({ error: "token et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
+        return new Response(JSON.stringify({ error: "token et choix (tout_renouveler|rien|partiel|stop) requis" }), { status: 400, headers: CORS });
       }
       if (creneau && !CRENEAUX_VALIDES.includes(creneau)) {
         return new Response(JSON.stringify({ error: "Créneau invalide" }), { status: 400, headers: CORS });
@@ -78,29 +94,49 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("id, statut")
+        .select("id, statut, choix_patient")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
-      if (rappel.statut !== "sms_envoye") {
+      if (!peutEncoreRepondre(rappel)) {
         return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse" }), { status: 409, headers: CORS });
       }
+      // "Sauvetage" après escalade (01/10/2026, audit) — le patient répond
+      // enfin lui-même après avoir été basculé en "à appeler" faute de
+      // réponse : évite un appel du pharmacien devenu inutile. Tracé dans le
+      // journal pour qu'il voie que ce cas s'est résolu tout seul.
+      const apresEscalade = rappel.statut === "a_appeler";
 
+      // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
+      // ne dit pas QUELS médicaments renouveler, un simple clic sur le lien
+      // SMS ne suffit pas à le savoir : passe par "à appeler" pour que le
+      // pharmacien rappelle le patient préciser sa demande, plutôt que
+      // d'aller directement à "à traiter" comme pour tout_renouveler/rien
+      // (choix non ambigus, aucun appel nécessaire). Voir
+      // secure-data:rappels_confirmer_appel_partiel pour la suite.
+      // "stop" passe par "à traiter" (01/10/2026, demande titulaire) — pas
+      // directement "terminé" : le pharmacien doit voir explicitement
+      // l'opposition (badge CHOIX_LABEL "⛔ Ne plus être recontacté" sur la
+      // carte) et la clore lui-même via "Fin de traitement", seul bouton actif
+      // pour ce choix (ni "Marquer préparé" ni "Valider" ne s'affichent pour
+      // un choix autre que tout_renouveler/partiel/rien — voir RappelsSection.jsx).
+      const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
       const { error } = await sb.from("rappels_ordonnance").update({
-        statut: "a_traiter",
+        statut: statutSuivant,
         choix_patient: choix,
-        creneau_retrait: creneau || null,
+        creneau_retrait: choix === "stop" ? null : (creneau || null),
+        opt_out: choix === "stop",
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
       if (error) throw new Error(error.message);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}) } });
+      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}), ...(apresEscalade ? { apres_escalade: true } : {}) } });
 
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: "Méthode non supportée" }), { status: 405, headers: CORS });
   } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: safeErrorMessage(e, "resolve-rappel") }), { status: 500, headers: CORS });
   }
 });

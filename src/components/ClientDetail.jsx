@@ -26,6 +26,28 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
   const planInfo = plans[ph.plan] || {};
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
+  // Suppression de compte (01/10/2026, audit RGPD) — les CGU promettent la
+  // suppression des données patient à la résiliation, voir
+  // secure-data-admin:admin_delete_pharmacie pour les garde-fous serveur
+  // (abonnement déjà résilié, nom exact revérifié). Ici : saisie du nom en
+  // confirmation avant d'activer le bouton, même logique que GitHub pour une
+  // action destructive et irréversible.
+  const [confirmNom, setConfirmNom] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function supprimerCompte() {
+    if (confirmNom !== ph.nom) return;
+    if (!window.confirm(`Dernière confirmation : supprimer DÉFINITIVEMENT le compte "${ph.nom}" et toutes ses données (ordonnances, rappels, postes) ?\n\nCette action est irréversible.`)) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await callSecureData("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
+      onClose();
+    } catch (e) {
+      setDeleteError(e.message);
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +245,21 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
                 ✅ Client sain — aucune action requise
               </div>
             )}
+          </div>
+
+          {/* Zone de danger (01/10/2026, audit RGPD) */}
+          <div style={{background:"rgba(220,38,38,0.06)",border:"1px solid #dc262633",borderRadius:12,padding:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#f87171",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>⚠️ Zone de danger</div>
+            <div style={{fontSize:12,color:"#94a3b8",marginBottom:12,lineHeight:1.5}}>
+              Supprime définitivement ce compte et toutes ses données (ordonnances, fichiers, rappels de renouvellement, postes vendeurs). Irréversible. {ph.plan_status !== "canceled" ? "L'abonnement doit d'abord être résilié via Stripe." : ""}
+            </div>
+            <input value={confirmNom} onChange={e=>setConfirmNom(e.target.value)} placeholder={`Tapez "${ph.nom}" pour confirmer`}
+              style={{width:"100%",padding:"8px 12px",background:"#0f172a",border:"1px solid #334155",borderRadius:8,color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+            {deleteError && <div style={{fontSize:12,color:"#f87171",marginBottom:10}}>{deleteError}</div>}
+            <button onClick={supprimerCompte} disabled={confirmNom !== ph.nom || deleting}
+              style={{width:"100%",padding:"9px",border:"none",borderRadius:8,background:confirmNom===ph.nom?"#dc2626":"#334155",color:confirmNom===ph.nom?"#fff":"#64748b",fontWeight:700,fontSize:13,cursor:(confirmNom===ph.nom && !deleting)?"pointer":"default",fontFamily:"inherit"}}>
+              {deleting ? "Suppression…" : "🗑️ Supprimer définitivement ce compte"}
+            </button>
           </div>
         </div>
       </div>

@@ -32,7 +32,9 @@ import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
-import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
+import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
+import { computeRappelsStats } from "../_shared/rappelsStatsLogic.ts";
+import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { escapeHtml } from "../_shared/html.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
@@ -102,13 +104,25 @@ Deno.serve(async (req) => {
       if (!ACTIONS_CONNUES.has(action)) {
         return new Response(JSON.stringify({ error: "action invalide" }), { status: 400, headers: CORS });
       }
+      // ordonnanceId revérifié (01/10/2026, audit) — reconnu "cosmétique" avant
+      // ce correctif : un appelant pouvait journaliser l'ID d'une ordonnance
+      // appartenant à une AUTRE pharmacie (FK globale, non scopée par tenant),
+      // affaiblissant la valeur probante du journal en cas de litige. Même
+      // pattern que rappels_create pour ordonnanceId : silencieusement ignoré
+      // si invalide/étranger, jamais une erreur bloquante — une entrée de
+      // journal mal référencée ne doit pas empêcher l'action elle-même.
+      let verifiedOrdonnanceId: string | null = null;
+      if (ordonnanceId) {
+        const { data: ordo } = await sb.from("ordonnances").select("id").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+        if (ordo) verifiedOrdonnanceId = ordo.id;
+      }
       await sb.from("audit_logs").insert({
         pharmacie_id: pharmacieId,
         user_id: vendeurSub || callerUserId || null,
         user_role: vendeurSub ? "vendeur" : "admin",
         poste_nom: posteNom?.trim() || null,
         action,
-        ordonnance_id: ordonnanceId || null,
+        ordonnance_id: verifiedOrdonnanceId,
       });
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
@@ -315,7 +329,12 @@ Deno.serve(async (req) => {
       const { data: ordo, error: insertError } = await sb.from("ordonnances").insert({
         pharmacie_id: pharmacieId,
         source: "upload",
-        status: "nouveau",
+        // Déjà traitée (01/10/2026, retour titulaire) — cette ordonnance
+        // n'existe que comme pièce jointe au rappel qu'on est en train de
+        // créer (seul appelant de cette ressource, voir commentaire plus
+        // haut) : jamais besoin de l'imprimer/traiter au comptoir, elle ne
+        // doit donc pas encombrer la file "Nouveau" de l'onglet Ordonnances.
+        status: "imprime",
         from_name: vendeurSub ? "Ajout manuel (poste)" : "Ajout manuel (titulaire)",
       }).select().single();
       if (insertError) throw new Error(insertError.message);
@@ -593,6 +612,11 @@ Deno.serve(async (req) => {
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
+      // Mode de contact (01/10/2026, retour titulaire) — plus de choix
+      // manuel à la création : un patient âgé sans mobile ne recevra jamais
+      // le SMS, entièrement auto-détecté par préfixe du numéro (voir
+      // _shared/telephone.ts), jamais une valeur fournie par le client.
+      const modeContactFinal = estNumeroFixe(telephone) ? "appel" : "sms";
       // Lien vers l'ordonnance d'origine (26/09/2026) — optionnel, jamais fait
       // confiance sans vérification : un ordonnanceId fourni par le client
       // doit appartenir à CETTE pharmacie, sinon silencieusement ignoré (pas
@@ -642,6 +666,7 @@ Deno.serve(async (req) => {
         consentement_sms_horodatage: new Date().toISOString(),
         token: generateShortToken(),
         ordonnance_id: verifiedOrdonnanceId,
+        mode_contact: modeContactFinal,
         ...(dateProchaineRelance ? { date_prochaine_relance: dateProchaineRelance } : {}),
       }).select().single();
       if (error) throw new Error(error.message);
@@ -656,6 +681,101 @@ Deno.serve(async (req) => {
         meta: { pharmacieId, rappelId: data.id },
       });
       return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    // Enregistrer le choix du patient après un appel téléphonique (30/09/2026)
+    // — pendant du POST anonyme de resolve-rappel (lien SMS), mais déclenché
+    // ici par le pharmacien lui-même pour un rappel en mode "appel" (patient
+    // sans mobile). Même effet final que resolve-rappel (statut "a_traiter",
+    // choix_patient, date_reponse_patient) pour rejoindre exactement le même
+    // circuit en aval, seul le déclencheur et le garde-fou de statut diffèrent
+    // (ici "a_appeler", pas "sms_envoye").
+    if (resource === "rappels_enregistrer_appel") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, choix, detailPartiel } = params || {};
+      // "stop" (01/10/2026, audit RGPD) — même canal d'opposition que
+      // resolve-rappel, pour un patient qui le demande pendant l'appel.
+      const CHOIX_VALIDES = new Set(["tout_renouveler", "rien", "partiel", "stop"]);
+      if (!rappelId || !CHOIX_VALIDES.has(choix)) {
+        return new Response(JSON.stringify({ error: "rappelId et choix (tout_renouveler|rien|partiel|stop) requis" }), { status: 400, headers: CORS });
+      }
+      // Détail du renouvellement partiel (01/10/2026, retour titulaire) —
+      // "partiel" seul ne dit pas QUELS médicaments ; exigé ici puisque
+      // l'appel vient justement d'avoir lieu pour le savoir. Ajouté au
+      // commentaire existant (pas de colonne dédiée, déjà affiché sur la
+      // carte et dans "Modifier") plutôt que de l'écraser.
+      if (choix === "partiel" && !detailPartiel?.trim()) {
+        return new Response(JSON.stringify({ error: "Précisez quels médicaments renouveler." }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, commentaire").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "a_appeler") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'appel" }), { status: 409, headers: CORS });
+      }
+      // "stop" passe par "à traiter" comme les autres choix (01/10/2026,
+      // demande titulaire), pas directement "terminé" — voir resolve-rappel
+      // pour la justification complète (visibilité + clôture explicite).
+      const patch: Record<string, unknown> = {
+        statut: "a_traiter",
+        choix_patient: choix,
+        opt_out: choix === "stop",
+        date_reponse_patient: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (choix === "partiel") {
+        patch.commentaire = mergeCommentairePartiel(rappel.commentaire, detailPartiel);
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update(patch).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "reponse_patient", meta: { choix, canal: "appel" } });
+      // commentaire renvoyé SEULEMENT s'il a changé (01/10/2026, audit
+      // architecture) — le client n'a plus besoin de recalculer la fusion
+      // lui-même à partir d'un état local potentiellement périmé (édition
+      // concurrente depuis un autre poste), et ignore ce champ absent pour
+      // tout autre choix que "partiel".
+      return new Response(JSON.stringify({ data: { success: true, ...(patch.commentaire ? { commentaire: patch.commentaire } : {}) } }), { headers: CORS });
+    }
+
+    // Confirmer l'appel de clarification d'un renouvellement partiel
+    // (01/10/2026, retour titulaire) — un patient qui répond "partiel" via
+    // le lien SMS n'a précisé AUCUN médicament (choix_patient="partiel" déjà
+    // enregistré par resolve-rappel, statut déjà "a_appeler") : contrairement
+    // à rappels_enregistrer_appel ci-dessus, le choix n'est pas à ressaisir,
+    // seulement à confirmer que l'appel a eu lieu pour passer à "à traiter".
+    if (resource === "rappels_confirmer_appel_partiel") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, detailPartiel } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      // Détail du renouvellement partiel (01/10/2026, retour titulaire) —
+      // même exigence que rappels_enregistrer_appel : l'appel de clarification
+      // ne sert à rien si quels médicaments renouveler ne finit nulle part.
+      if (!detailPartiel?.trim()) {
+        return new Response(JSON.stringify({ error: "Précisez quels médicaments renouveler." }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient, commentaire").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "a_appeler" || rappel.choix_patient !== "partiel") {
+        return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'un appel de clarification" }), { status: 409, headers: CORS });
+      }
+      const commentaireFinal = mergeCommentairePartiel(rappel.commentaire, detailPartiel);
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_traiter",
+        commentaire: commentaireFinal,
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "appel_effectue" });
+      return new Response(JSON.stringify({ data: { success: true, commentaire: commentaireFinal } }), { headers: CORS });
     }
 
     // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en
@@ -764,47 +884,9 @@ Deno.serve(async (req) => {
         ? await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappelIds).gte("created_at", since90)
         : { data: [] as any[] };
 
-      const parRappel = new Map<string, any[]>();
-      for (const e of evenements || []) {
-        if (!parRappel.has(e.rappel_id)) parRappel.set(e.rappel_id, []);
-        parRappel.get(e.rappel_id)!.push(e);
-      }
-
-      let smsEnvoyes = 0, reponses = 0, echecs = 0, sommeDelaisMs = 0, nbDelais = 0;
-      const choixCounts = { tout_renouveler: 0, rien: 0, partiel: 0 } as Record<string, number>;
-      for (const evts of parRappel.values()) {
-        evts.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        let dernierEnvoiAt: string | null = null;
-        for (const e of evts) {
-          if (e.type === "sms_envoye") {
-            smsEnvoyes++;
-            dernierEnvoiAt = e.created_at;
-          }
-          if (e.type === "sms_echec") echecs++;
-          if (e.type === "reponse_patient") {
-            reponses++;
-            if (e.meta?.choix && choixCounts[e.meta.choix] !== undefined) choixCounts[e.meta.choix]++;
-            if (dernierEnvoiAt) {
-              sommeDelaisMs += new Date(e.created_at).getTime() - new Date(dernierEnvoiAt).getTime();
-              nbDelais++;
-            }
-          }
-        }
-      }
-
-      // @fix 26/09/2026 — "prepare" (médicament préparé, en attente de
-      // retrait) est un cycle toujours en cours, pas résolu : compte comme actif.
-      const rappelsActifs = (rappels || []).filter((r) => r.statut === "en_attente" || r.statut === "sms_envoye" || r.statut === "a_traiter" || r.statut === "prepare").length;
-      const data = {
-        rappelsActifs,
-        rappelsTotal: (rappels || []).length,
-        smsEnvoyes90j: smsEnvoyes,
-        echecs90j: echecs,
-        tauxReponse: smsEnvoyes > 0 ? Math.round((reponses / smsEnvoyes) * 100) : 0,
-        tauxRenouvellement: smsEnvoyes > 0 ? Math.round(((choixCounts.tout_renouveler + choixCounts.partiel) / smsEnvoyes) * 100) : 0,
-        delaiReponseMoyenHeures: nbDelais > 0 ? Math.round((sommeDelaisMs / nbDelais / 3600000) * 10) / 10 : null,
-        choixCounts,
-      };
+      // Calcul extrait en fonction pure testable (01/10/2026, audit DevOps)
+      // — voir _shared/rappelsStatsLogic.ts et son fichier de test.
+      const data = computeRappelsStats(rappels || [], evenements || []);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
@@ -936,6 +1018,23 @@ Deno.serve(async (req) => {
         // Casier libéré (26/09/2026) — le médicament vient d'être retiré,
         // le repère de l'ancien cycle n'a plus lieu d'être affiché.
         case_code: null,
+        // Nouveau cycle = nouvelle chance de répondre au premier SMS
+        // (01/10/2026) — sinon un rappel réactivé hériterait du flag de
+        // l'ancien cycle et sauterait directement la relance. Même principe
+        // pour le compteur d'échecs d'envoi (voir 20261001_rappels_retry_sms.sql)
+        // — un échec d'il y a 3 cycles ne doit pas compter pour celui-ci.
+        relance_sms_envoyee: false,
+        sms_echecs_consecutifs: 0,
+        // Rotation du token (01/10/2026, audit sécurité) — `token` n'était
+        // jamais régénéré ici : un ancien lien SMS (cycle précédent, déjà
+        // répondu) restait valide pour peutEncoreRepondre() dès que CE
+        // nouveau cycle retombait en "à appeler" sans choix connu, permettant
+        // à quiconque a accès à l'ancien SMS (numéro réattribué, téléphone
+        // partagé) de répondre à la place du patient sur le mauvais cycle.
+        // `token` est NOT NULL (voir 20260904_rappels_short_token.sql) : on
+        // le fait pivoter plutôt que de l'effacer — le prochain envoi réel
+        // (runRappelScan/rappels_envoyer_test) le régénère de toute façon.
+        token: generateShortToken(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (error) throw new Error(error.message);
@@ -973,16 +1072,33 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, dateRappel } = params || {};
+      const { rappelId, dateRappel, consentement } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient").eq("id", rappelId).maybeSingle();
+      // Consentement reconfirmé (01/10/2026, audit RGPD) — jusqu'ici, la
+      // réactivation réutilisait silencieusement le consentement d'origine,
+      // parfois recueilli des cycles plus tôt (art. 7(1) : un consentement
+      // doit pouvoir être réitéré, pas présumé indéfiniment valide quand un
+      // tiers — le pharmacien, pas le patient — relance le suivi). Exigé ici
+      // comme à la création (rappels_create), avec un nouvel horodatage.
+      if (!consentement) {
+        return new Response(JSON.stringify({ error: "Le consentement du patient à être recontacté doit être reconfirmé pour réactiver ce rappel" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient, opt_out").eq("id", rappelId).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
       if (existing.statut !== "termine") {
         return new Response(JSON.stringify({ error: "Seul un rappel terminé peut être réactivé" }), { status: 409, headers: CORS });
+      }
+      // Opposition du patient (01/10/2026, audit RGPD) — un rappel où le
+      // patient a explicitement demandé à ne plus être recontacté ne doit
+      // jamais pouvoir être réactivé, quel que soit le consentement fourni
+      // ici : l'opposition prime et doit être levée par le patient lui-même,
+      // pas réinterprétée par le pharmacien.
+      if (existing.opt_out) {
+        return new Response(JSON.stringify({ error: "Ce patient a demandé à ne plus être recontacté — ce rappel ne peut pas être réactivé" }), { status: 409, headers: CORS });
       }
       let dateProchaineRelance: string;
       if (dateRappel) {
@@ -1005,6 +1121,14 @@ Deno.serve(async (req) => {
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
         case_code: null,
+        relance_sms_envoyee: false,
+        sms_echecs_consecutifs: 0,
+        // Rotation du token (01/10/2026, audit sécurité) — voir le même
+        // correctif et sa justification complète dans rappels_traiter.
+        token: generateShortToken(),
+        // Nouvel horodatage de consentement (01/10/2026) — preuve d'une
+        // reconfirmation à CETTE date, pas celle du cycle d'origine.
+        consentement_sms_horodatage: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (reactiverError) throw new Error(reactiverError.message);
@@ -1032,6 +1156,12 @@ Deno.serve(async (req) => {
       if (nom?.trim()) patch.patient_nom = nom.trim();
       if (prenom?.trim()) patch.patient_prenom = prenom.trim();
       if (telephone?.trim()) patch.patient_telephone = telephone.trim();
+      // Mode de contact (01/10/2026) — plus de choix manuel : un numéro
+      // modifié recalcule le mode à partir du NOUVEAU numéro, jamais à partir
+      // de l'ancien ni d'une valeur fournie par le client.
+      if (telephone?.trim()) {
+        patch.mode_contact = estNumeroFixe(telephone) ? "appel" : "sms";
+      }
       if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
       if (medecinPrescripteur !== undefined) patch.medecin_prescripteur = medecinPrescripteur?.trim() || null;
       if (specialite !== undefined) patch.specialite = specialite?.trim() || null;
@@ -1133,6 +1263,35 @@ Deno.serve(async (req) => {
       }).eq("id", rappelId);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(emailDestination ? { to: emailDestination } : {}) } });
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
+    }
+
+    // Déclenchement manuel du passage en "à appeler" (30/09/2026) — pendant
+    // de rappels_envoyer_test pour un rappel en mode "appel" (numéro fixe) :
+    // même utilité (ne pas attendre le prochain passage du cron), mais sans
+    // SMS/email à envoyer, juste le même changement de statut que le cron
+    // effectue pour ce mode (voir _shared/rappelLogic.ts).
+    if (resource === "rappels_marquer_a_appeler") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      if (rappel.statut !== "en_attente") {
+        return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse ou est terminé" }), { status: 409, headers: CORS });
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_appeler",
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappelId);
+      if (updErr) throw new Error(updErr.message);
+      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "a_appeler", meta: { manuel: true } });
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     // Module d'aide backoffice (14/09/2026) — "poser une question" quand la

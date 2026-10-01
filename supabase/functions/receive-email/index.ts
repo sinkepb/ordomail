@@ -11,6 +11,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { maskEmail, maskCode, maskId } from "../_shared/log-mask.ts";
 import { verifyWebhookSecret } from "../_shared/webhook-secret.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { fetchWithTimeout } from "../_shared/fetchTimeout.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
     // passer le même contrôle que n'importe quel autre appelant (voir
     // _shared/webhook-secret.ts) — pas de passe-droit "appel interne".
     const sendEmailUrl = `${supabaseUrl}/functions/v1/send-email?secret=${encodeURIComponent(postmarkSecret)}`;
-    const sendRes = await fetch(sendEmailUrl, {
+    const sendRes = await fetchWithTimeout(sendEmailUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -96,7 +97,7 @@ Deno.serve(async (req) => {
     // ── 3. Si un code a été extrait, mettre à jour l'ordonnance créée ───────
     if (codePatient && sendData?.ordonnance_id) {
       // send-email retourne l'id de l'ordonnance créée
-      const updateRes = await fetch(
+      const updateRes = await fetchWithTimeout(
         `${supabaseUrl}/rest/v1/ordonnances?id=eq.${sendData.ordonnance_id}`,
         {
           method: "PATCH",
@@ -114,7 +115,7 @@ Deno.serve(async (req) => {
       await new Promise(r => setTimeout(r, 1000));
 
       const since = new Date(Date.now() - 15000).toISOString(); // 15s
-      const searchRes = await fetch(
+      const searchRes = await fetchWithTimeout(
         `${supabaseUrl}/rest/v1/ordonnances?source=eq.email&code_patient=is.null&received_at=gte.${since}&order=received_at.desc&limit=1&select=id`,
         { headers: dbHeaders }
       );
@@ -122,7 +123,7 @@ Deno.serve(async (req) => {
 
       if (Array.isArray(ordos) && ordos.length > 0) {
         const ordoId = ordos[0].id;
-        await fetch(
+        await fetchWithTimeout(
           `${supabaseUrl}/rest/v1/ordonnances?id=eq.${ordoId}`,
           {
             method: "PATCH",
