@@ -4,6 +4,16 @@
 // [cycle suivant] → … → termine).
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 
+// Détection fixe/mobile par préfixe (01/10/2026) — même règle que
+// supabase/functions/_shared/telephone.ts, dupliquée ici car le mode démo
+// (sans appel serveur) doit déterminer lui-même le mode de contact.
+function estNumeroFixe(v) {
+  const digits = (v || '').replace(/[\s.-]/g, '');
+  const local = digits.startsWith('+33') ? '0' + digits.slice(3) : digits;
+  const prefix = local[1];
+  return prefix !== undefined && prefix !== '6' && prefix !== '7';
+}
+
 export async function fetchRappels(pharmacieId, statut = null) {
   if (IS_DEMO) {
     const db = getDB();
@@ -41,7 +51,7 @@ export async function fetchRappelsStats() {
   }
 }
 
-export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId, modeContact }) {
+export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId }) {
   if (IS_DEMO) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
@@ -51,7 +61,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
       id: `r${Date.now()}`, pharmacie_id: pharmacieId,
       patient_nom: nom, patient_prenom: prenom, patient_telephone: telephone,
       commentaire: commentaire || null, medecin_prescripteur: medecinPrescripteur || null, specialite: specialite || null, consentement_sms: !!consentement,
-      mode_contact: modeContact === 'appel' ? 'appel' : 'sms',
+      mode_contact: estNumeroFixe(telephone) ? 'appel' : 'sms',
       statut: 'en_attente', choix_patient: null, cycle_numero: 1,
       ordonnance_id: ordonnanceId || null,
       date_prochaine_relance: dateRappel ? new Date(dateRappel).toISOString() : new Date(Date.now() + 21 * 86400000).toISOString(),
@@ -60,7 +70,7 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
     ph.rappels.unshift(rappel);
     return rappel;
   }
-  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId, modeContact });
+  return await callSecureData('rappels_create', { nom, prenom, telephone, dateRappel, commentaire, consentement, medecinPrescripteur, specialite, ordonnanceId });
 }
 
 // Fichier de l'ordonnance liée à un rappel (26/09/2026) — voir
@@ -103,9 +113,9 @@ export async function reactiverRappel(rappelId, dateRappel = null) {
   return await callSecureData('rappels_reactiver', { rappelId, dateRappel });
 }
 
-export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact }) {
+export async function updateRappel(rappelId, { nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite }) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact });
+  return await callSecureData('rappels_update', { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite });
 }
 
 // Déclenchement manuel anticipé du passage en "à appeler" (30/09/2026) —

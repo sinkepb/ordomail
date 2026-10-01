@@ -177,17 +177,11 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
   const [consentement, setConsentement] = useState(false);
   const [error, setError] = useState("");
   const canEditDate = !isEdit || editingRappel.statut === "en_attente";
-  // Mode de contact (30/09/2026) — auto-détecté par préfixe du numéro
-  // (patient sans mobile = numéro fixe → appel plutôt que SMS, voir
-  // secure-data:rappels_create pour la source de vérité côté serveur),
-  // modifiable tant que le pharmacien n'a pas touché au choix lui-même.
-  const [modeContact, setModeContact] = useState(() => editingRappel?.mode_contact || (telephone ? (estNumeroFixe(telephone) ? "appel" : "sms") : "sms"));
-  const [modeContactTouche, setModeContactTouche] = useState(false);
-
-  function handleTelephoneChange(v) {
-    setTelephone(v);
-    if (!modeContactTouche) setModeContact(estNumeroFixe(v) ? "appel" : "sms");
-  }
+  // Mode de contact (01/10/2026, retour titulaire) — plus de choix manuel à
+  // la création : entièrement déduit du préfixe du numéro saisi (numéro fixe
+  // = appel, mobile = SMS), même règle que secure-data:rappels_create qui
+  // reste la seule source de vérité enregistrée en base.
+  const modeContact = estNumeroFixe(telephone) ? "appel" : "sms";
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -211,7 +205,7 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
     setCreating(true);
     try {
       const specialite = specialiteChoix === "__autre__" ? specialiteAutre.trim() : specialiteChoix;
-      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim(), specialite, modeContact };
+      const payload = { nom: nom.trim(), prenom: prenom.trim(), telephone: normalizeTel(telephone), commentaire: commentaire.trim(), medecinPrescripteur: medecinPrescripteur.trim(), specialite };
       if (canEditDate) payload.dateRappel = renouvellementVersEnvoi(dateRappel);
       if (!isEdit) payload.consentement = consentement;
       await onCreated(payload);
@@ -236,30 +230,12 @@ function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Numéro de téléphone</label>
-        <input value={telephone} onChange={e => handleTelephoneChange(e.target.value)} placeholder="06 12 34 56 78"
+        <input value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="06 12 34 56 78"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 8, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" }} />
 
-        {/* Mode de contact (30/09/2026) — pré-rempli selon le numéro, mais
-            toujours modifiable : un patient peut préférer être appelé même
-            avec un mobile, ou l'inverse (fixe relié à une appli SMS). */}
-        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Mode de contact</label>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button type="button" onClick={() => { setModeContact("sms"); setModeContactTouche(true); }}
-            style={{ flex: 1, padding: "8px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13,
-              border: modeContact === "sms" ? "1.5px solid #4338ca" : "1.5px solid #e2e8f0",
-              background: modeContact === "sms" ? "#eef2ff" : "#fff", color: modeContact === "sms" ? "#4338ca" : "#64748b" }}>
-            📱 SMS
-          </button>
-          <button type="button" onClick={() => { setModeContact("appel"); setModeContactTouche(true); }}
-            style={{ flex: 1, padding: "8px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13,
-              border: modeContact === "appel" ? "1.5px solid #a16207" : "1.5px solid #e2e8f0",
-              background: modeContact === "appel" ? "#fef9c3" : "#fff", color: modeContact === "appel" ? "#a16207" : "#64748b" }}>
-            📞 Appel
-          </button>
-        </div>
         {modeContact === "appel" && (
-          <div style={{ fontSize: 11.5, color: "#a16207", marginTop: -8, marginBottom: 12, lineHeight: 1.4 }}>
-            Numéro fixe détecté — à l'échéance, ce rappel passera en "À appeler" au lieu d'un SMS.
+          <div style={{ fontSize: 11.5, color: "#a16207", marginBottom: 12, lineHeight: 1.4 }}>
+            📞 Numéro fixe détecté — à l'échéance, ce rappel passera en "À appeler" au lieu d'un SMS.
           </div>
         )}
 

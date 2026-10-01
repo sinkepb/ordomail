@@ -595,17 +595,15 @@ Deno.serve(async (req) => {
       if (!(await planHasFeature(sb, ph?.plan || "starter", "rappels"))) {
         return new Response(JSON.stringify({ error: "Les rappels de renouvellement sont réservés au plan Performance. Passez à un plan supérieur pour en créer." }), { status: 403, headers: CORS });
       }
-      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId, modeContact } = params || {};
+      const { nom, prenom, telephone, commentaire, consentement, dateRappel, medecinPrescripteur, specialite, ordonnanceId } = params || {};
       if (!nom?.trim() || !prenom?.trim() || !telephone?.trim()) {
         return new Response(JSON.stringify({ error: "nom, prénom et téléphone requis" }), { status: 400, headers: CORS });
       }
-      // Mode de contact (30/09/2026, retour titulaire) — un patient âgé sans
-      // mobile ne recevra jamais le SMS ; auto-détecté par préfixe du numéro
-      // (voir _shared/telephone.ts), jamais fait confiance à une valeur
-      // client sans la valider contre les deux seules options possibles.
-      const modeContactFinal = (modeContact === "sms" || modeContact === "appel")
-        ? modeContact
-        : (estNumeroFixe(telephone) ? "appel" : "sms");
+      // Mode de contact (01/10/2026, retour titulaire) — plus de choix
+      // manuel à la création : un patient âgé sans mobile ne recevra jamais
+      // le SMS, entièrement auto-détecté par préfixe du numéro (voir
+      // _shared/telephone.ts), jamais une valeur fournie par le client.
+      const modeContactFinal = estNumeroFixe(telephone) ? "appel" : "sms";
       // Lien vers l'ordonnance d'origine (26/09/2026) — optionnel, jamais fait
       // confiance sans vérification : un ordonnanceId fourni par le client
       // doit appartenir à CETTE pharmacie, sinon silencieusement ignoré (pas
@@ -1103,7 +1101,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite, modeContact } = params || {};
+      const { rappelId, nom, prenom, telephone, dateRappel, commentaire, medecinPrescripteur, specialite } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -1115,12 +1113,10 @@ Deno.serve(async (req) => {
       if (nom?.trim()) patch.patient_nom = nom.trim();
       if (prenom?.trim()) patch.patient_prenom = prenom.trim();
       if (telephone?.trim()) patch.patient_telephone = telephone.trim();
-      // Mode de contact (30/09/2026) — un numéro modifié doit pouvoir changer
-      // de mode ; recalculé à partir du NOUVEAU numéro si aucune valeur
-      // explicite n'est fournie, jamais à partir de l'ancien.
-      if (modeContact === "sms" || modeContact === "appel") {
-        patch.mode_contact = modeContact;
-      } else if (telephone?.trim()) {
+      // Mode de contact (01/10/2026) — plus de choix manuel : un numéro
+      // modifié recalcule le mode à partir du NOUVEAU numéro, jamais à partir
+      // de l'ancien ni d'une valeur fournie par le client.
+      if (telephone?.trim()) {
         patch.mode_contact = estNumeroFixe(telephone) ? "appel" : "sms";
       }
       if (commentaire !== undefined) patch.commentaire = commentaire?.trim() || null;
