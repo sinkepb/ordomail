@@ -14,6 +14,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { verifyCronSecret } from "../_shared/webhook-secret.ts";
+import { fetchWithTimeout } from "../_shared/fetchTimeout.ts";
 
 Deno.serve(async (req: Request) => {
   const CORS = corsHeaders(req, {
@@ -48,7 +49,7 @@ Deno.serve(async (req: Request) => {
   };
 
   async function query(path: string, opts: RequestInit = {}) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${path}`, {
       ...opts,
       headers: { ...headers, ...(opts.headers || {}) },
     });

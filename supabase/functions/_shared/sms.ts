@@ -15,6 +15,7 @@
 //   OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY, OVH_SMS_SERVICE_NAME
 // Optionnel : OVH_ENDPOINT ("ovh-eu" par défaut — voir OVH_ENDPOINTS).
 import { maskPhone } from "./log-mask.ts";
+import { fetchWithTimeout } from "./fetchTimeout.ts";
 
 export interface SendSmsResult {
   success: boolean;
@@ -102,7 +103,7 @@ export async function sendSms(to: string, message: string, pharmacieNom: string)
   const signature = "$1$" + await sha1Hex(`${appSecret}+${consumerKey}+POST+${url}+${body}+${timestamp}`);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json;charset=utf-8",

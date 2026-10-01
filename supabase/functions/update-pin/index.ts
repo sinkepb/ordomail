@@ -12,6 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { fetchWithTimeout } from "../_shared/fetchTimeout.ts";
 
 Deno.serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -111,7 +112,7 @@ Deno.serve(async (req) => {
     // hashSync (pas hash async) : la version async de ce package spawn un Worker,
     // indisponible dans le runtime des Edge Functions Supabase ("Worker is not defined").
     const pinHash = bcrypt.hashSync(pin);
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${supabaseUrl}/rest/v1/pharmacie_postes?id=eq.${posteId}`,
       {
         method: "PATCH",
@@ -126,8 +127,11 @@ Deno.serve(async (req) => {
     );
 
     if (!res.ok) {
+      // Erreur Postgrest brute corrigée (01/10/2026, audit) — contournait
+      // safeErrorMessage déjà utilisé partout ailleurs dans ce même fichier.
       const err = await res.text();
-      return new Response(JSON.stringify({ error: err }),
+      console.error("[update-pin] PATCH échoué:", err);
+      return new Response(JSON.stringify({ error: "Échec de la mise à jour du PIN — réessayez dans quelques instants." }),
         { status: 500, headers: CORS });
     }
 

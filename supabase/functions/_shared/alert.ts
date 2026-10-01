@@ -12,6 +12,7 @@
 // journalée en console — un problème d'alerting ne doit pas empêcher
 // submit-ordonnance de répondre au patient, même si l'alerte elle-même échoue.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchWithTimeout } from "./fetchTimeout.ts";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 
@@ -40,7 +41,7 @@ export async function reportAlert(sb: SupabaseClient, opts: AlertOptions): Promi
   if (!webhookUrl) return;
 
   try {
-    await fetch(webhookUrl, {
+    await fetchWithTimeout(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // "text" (Slack/Discord) — format minimal compris par les trois cibles
