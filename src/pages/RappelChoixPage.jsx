@@ -107,6 +107,14 @@ function RappelChoixPage({ token }) {
               </button>
             ))}
           </div>
+          {/* Canal d'opposition (01/10/2026, audit RGPD) — discret (lien texte,
+              pas un bouton au même niveau que les choix de renouvellement) mais
+              toujours accessible, sans confirmation supplémentaire ni créneau
+              à choisir : c'est une décision finale, pas un renouvellement. */}
+          <button onClick={() => envoyer("stop", null)}
+            style={{ marginTop: 20, background: "none", border: "none", color: "rgba(255,255,255,0.6)", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+            Ne plus me contacter au sujet de ce traitement
+          </button>
         </div>
       )}
 

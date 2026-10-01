@@ -31,9 +31,15 @@ Deno serverless.
 
 ## 2. Base de données — 18 tables
 
+⚠️ **Inventaire figé au 08/08/2026** (date de ce document) — des tables ont
+été ajoutées depuis, notamment `rappels_ordonnance`/`rappels_evenements`
+(01/09/2026, ci-dessous) : ce document décrit l'état du schéma à sa
+rédaction, pas l'état courant. À ré-auditer avant toute démarche HDS réelle.
+
 | Table | Contient des données de santé ? | Rôle |
 |---|---|---|
 | `ordonnances` | **Oui** (fichier joint + métadonnées patient) | Cœur du produit — dépôt/traitement des ordonnances |
+| `rappels_ordonnance` / `rappels_evenements` | **Oui** (nom/prénom/téléphone/commentaire patient, potentiellement un traitement) | Rappels de renouvellement d'ordonnance — ajoutées après la rédaction de ce document |
 | `pharmacies` | Non | Comptes clients (pharmacies) |
 | `pharmacie_postes` | Non | Postes vendeurs (PIN de connexion) |
 | `pharmacie_users` | Non | Lien compte titulaire ↔ pharmacie |
@@ -48,12 +54,12 @@ Deno serverless.
 | `pin_verification_attempts` / `submission_log` | Non | Compteurs anti-abus (rate limiting) |
 | `alerts` | Non | Alerting opérationnel interne |
 
-**Seule `ordonnances` (et indirectement `audit_logs`) porte des données de
-santé au sens RGPD.** Ça peut influencer une architecture hybride (héberger
-uniquement ces tables + le stockage fichiers chez un HDS certifié, le reste
-ailleurs) — à valider avec le DPO, cette option réduit potentiellement le
-coût mais complexifie l'architecture (deux bases, jointures cross-instance
-impossibles nativement).
+**`ordonnances`, `rappels_ordonnance`/`rappels_evenements` (et indirectement
+`audit_logs`) portent des données de santé au sens RGPD.** Ça peut influencer
+une architecture hybride (héberger uniquement ces tables + le stockage
+fichiers chez un HDS certifié, le reste ailleurs) — à valider avec le DPO,
+cette option réduit potentiellement le coût mais complexifie l'architecture
+(deux bases, jointures cross-instance impossibles nativement).
 
 Extensions Postgres utilisées : `uuid-ossp`, `pgcrypto`. Aucune extension
 propriétaire Supabase non portable identifiée dans le schéma.

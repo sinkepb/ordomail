@@ -694,9 +694,11 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
       const { rappelId, choix, detailPartiel } = params || {};
-      const CHOIX_VALIDES = new Set(["tout_renouveler", "rien", "partiel"]);
+      // "stop" (01/10/2026, audit RGPD) — même canal d'opposition que
+      // resolve-rappel, pour un patient qui le demande pendant l'appel.
+      const CHOIX_VALIDES = new Set(["tout_renouveler", "rien", "partiel", "stop"]);
       if (!rappelId || !CHOIX_VALIDES.has(choix)) {
-        return new Response(JSON.stringify({ error: "rappelId et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
+        return new Response(JSON.stringify({ error: "rappelId et choix (tout_renouveler|rien|partiel|stop) requis" }), { status: 400, headers: CORS });
       }
       // Détail du renouvellement partiel (01/10/2026, retour titulaire) —
       // "partiel" seul ne dit pas QUELS médicaments ; exigé ici puisque
@@ -714,8 +716,9 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'appel" }), { status: 409, headers: CORS });
       }
       const patch: Record<string, unknown> = {
-        statut: "a_traiter",
+        statut: choix === "stop" ? "termine" : "a_traiter",
         choix_patient: choix,
+        opt_out: choix === "stop",
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -1129,12 +1132,20 @@ Deno.serve(async (req) => {
       if (!consentement) {
         return new Response(JSON.stringify({ error: "Le consentement du patient à être recontacté doit être reconfirmé pour réactiver ce rappel" }), { status: 400, headers: CORS });
       }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient").eq("id", rappelId).maybeSingle();
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, cycle_numero, choix_patient, opt_out").eq("id", rappelId).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
       if (existing.statut !== "termine") {
         return new Response(JSON.stringify({ error: "Seul un rappel terminé peut être réactivé" }), { status: 409, headers: CORS });
+      }
+      // Opposition du patient (01/10/2026, audit RGPD) — un rappel où le
+      // patient a explicitement demandé à ne plus être recontacté ne doit
+      // jamais pouvoir être réactivé, quel que soit le consentement fourni
+      // ici : l'opposition prime et doit être levée par le patient lui-même,
+      // pas réinterprétée par le pharmacien.
+      if (existing.opt_out) {
+        return new Response(JSON.stringify({ error: "Ce patient a demandé à ne plus être recontacté — ce rappel ne peut pas être réactivé" }), { status: 409, headers: CORS });
       }
       let dateProchaineRelance: string;
       if (dateRappel) {

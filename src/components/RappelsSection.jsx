@@ -32,6 +32,7 @@ const CHOIX_LABEL = {
   tout_renouveler: "✅ Tout renouveler",
   rien: "🚫 Ne rien prendre",
   partiel: "🔶 Renouvellement partiel",
+  stop: "⛔ Ne plus être recontacté",
 };
 
 // Créneau de retrait choisi par le patient à la confirmation (08/09/2026) —
@@ -539,6 +540,13 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting, error })
           style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
           Annuler
         </button>
+        {/* Canal d'opposition (01/10/2026, audit RGPD) — même logique que
+            RappelChoixPage.jsx, pour un patient qui le demande pendant
+            l'appel plutôt que via le lien SMS. */}
+        <button type="button" disabled={submitting} onClick={() => onChoix("stop")}
+          style={{ width: "100%", marginTop: 10, background: "none", border: "none", color: "#94a3b8", fontSize: 12, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+          Le patient demande à ne plus être recontacté
+        </button>
       </div>
     </div>
   );
@@ -816,6 +824,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
       setRappels(prev => prev.map(r => {
         if (r.id !== rappel.id) return r;
+        if (choix === "stop") return { ...r, statut: "termine", choix_patient: choix, opt_out: true };
         if (choix !== "partiel") return { ...r, statut: "a_traiter", choix_patient: choix };
         const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
         return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: r.commentaire ? `${r.commentaire}\n\n${note}` : note };
@@ -1189,12 +1198,20 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 </button>
               )}
               {/* Réactivation (07/09/2026) — reprendre un rappel terminé sans
-                  en recréer un nouveau depuis zéro. */}
-              {r.statut === "termine" && (
+                  en recréer un nouveau depuis zéro. Masqué si le patient a
+                  demandé à ne plus être recontacté (01/10/2026, audit RGPD) —
+                  le serveur refuse de toute façon, mais ne pas même proposer
+                  le bouton évite la confusion ("pourquoi ça ne marche pas ?"). */}
+              {r.statut === "termine" && !r.opt_out && (
                 <button onClick={() => { setActionError(""); setReactivatingRappel(r); }} disabled={busy}
                   style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1a3a6e", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                   🔄 Réactiver
                 </button>
+              )}
+              {r.statut === "termine" && r.opt_out && (
+                <span style={{ padding: "8px 14px", borderRadius: 8, background: "#f1f5f9", color: "#64748b", fontWeight: 700, fontSize: 12.5 }}>
+                  ⛔ A demandé à ne plus être recontacté
+                </span>
               )}
               {/* Ordonnance liée (26/09/2026) — accès direct au fichier
                   depuis la liste, sans quitter l'application (jamais de

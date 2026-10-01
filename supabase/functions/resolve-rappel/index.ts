@@ -21,7 +21,11 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 
-const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel"];
+// "stop" (01/10/2026, audit RGPD) — canal d'opposition : jusqu'ici le patient
+// n'avait aucun moyen de signifier "ne plus me recontacter" (seuls choix
+// tout_renouveler/rien/partiel). Termine définitivement le suivi et marque
+// opt_out=true pour empêcher toute réactivation ultérieure de ce rappel.
+const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel", "stop"];
 // Créneau de retrait (08/09/2026) — optionnel, indication large plutôt qu'un
 // vrai système de réservation de capacité (voir migration correspondante).
 const CRENEAUX_VALIDES = ["ce_matin", "cet_apres_midi", "demain_matin", "demain_apres_midi"];
@@ -82,7 +86,7 @@ serve(async (req) => {
     if (req.method === "POST") {
       const { token, choix, creneau } = await req.json();
       if (!token || !CHOIX_VALIDES.includes(choix)) {
-        return new Response(JSON.stringify({ error: "token et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
+        return new Response(JSON.stringify({ error: "token et choix (tout_renouveler|rien|partiel|stop) requis" }), { status: 400, headers: CORS });
       }
       if (creneau && !CRENEAUX_VALIDES.includes(creneau)) {
         return new Response(JSON.stringify({ error: "Créneau invalide" }), { status: 400, headers: CORS });
@@ -110,11 +114,15 @@ serve(async (req) => {
       // d'aller directement à "à traiter" comme pour tout_renouveler/rien
       // (choix non ambigus, aucun appel nécessaire). Voir
       // secure-data:rappels_confirmer_appel_partiel pour la suite.
-      const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
+      // "stop" termine directement le suivi (01/10/2026) — pas de créneau à
+      // choisir, pas d'étape "à traiter" côté pharmacien, ce n'est pas un
+      // renouvellement à préparer.
+      const statutSuivant = choix === "stop" ? "termine" : choix === "partiel" ? "a_appeler" : "a_traiter";
       const { error } = await sb.from("rappels_ordonnance").update({
         statut: statutSuivant,
         choix_patient: choix,
-        creneau_retrait: creneau || null,
+        creneau_retrait: choix === "stop" ? null : (creneau || null),
+        opt_out: choix === "stop",
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", rappel.id);
