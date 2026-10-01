@@ -129,18 +129,18 @@ export async function marquerRappelAAppeler(rappelId) {
 // Enregistre le choix du patient après un appel téléphonique (30/09/2026) —
 // pendant du POST anonyme de resolve-rappel (lien SMS), ici déclenché par le
 // pharmacien lui-même. Voir secure-data:rappels_enregistrer_appel.
-export async function enregistrerAppelRappel(rappelId, choix) {
+export async function enregistrerAppelRappel(rappelId, choix, detailPartiel) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_enregistrer_appel', { rappelId, choix });
+  return await callSecureData('rappels_enregistrer_appel', { rappelId, choix, detailPartiel });
 }
 
 // Confirme l'appel de clarification d'un renouvellement partiel (01/10/2026)
 // — le choix ("partiel") est déjà connu (répondu par le patient via SMS),
 // seul l'appel reste à confirmer pour passer à "à traiter". Voir
 // secure-data:rappels_confirmer_appel_partiel.
-export async function confirmerAppelPartiel(rappelId) {
+export async function confirmerAppelPartiel(rappelId, detailPartiel) {
   if (IS_DEMO) return { success: true };
-  return await callSecureData('rappels_confirmer_appel_partiel', { rappelId });
+  return await callSecureData('rappels_confirmer_appel_partiel', { rappelId, detailPartiel });
 }
 
 // Déclenchement manuel du SMS (06/09/2026, sender OVH "SISEO" validé le

@@ -681,24 +681,37 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId, choix } = params || {};
+      const { rappelId, choix, detailPartiel } = params || {};
       const CHOIX_VALIDES = new Set(["tout_renouveler", "rien", "partiel"]);
       if (!rappelId || !CHOIX_VALIDES.has(choix)) {
         return new Response(JSON.stringify({ error: "rappelId et choix (tout_renouveler|rien|partiel) requis" }), { status: 400, headers: CORS });
       }
-      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut").eq("id", rappelId).maybeSingle();
+      // Détail du renouvellement partiel (01/10/2026, retour titulaire) —
+      // "partiel" seul ne dit pas QUELS médicaments ; exigé ici puisque
+      // l'appel vient justement d'avoir lieu pour le savoir. Ajouté au
+      // commentaire existant (pas de colonne dédiée, déjà affiché sur la
+      // carte et dans "Modifier") plutôt que de l'écraser.
+      if (choix === "partiel" && !detailPartiel?.trim()) {
+        return new Response(JSON.stringify({ error: "Précisez quels médicaments renouveler." }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, commentaire").eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
       if (rappel.statut !== "a_appeler") {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'appel" }), { status: 409, headers: CORS });
       }
-      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+      const patch: Record<string, unknown> = {
         statut: "a_traiter",
         choix_patient: choix,
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }).eq("id", rappelId);
+      };
+      if (choix === "partiel") {
+        const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
+        patch.commentaire = rappel.commentaire ? `${rappel.commentaire}\n\n${note}` : note;
+      }
+      const { error: updErr } = await sb.from("rappels_ordonnance").update(patch).eq("id", rappelId);
       if (updErr) throw new Error(updErr.message);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "reponse_patient", meta: { choix, canal: "appel" } });
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
@@ -714,19 +727,27 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId } = params || {};
+      const { rappelId, detailPartiel } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient").eq("id", rappelId).maybeSingle();
+      // Détail du renouvellement partiel (01/10/2026, retour titulaire) —
+      // même exigence que rappels_enregistrer_appel : l'appel de clarification
+      // ne sert à rien si quels médicaments renouveler ne finit nulle part.
+      if (!detailPartiel?.trim()) {
+        return new Response(JSON.stringify({ error: "Précisez quels médicaments renouveler." }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient, commentaire").eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
       if (rappel.statut !== "a_appeler" || rappel.choix_patient !== "partiel") {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'un appel de clarification" }), { status: 409, headers: CORS });
       }
+      const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
       const { error: updErr } = await sb.from("rappels_ordonnance").update({
         statut: "a_traiter",
+        commentaire: rappel.commentaire ? `${rappel.commentaire}\n\n${note}` : note,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (updErr) throw new Error(updErr.message);

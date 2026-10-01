@@ -473,7 +473,37 @@ function PreparerConfirmModal({ rappel, onCancel, onConfirm, submitting }) {
 // pendant du choix fait par le patient lui-même sur la page publique
 // resolve-rappel (lien SMS), ici saisi par le pharmacien après avoir appelé
 // un patient en mode "appel" (numéro fixe, sans mobile).
+// Détail du renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
+// seul ne dit pas QUELS médicaments ; demandé ici car c'est le seul moment où
+// cette info existe (le pharmacien vient de raccrocher), sinon elle ne finit
+// nulle part sauf à rouvrir "Modifier" de soi-même en dehors du parcours guidé.
 function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
+  const [choixPartiel, setChoixPartiel] = useState(false);
+  const [detailPartiel, setDetailPartiel] = useState("");
+
+  if (choixPartiel) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🔶 Quels médicaments renouveler ?</div>
+          <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 12 }}>{rappel.patient_prenom} {rappel.patient_nom}</div>
+          <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
+            placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+          <button type="button" disabled={submitting || !detailPartiel.trim()} onClick={() => onChoix("partiel", detailPartiel)}
+            style={{ width: "100%", padding: "11px", borderRadius: 10, border: "none", background: "#92400e", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (submitting || !detailPartiel.trim()) ? "default" : "pointer", fontFamily: "inherit", opacity: (submitting || !detailPartiel.trim()) ? 0.6 : 1, marginBottom: 8 }}>
+            Confirmer
+          </button>
+          <button type="button" onClick={() => setChoixPartiel(false)} disabled={submitting}
+            style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
@@ -485,7 +515,7 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
             style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #86efac", background: "#f0fdf4", color: "#15803d", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
             ✅ Tout renouveler
           </button>
-          <button type="button" disabled={submitting} onClick={() => onChoix("partiel")}
+          <button type="button" disabled={submitting} onClick={() => setChoixPartiel(true)}
             style={{ padding: "11px", borderRadius: 10, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", textAlign: "left" }}>
             🔶 Renouvellement partiel
           </button>
@@ -508,21 +538,29 @@ function EnregistrerAppelModal({ rappel, onCancel, onChoix, submitting }) {
 // SMS), seul l'appel de clarification (quels médicaments renouveler) reste
 // à confirmer pour passer à "à traiter".
 function ConfirmerAppelPartielModal({ rappel, onCancel, onConfirm, submitting }) {
+  const [detailPartiel, setDetailPartiel] = useState("");
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>☎️ Appel effectué ?</div>
-        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12, lineHeight: 1.5 }}>
           Confirmez avoir appelé <strong>{rappel.patient_prenom} {rappel.patient_nom}</strong> pour préciser son renouvellement partiel — le rappel passera à "À traiter".
         </div>
+        {/* Détail du renouvellement partiel (01/10/2026) — même exigence que
+            EnregistrerAppelModal : sans ce champ, l'info précisée pendant
+            l'appel ne finit nulle part. */}
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Quels médicaments renouveler ?</label>
+        <textarea value={detailPartiel} onChange={e => setDetailPartiel(e.target.value)} rows={3} autoFocus
+          placeholder="Ex : seulement le Doliprane, pas l'antibiotique"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 16, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} disabled={submitting}
             style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
             Annuler
           </button>
-          <button onClick={onConfirm} disabled={submitting}
-            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 14, cursor: submitting ? "default" : "pointer", fontFamily: "inherit", opacity: submitting ? 0.7 : 1 }}>
+          <button onClick={() => onConfirm(detailPartiel)} disabled={submitting || !detailPartiel.trim()}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#a16207", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (submitting || !detailPartiel.trim()) ? "default" : "pointer", fontFamily: "inherit", opacity: (submitting || !detailPartiel.trim()) ? 0.6 : 1 }}>
             {submitting ? "…" : "☎️ Oui, appel effectué"}
           </button>
         </div>
@@ -728,12 +766,17 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // Enregistrement du choix du patient après appel (30/09/2026) — pendant du
   // POST anonyme de resolve-rappel (lien SMS), déclenché ici par le
   // pharmacien lui-même.
-  async function handleEnregistrerAppel(choix) {
+  async function handleEnregistrerAppel(choix, detailPartiel) {
     const rappel = appelConfirm;
     setEnregistrantAppel(true);
     try {
-      await enregistrerAppelRappel(rappel.id, choix);
-      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_traiter", choix_patient: choix } : r));
+      await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
+      setRappels(prev => prev.map(r => {
+        if (r.id !== rappel.id) return r;
+        if (choix !== "partiel") return { ...r, statut: "a_traiter", choix_patient: choix };
+        const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
+        return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: r.commentaire ? `${r.commentaire}\n\n${note}` : note };
+      }));
       setAppelConfirm(null);
     } catch (e) {
       console.error("[handleEnregistrerAppel]", e.message);
@@ -744,12 +787,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // Confirmation de l'appel de clarification d'un renouvellement partiel
   // (01/10/2026) — le choix ("partiel") est déjà connu, l'appel ne fait que
   // débloquer le passage à "à traiter".
-  async function handleConfirmerAppelPartiel() {
+  async function handleConfirmerAppelPartiel(detailPartiel) {
     const rappel = partielAppelConfirm;
     setConfirmantPartiel(true);
     try {
-      await confirmerAppelPartiel(rappel.id);
-      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "a_traiter" } : r));
+      await confirmerAppelPartiel(rappel.id, detailPartiel);
+      const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
+      setRappels(prev => prev.map(r => r.id === rappel.id
+        ? { ...r, statut: "a_traiter", commentaire: r.commentaire ? `${r.commentaire}\n\n${note}` : note }
+        : r));
       setPartielAppelConfirm(null);
     } catch (e) {
       console.error("[handleConfirmerAppelPartiel]", e.message);
