@@ -32,7 +32,7 @@ import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
-import { buildRappelLien, buildRappelMessage } from "../_shared/rappelLogic.ts";
+import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
 import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { escapeHtml } from "../_shared/html.ts";
@@ -723,13 +723,17 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
       if (choix === "partiel") {
-        const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
-        patch.commentaire = rappel.commentaire ? `${rappel.commentaire}\n\n${note}` : note;
+        patch.commentaire = mergeCommentairePartiel(rappel.commentaire, detailPartiel);
       }
       const { error: updErr } = await sb.from("rappels_ordonnance").update(patch).eq("id", rappelId);
       if (updErr) throw new Error(updErr.message);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "reponse_patient", meta: { choix, canal: "appel" } });
-      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+      // commentaire renvoyé SEULEMENT s'il a changé (01/10/2026, audit
+      // architecture) — le client n'a plus besoin de recalculer la fusion
+      // lui-même à partir d'un état local potentiellement périmé (édition
+      // concurrente depuis un autre poste), et ignore ce champ absent pour
+      // tout autre choix que "partiel".
+      return new Response(JSON.stringify({ data: { success: true, ...(patch.commentaire ? { commentaire: patch.commentaire } : {}) } }), { headers: CORS });
     }
 
     // Confirmer l'appel de clarification d'un renouvellement partiel
@@ -759,15 +763,15 @@ Deno.serve(async (req) => {
       if (rappel.statut !== "a_appeler" || rappel.choix_patient !== "partiel") {
         return new Response(JSON.stringify({ error: "Ce rappel n'est pas en attente d'un appel de clarification" }), { status: 409, headers: CORS });
       }
-      const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
+      const commentaireFinal = mergeCommentairePartiel(rappel.commentaire, detailPartiel);
       const { error: updErr } = await sb.from("rappels_ordonnance").update({
         statut: "a_traiter",
-        commentaire: rappel.commentaire ? `${rappel.commentaire}\n\n${note}` : note,
+        commentaire: commentaireFinal,
         updated_at: new Date().toISOString(),
       }).eq("id", rappelId);
       if (updErr) throw new Error(updErr.message);
       await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "appel_effectue" });
-      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+      return new Response(JSON.stringify({ data: { success: true, commentaire: commentaireFinal } }), { headers: CORS });
     }
 
     // Fichier de l'ordonnance liée à un rappel (26/09/2026) — donne accès en

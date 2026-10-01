@@ -74,6 +74,16 @@ export function buildRappelLien(appUrl: string, token: string): string {
   return `${appUrl}/?r=${token}`;
 }
 
+// Fusion du détail d'un renouvellement partiel dans le commentaire existant
+// (01/10/2026, audit architecture) — source unique, reprise par les deux
+// resources secure-data concernées (rappels_enregistrer_appel,
+// rappels_confirmer_appel_partiel) ; le client n'a plus besoin de la
+// dupliquer, la resource renvoie directement le commentaire final.
+export function mergeCommentairePartiel(commentaireExistant: string | null, detail: string): string {
+  const note = `Renouvellement partiel : ${detail.trim()}`;
+  return commentaireExistant ? `${commentaireExistant}\n\n${note}` : note;
+}
+
 // Mise en forme (07/09/2026, retour direct) — un saut de ligne après le nom
 // du patient et après chaque phrase, plutôt qu'un seul bloc de texte, pour
 // une meilleure lisibilité sur petit écran. "M/Mme" ajouté devant le nom.

@@ -821,13 +821,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setEnregistrantAppel(true);
     setActionError("");
     try {
-      await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
+      // commentaire fusionné renvoyé par le serveur (01/10/2026, audit
+      // architecture) — plus de recalcul local à partir d'un état qui peut
+      // être périmé (édition concurrente depuis un autre poste).
+      const result = await enregistrerAppelRappel(rappel.id, choix, detailPartiel);
       setRappels(prev => prev.map(r => {
         if (r.id !== rappel.id) return r;
         if (choix === "stop") return { ...r, statut: "termine", choix_patient: choix, opt_out: true };
         if (choix !== "partiel") return { ...r, statut: "a_traiter", choix_patient: choix };
-        const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
-        return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: r.commentaire ? `${r.commentaire}\n\n${note}` : note };
+        return { ...r, statut: "a_traiter", choix_patient: choix, commentaire: result?.commentaire ?? r.commentaire };
       }));
       setAppelConfirm(null);
     } catch (e) {
@@ -845,10 +847,9 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setConfirmantPartiel(true);
     setActionError("");
     try {
-      await confirmerAppelPartiel(rappel.id, detailPartiel);
-      const note = `Renouvellement partiel : ${detailPartiel.trim()}`;
+      const result = await confirmerAppelPartiel(rappel.id, detailPartiel);
       setRappels(prev => prev.map(r => r.id === rappel.id
-        ? { ...r, statut: "a_traiter", commentaire: r.commentaire ? `${r.commentaire}\n\n${note}` : note }
+        ? { ...r, statut: "a_traiter", commentaire: result?.commentaire ?? r.commentaire }
         : r));
       setPartielAppelConfirm(null);
     } catch (e) {
