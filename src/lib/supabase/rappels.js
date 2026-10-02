@@ -106,6 +106,16 @@ export async function terminerRappel(rappelId) {
   return await callSecureData('rappels_terminer', { rappelId });
 }
 
+// Suppression définitive d'un rappel (02/10/2026) — pour corriger une erreur
+// de saisie (mauvais patient, doublon), pas une fin de suivi normale (voir
+// terminerRappel). Irréversible : la ligne et son historique d'événements
+// (rappels_evenements, ON DELETE CASCADE) disparaissent, contrairement à
+// "terminer" qui garde une trace. Voir secure-data:rappels_supprimer.
+export async function supprimerRappel(rappelId) {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('rappels_supprimer', { rappelId });
+}
+
 // Réactive un rappel terminé (07/09/2026) — repart sur le même patient sans
 // recréer un rappel depuis zéro. Voir secure-data:rappels_reactiver.
 export async function reactiverRappel(rappelId, dateRappel = null, consentement = false) {

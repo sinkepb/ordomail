@@ -6,7 +6,7 @@
 // identifié par l'audit de dette technique) ; ce fichier ne garde que le
 // container (état, handlers, liste) et RappelOrdonnanceUpload.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, supprimerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
 import { STATUT_INFO, CHOIX_LABEL, CRENEAU_LABEL, FILTRES, journalLigne } from "./rappels/rappelsConstants.js";
 import { normalizeTel } from "./rappels/rappelsDateUtils.js";
@@ -14,6 +14,7 @@ import { RappelForm } from "./rappels/RappelForm.jsx";
 import { EnvoyerTestModal } from "./rappels/EnvoyerTestModal.jsx";
 import { ValiderModal } from "./rappels/ValiderModal.jsx";
 import { TerminerConfirmModal } from "./rappels/TerminerConfirmModal.jsx";
+import { SupprimerConfirmModal } from "./rappels/SupprimerConfirmModal.jsx";
 import { PreparerConfirmModal } from "./rappels/PreparerConfirmModal.jsx";
 import { EnregistrerAppelModal } from "./rappels/EnregistrerAppelModal.jsx";
 import { ConfirmerAppelPartielModal } from "./rappels/ConfirmerAppelPartielModal.jsx";
@@ -56,6 +57,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   const [partielAppelConfirm, setPartielAppelConfirm] = useState(null);
   const [confirmantPartiel, setConfirmantPartiel] = useState(false);
   const [terminatingRappel, setTerminatingRappel] = useState(null);
+  const [deletingRappel, setDeletingRappel] = useState(null);
   const [reactivatingRappel, setReactivatingRappel] = useState(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("recent"); // "recent" | "alpha" | "date_rappel"
@@ -263,6 +265,21 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     } catch (e) {
       console.error("[handleTerminerConfirm]", e.message);
       setActionError(e.message || "Échec de la fin de traitement.");
+    }
+    setBusyId(null);
+  }
+
+  async function handleSupprimerConfirm() {
+    const rappel = deletingRappel;
+    setBusyId(rappel.id);
+    setActionError("");
+    try {
+      await supprimerRappel(rappel.id);
+      setRappels(prev => prev.filter(r => r.id !== rappel.id));
+      setDeletingRappel(null);
+    } catch (e) {
+      console.error("[handleSupprimerConfirm]", e.message);
+      setActionError(e.message || "Échec de la suppression du rappel.");
     }
     setBusyId(null);
   }
@@ -600,6 +617,15 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: journalOpenId === r.id ? "#f8fafc" : "#fff", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
                 🕐 Historique{journalOpenId === r.id ? " ▲" : " ▼"}
               </button>
+              {/* Suppression (02/10/2026) — correction d'une erreur de saisie
+                  (mauvais patient, doublon), distincte de "Fin de traitement"
+                  qui clôt un suivi normal en gardant une trace. Icône seule,
+                  à l'écart des boutons de workflow, pour éviter un clic
+                  accidentel sur une action irréversible. */}
+              <button onClick={() => { setActionError(""); setDeletingRappel(r); }} disabled={busy} title="Supprimer ce rappel"
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fff", color: "#dc2626", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
+                🗑️
+              </button>
             </div>
             {journalOpenId === r.id && (
               <div style={{ borderTop: "1px solid #f1f5f9", padding: "12px 16px", background: "#fafbfc" }}>
@@ -634,6 +660,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => { setActionError(""); setValidatingRappel(null); }} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} serverError={actionError} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => { setActionError(""); setTerminatingRappel(null); }} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} error={actionError} />}
+      {deletingRappel && <SupprimerConfirmModal rappel={deletingRappel} onCancel={() => { setActionError(""); setDeletingRappel(null); }} onConfirm={handleSupprimerConfirm} submitting={busyId === deletingRappel.id} error={actionError} />}
       {preparingConfirm && <PreparerConfirmModal rappel={preparingConfirm}
         onCancel={() => { setActionError(""); setPreparingConfirm(null); }}
         onConfirm={async () => { const ok = await handlePreparer(preparingConfirm); if (ok) setPreparingConfirm(null); }}

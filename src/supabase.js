@@ -99,6 +99,7 @@ export {
   traiterRappel,
   preparerRappel,
   terminerRappel,
+  supprimerRappel,
   reactiverRappel,
   updateRappel,
   envoyerTestRappel,

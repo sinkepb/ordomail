@@ -1062,6 +1062,29 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
+    // Suppression définitive d'un rappel (02/10/2026) — distincte de
+    // rappels_terminer : sert à corriger une erreur de saisie (mauvais
+    // patient, doublon créé par erreur), pas à clore un suivi normal. La
+    // ligne et son historique (rappels_evenements, ON DELETE CASCADE) sont
+    // supprimés sans retour possible — la confirmation se fait côté client
+    // avant cet appel, jamais ici.
+    if (resource === "rappels_supprimer") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId } = params || {};
+      if (!rappelId) {
+        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      if (!existing || existing.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const { error } = await sb.from("rappels_ordonnance").delete().eq("id", rappelId);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+    }
+
     // Réactiver un rappel terminé (07/09/2026) — repart sur le même
     // patient/téléphone/consentement déjà recueilli plutôt que de forcer la
     // création d'un nouveau rappel depuis zéro. Même schéma de date par
