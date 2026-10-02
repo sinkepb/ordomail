@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit OrdoMail — 4e passage, 02/10/2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f7f5f1; --paper-alt:#ffffff; --ink:#1c1a17; --ink-soft:#5b564d; --ink-faint:#8a8377;
+    --line:#e4dfd5; --accent:#8a3b2f; --accent-soft:#f4e6e2;
+    --crit-bg:#fbe4e1; --crit-fg:#9c2b1f; --crit-line:#e8b9b2;
+    --high-bg:#fdecd8; --high-fg:#a15a12; --high-line:#f0cd9d;
+    --med-bg:#fdf3d0; --med-fg:#8a6d16; --med-line:#e9d68a;
+    --low-bg:#e8ede7; --low-fg:#4c6154; --low-line:#c7d4c9;
+    --good-bg:#e3ede4; --good-fg:#2f6b45; --good-line:#b9d3bf;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#171512; --paper-alt:#201d19; --ink:#f1ece3; --ink-soft:#c4bcae; --ink-faint:#8a8172;
+      --line:#3a352d; --accent:#e08a75; --accent-soft:#3a2822;
+      --crit-bg:#3a1c17; --crit-fg:#f2a596; --crit-line:#6b332a;
+      --high-bg:#3a2a12; --high-fg:#f0b976; --high-line:#6b4d1f;
+      --med-bg:#39320f; --med-fg:#e8d27a; --med-line:#665a1c;
+      --low-bg:#212a22; --low-fg:#a9c2ae; --low-line:#3d4a3f;
+      --good-bg:#1c2b1f; --good-fg:#8fc79c; --good-line:#345a3e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#171512; --paper-alt:#201d19; --ink:#f1ece3; --ink-soft:#c4bcae; --ink-faint:#8a8172;
+    --line:#3a352d; --accent:#e08a75; --accent-soft:#3a2822;
+    --crit-bg:#3a1c17; --crit-fg:#f2a596; --crit-line:#6b332a;
+    --high-bg:#3a2a12; --high-fg:#f0b976; --high-line:#6b4d1f;
+    --med-bg:#39320f; --med-fg:#e8d27a; --med-line:#665a1c;
+    --low-bg:#212a22; --low-fg:#a9c2ae; --low-line:#3d4a3f;
+    --good-bg:#1c2b1f; --good-fg:#8fc79c; --good-line:#345a3e;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'Source Serif 4', Georgia, serif; line-height:1.55; }
+  .wrap{max-width:900px; margin:0 auto; padding:48px 20px 80px;}
+  h1,h2,h3{font-family:'IBM Plex Sans', system-ui, sans-serif; letter-spacing:-0.01em; text-wrap:balance;}
+  .masthead{border-bottom:3px solid var(--ink); padding-bottom:22px; margin-bottom:28px;}
+  .masthead .eyebrow{font-family:'IBM Plex Sans',sans-serif; font-size:11.5px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); margin-bottom:10px;}
+  .masthead h1{font-size:clamp(26px,5vw,36px); font-weight:700; margin:0 0 6px;}
+  .masthead .meta{font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:var(--ink-faint);}
+  .summary-bar{display:flex; gap:10px; flex-wrap:wrap; margin:24px 0 10px;}
+  .summary-chip{font-family:'IBM Plex Sans',sans-serif; font-size:13px; font-weight:700; padding:8px 16px; border-radius:20px; border:1px solid var(--line); background:var(--paper-alt);}
+  .summary-chip b{font-size:16px;}
+  .summary-chip.high{color:var(--high-fg); border-color:var(--high-line); background:var(--high-bg);}
+  .summary-chip.med{color:var(--med-fg); border-color:var(--med-line); background:var(--med-bg);}
+  .summary-chip.low{color:var(--low-fg); border-color:var(--low-line); background:var(--low-bg);}
+  .lede{font-size:16px; color:var(--ink-soft); margin:18px 0 8px;}
+  .callout{
+    background: var(--high-bg); border:1px solid var(--high-line); border-left:4px solid var(--high-fg);
+    border-radius: 10px; padding:16px 20px; margin:22px 0; font-size:15px; color:var(--ink);
+  }
+  .callout .label{font-family:'IBM Plex Sans',sans-serif; font-weight:800; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--high-fg); margin-bottom:6px;}
+  section.cat{margin:40px 0;}
+  .cat-head{display:flex; align-items:baseline; gap:12px; border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:16px;}
+  .cat-head h2{font-size:21px; margin:0;}
+  .cat-head .count{font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:var(--ink-faint); font-weight:700;}
+  .finding{border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:14px 18px; margin-bottom:12px; background:var(--paper-alt);}
+  .finding.high{border-left-color:var(--high-fg); background:var(--high-bg);}
+  .finding.med{border-left-color:var(--med-fg); background:var(--med-bg);}
+  .finding.low{border-left-color:var(--low-fg); background:var(--low-bg);}
+  .finding .top{display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;}
+  .badge{font-family:'IBM Plex Sans',sans-serif; font-size:10px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; padding:3px 9px; border-radius:20px; border:1px solid transparent;}
+  .high .badge{color:var(--high-fg); border-color:var(--high-line); background:var(--paper-alt);}
+  .med .badge{color:var(--med-fg); border-color:var(--med-line); background:var(--paper-alt);}
+  .low .badge{color:var(--low-fg); border-color:var(--low-line); background:var(--paper-alt);}
+  .tag-new{font-family:'IBM Plex Sans',sans-serif; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:3px 8px; border-radius:20px; background:var(--accent); color:#fff;}
+  .finding .title{font-family:'IBM Plex Sans',sans-serif; font-weight:700; font-size:14.5px;}
+  .finding .desc{font-size:15px; color:var(--ink-soft); margin:4px 0 8px;}
+  .finding code{font-family:var(--mono); font-size:12.5px; background:var(--paper); border:1px solid var(--line); padding:1px 6px; border-radius:5px; color:var(--ink); word-break:break-all;}
+  .good-box{background:var(--good-bg); border:1px solid var(--good-line); border-radius:10px; padding:16px 20px; margin:28px 0; font-size:14px; color:var(--ink-soft);}
+  .good-box h3{font-size:13px; margin:0 0 8px; font-family:'IBM Plex Sans',sans-serif; color:var(--good-fg);}
+  table.filesize{ width:100%; border-collapse:collapse; font-size:13.5px; margin:16px 0; }
+  table.filesize th, table.filesize td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  table.filesize th{ font-family:'IBM Plex Sans',sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); }
+  table.filesize td.lines{ font-family:var(--mono); text-align:right; color:var(--ink-soft); }
+  table.filesize code{font-family:var(--mono); font-size:12px;}
+  .priority-list{ counter-reset: prio; list-style:none; padding:0; margin:16px 0; }
+  .priority-list li{ counter-increment: prio; position:relative; padding:14px 18px 14px 50px; margin-bottom:10px; background:var(--paper-alt); border:1px solid var(--line); border-radius:10px; }
+  .priority-list li::before{ content: counter(prio); position:absolute; left:14px; top:14px; width:24px; height:24px; border-radius:7px; background:var(--accent); color:#fff; font-family:'IBM Plex Sans',sans-serif; font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; }
+  .priority-list .title{font-family:'IBM Plex Sans',sans-serif; font-weight:700; font-size:14.5px; margin-bottom:4px;}
+  .priority-list .desc{font-size:14px; color:var(--ink-soft);}
+  footer{margin-top:48px; padding-top:18px; border-top:1px solid var(--line); font-family:'IBM Plex Sans',sans-serif; font-size:12px; color:var(--ink-faint);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Audit technique — 4e passage, 02/10/2026</div>
+    <h1>OrdoMail — sécurité, RGPD, fiabilité et modularité</h1>
+    <div class="meta">4 revues indépendantes en parallèle sur le code réel (develop@6485d6f) — sécurité, RGPD, fiabilité/tests, et un nouveau volet qualité/modularité sur l'ensemble du dépôt (pas seulement le module rappels).</div>
+  </header>
+
+  <div class="summary-bar">
+    <span class="summary-chip high"><b>3</b> Élevé</span>
+    <span class="summary-chip med"><b>6</b> Moyen</span>
+    <span class="summary-chip low"><b>10</b> Faible</span>
+    <span class="summary-chip">+ 5 chantiers de modularité priorisés</span>
+  </div>
+
+  <p class="lede">Les 4 audits ont d'abord revérifié les correctifs des commits 24d1600 et 66b0ab9 (export RGPD, découpage RappelsSection, bouton de suppression) — le fix de l'export est confirmé solide, le découpage ne régresse rien. Mais 2 des 4 audits, indépendamment l'un de l'autre, convergent sur le même constat : <strong>la fonctionnalité de suppression de rappel ajoutée aujourd'hui même est le point le plus sensible de ce passage</strong> — ni trace d'audit, ni test.</p>
+
+  <div class="callout">
+    <div class="label">À traiter en priorité</div>
+    La suppression d'un rappel (<code>rappels_supprimer</code>, secure-data/index.ts:1071) efface <code>consentement_sms_horodatage</code> — la seule preuve légale de consentement du patient — sans laisser aucune trace dans <code>audit_logs</code>, et sans qu'aucun test ne protège le contrôle d'appartenance (pharmacie_id) contre une régression future. Deux audits distincts (RGPD et Fiabilité) l'ont trouvé indépendamment.
+  </div>
+
+  <section class="cat">
+    <div class="cat-head"><h2>🔒 Sécurité</h2><span class="count">5 points</span></div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="title">2 crons toujours sans comparaison constant-time, secret partagé entre 3 fonctions</span></div>
+      <div class="desc">apply-pending-downgrades et facturer-depassement-sms comparent le secret cron avec <code>!==</code> direct au lieu de <code>timingSafeEqual</code> (déjà introduit pour purge-ordonnances le 01/10). Les trois réutilisent la même variable <code>PURGE_CRON_SECRET</code> — une fuite ou une rotation touche les trois à la fois.</div>
+      <code>apply-pending-downgrades/index.ts:28-31 · facturer-depassement-sms/index.ts:39-42</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">Pièces jointes Postmark non validées</span></div>
+      <div class="desc">send-email n'importe pas validateFile() — seul le Content-Type déclaré par l'expéditeur du mail est vérifié, pas le contenu réel. Endpoint déjà protégé par verifyWebhookSecret(), donc défense en profondeur manquante plutôt que faille ouverte.</div>
+      <code>supabase/functions/send-email/index.ts:106-136</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">Journal d'audit : tout non-vendeur labellisé "admin"</span></div>
+      <div class="desc">Un titulaire connecté normalement est journalisé comme "admin" au même titre qu'un vrai administrateur OrdoMail — fausse l'imputabilité du journal en cas de litige.</div>
+      <code>supabase/functions/secure-data/index.ts:122</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="tag-new">Nouveau</span><span class="title">CORS accepte tout sous-domaine ordomail-*.vercel.app</span></div>
+      <div class="desc">La regex de reflet CORS ne vérifie pas que le déploiement Vercel appartient à l'équipe — un tiers maîtrisant un slug Vercel plausible (ex. "ordomail-demo") pourrait passer la vérification navigateur. Risque limité mais plus permissif qu'une allowlist statique.</div>
+      <code>supabase/functions/_shared/cors.ts:26,30</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="tag-new">Nouveau</span><span class="title">Aucune alerte sur échecs répétés du secret cron</span></div>
+      <div class="desc">apply-pending-downgrades et facturer-depassement-sms n'envoient pas d'alerte sur un 401 répété — pas une faille en soi, mais une tentative de brute-force du secret partagé passerait inaperçue.</div>
+    </div>
+
+    <div class="good-box">
+      <h3>✅ Confirmé sain</h3>
+      Le nouveau handler <code>rappels_supprimer</code> vérifie correctement <code>pharmacie_id</code> avant suppression (pas de faille cross-tenant) ; l'export RGPD utilise des colonnes explicites et exclut bien <code>token</code> ; aucun <code>dangerouslySetInnerHTML</code> ni clé service-role côté client trouvé.
+    </div>
+  </section>
+
+  <section class="cat">
+    <div class="cat-head"><h2>🗂️ RGPD</h2><span class="count">5 points + 1 corrigé</span></div>
+
+    <div class="finding high">
+      <div class="top"><span class="badge">Élevé</span><span class="tag-new">Nouveau</span><span class="title">La suppression d'un rappel efface la preuve de consentement, sans aucune trace</span></div>
+      <div class="desc">rappels_supprimer (ajouté aujourd'hui) est irréversible et en cascade sur rappels_evenements — y compris consentement_sms_horodatage, seule preuve légale du consentement art. 7(1). Aucun insert dans audit_logs, aucune alerte, contrairement à d'autres actions tracées. Un pharmacien ayant mal géré une opposition patient pourrait effacer tout l'historique sans qu'il en reste la moindre preuve en cas de litige.</div>
+      <code>supabase/functions/secure-data/index.ts:1071-1084</code>
+    </div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="tag-new">Nouveau</span><span class="title">Rien n'empêche de supprimer un rappel déjà conclu</span></div>
+      <div class="desc">Aucune vérification que le rappel n'est pas déjà "terminé" avec un choix_patient enregistré avant d'autoriser la suppression — une correction de doublon peut tout aussi bien effacer un cycle légitimement conclu et documenté.</div>
+    </div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="title">Le canal d'opposition "stop" ne bloque que ce rappel, pas le patient</span></div>
+      <div class="desc">opt_out est vérifié seulement à la réactivation du même enregistrement — rappels_create ne vérifie jamais si le téléphone correspond à un rappel existant en opposition pour la même pharmacie. Un nouveau rappel peut reprendre les sollicitations malgré une opposition explicite (art. 21).</div>
+      <code>supabase/functions/secure-data/index.ts:597-676 (rappels_create)</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">Vérification de consentement trop permissive</span></div>
+      <div class="desc">if (!consentement) accepte toute valeur truthy (ex. une chaîne "false") au lieu d'exiger strictement true. Impact réel limité (consentement de toute façon auto-déclaré par le pharmacien), exploitable seulement par un appel API direct.</div>
+      <code>secure-data/index.ts:634 (rappels_create) · :1108 (rappels_reactiver)</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">Tables orphelines après suppression pharmacie</span></div>
+      <div class="desc">pin_verification_attempts et submission_log n'ont aucune FK vers pharmacies — confirmé dans la migration d'origine, pas de CASCADE. Aucune donnée patient concernée, problème d'hygiène plutôt que de fuite.</div>
+      <code>supabase/migrations/20260723_phase1_security.sql:53-69</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="tag-new">Nouveau</span><span class="title">admin_delete_ordonnance a la même absence de trace d'audit</span></div>
+      <div class="desc">Même lacune que rappels_supprimer, pour un acte tout aussi irréversible sur un fichier d'ordonnance.</div>
+      <code>supabase/functions/secure-data-admin/index.ts:605</code>
+    </div>
+
+    <div class="good-box">
+      <h3>✅ Corrigé depuis le dernier passage</h3>
+      L'export RGPD (admin_export_patient_data) exclut désormais explicitement <code>token</code> — confirmé par relecture directe du code, 20 colonnes listées. La suppression des comptes Supabase Auth reste hors périmètre, mais n'est en réalité pas incohérente avec le texte légal actuel (LegalPage.jsx ne promet que l'effacement des données patient) — reclassé en point mineur plutôt qu'en incohérence.
+    </div>
+  </section>
+
+  <section class="cat">
+    <div class="cat-head"><h2>⚙️ Fiabilité &amp; tests</h2><span class="count">8 points</span></div>
+
+    <div class="finding high">
+      <div class="top"><span class="badge">Élevé</span><span class="tag-new">Nouveau</span><span class="title">Suppression de rappel sans aucun test</span></div>
+      <div class="desc">Ni supprimerRappel() côté client ni le handler serveur n'ont de test. La logique serveur est inline dans le handler (pas extraite comme rappelLogic.ts), donc pas unitairement testable en l'état. Le contrôle d'appartenance et le cas "rappel inexistant" ne sont vérifiés par aucun test — une régression future (ex. un refactor fusionnant avec rappels_terminer) pourrait supprimer silencieusement un rappel d'une autre pharmacie sans qu'aucun test ne casse.</div>
+      <code>src/lib/supabase/rappels.js:114-117 · secure-data/index.ts:1071-1086</code>
+    </div>
+
+    <div class="finding high">
+      <div class="top"><span class="badge">Élevé</span><span class="tag-new">Nouveau</span><span class="title">Calcul de facturation du dépassement SMS totalement non testé</span></div>
+      <div class="desc">Logique d'argent réelle (0,10 €/SMS facturé automatiquement sur Stripe) sans aucun test — ni le filtre anti-double-comptage, ni l'exclusion du canal de test, ni l'idempotence contre une double facturation du même mois.</div>
+      <code>facturer-depassement-sms/index.ts:76-114 · _shared/smsQuota.ts:28-57</code>
+    </div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="title">computeRappelsStats peut toujours dépasser 100%</span></div>
+      <div class="desc">Le cas exact (réponse comptée sans son évènement de contact correspondant, à la frontière de la fenêtre de 90 jours) n'est couvert par aucun des tests existants — tous les cas testés passent contact et réponse dans la même fenêtre.</div>
+      <code>supabase/functions/_shared/rappelsStatsLogic.ts:61-70</code>
+    </div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="title">runRappelsPurge (suppression irréversible) toujours sans test</span></div>
+      <div class="desc">Aucun fichier purgeLogic.test.ts n'existe, malgré le patron de test de runRappelScan déjà présent dans le dépôt pour un cas similaire.</div>
+      <code>supabase/functions/_shared/purgeLogic.ts:82-127</code>
+    </div>
+
+    <div class="finding med">
+      <div class="top"><span class="badge">Moyen</span><span class="tag-new">Nouveau</span><span class="title">rateLimit.ts (anti-abus) sans aucun test</span></div>
+      <div class="desc">Le garde-fou anti-abus des endpoints publics échoue en mode "autorisé" en cas d'erreur (fail-open) — une erreur de signe ou d'unité désactiverait silencieusement la protection, sans test ni alerte pour le détecter.</div>
+      <code>supabase/functions/_shared/rateLimit.ts:14-44</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">echecs90j non couvert par les tests</span></div>
+      <div class="desc">Compteur affiché au pharmacien, jamais exercé par un évènement sms_echec dans les tests existants.</div>
+      <code>supabase/functions/_shared/rappelsStatsLogic.ts:60</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="title">Message d'avertissement trompeur sur la suppression de pharmacie</span></div>
+      <div class="desc">Le texte côté UI vérifie seulement plan_status, alors que le serveur bloque sur stripe_customer_id — une pharmacie de test sans Stripe verrait un avertissement erroné.</div>
+      <code>src/components/ClientDetail.jsx:254</code>
+    </div>
+
+    <div class="finding low">
+      <div class="top"><span class="badge">Faible</span><span class="tag-new">Nouveau</span><span class="title">planFeatures.ts, trimPostes.ts, shortToken.ts sans test</span></div>
+      <div class="desc">Impact moindre, mais planFeatures.ts conditionne l'accès à des fonctionnalités payantes et mériterait au moins un test de table plan→fonctionnalités.</div>
+    </div>
+  </section>
+
+  <section class="cat">
+    <div class="cat-head"><h2>🧩 Qualité &amp; modularité du code</h2><span class="count">nouveau volet</span></div>
+    <p style="font-size:14.5px; color:var(--ink-soft); margin-top:0;">Premier audit de ce type sur l'ensemble du dépôt, suite à l'adoption de la convention de découpage modulaire (voir CLAUDE.md). Le module rappels, découpé le 02/10, sert de patron de comparaison.</p>
+
+    <table class="filesize">
+      <tr><th>Fichier</th><th>Lignes</th><th>Verdict</th></tr>
+      <tr><td><code>src/pages/PatientPage.jsx</code></td><td class="lines">1602</td><td>3 composants, 24 useState, logique OCR mêlée à l'UI</td></tr>
+      <tr><td><code>src/pages/Dashboard.jsx</code></td><td class="lines">1482</td><td>3 composants, 53 useState cumulés</td></tr>
+      <tr><td><code>supabase/functions/secure-data-admin/index.ts</code></td><td class="lines">1127</td><td>Domaines backoffice mélangés sans séparation</td></tr>
+      <tr><td><code>supabase/functions/secure-data/index.ts</code></td><td class="lines">1367</td><td>38 ressources en if-chain, 6 domaines mélangés</td></tr>
+      <tr><td><code>src/components/OrdoCard.jsx</code></td><td class="lines">813</td><td>4 composants, logique métier mêlée au rendu</td></tr>
+      <tr><td><code>src/components/RappelsSection.jsx</code></td><td class="lines">717</td><td>Déjà partiellement découpé (patron du 02/10)</td></tr>
+      <tr><td><code>src/pages/LoginPage.jsx</code></td><td class="lines">696</td><td>5 composants exportés, 29 useState</td></tr>
+      <tr><td><code>src/lib/print.jsx</code></td><td class="lines">693</td><td>Logique pure mais 0 test</td></tr>
+      <tr><td><code>src/components/OffresSection.jsx</code></td><td class="lines">626</td><td>Même profil que RappelsSection avant découpage</td></tr>
+      <tr><td><code>src/App.jsx</code></td><td class="lines">532</td><td>Routeur + logique démo mêlés</td></tr>
+    </table>
+
+    <div class="good-box">
+      <h3>✅ Point d'appui existant</h3>
+      <code>src/lib/supabase/</code> (11 fichiers : audit, auth, billing, ordonnances, rappels, stories…) est déjà bien séparé par domaine — la convention à généraliser côté composants et côté secure-data. En revanche, le formatage de date est dupliqué dans <strong>18 fichiers</strong> au lieu de réutiliser <code>formatDateLabel</code>/<code>toDateKey</code> déjà présents dans <code>src/lib/utils.js</code>.
+    </div>
+
+    <h3 style="font-size:15px; margin-top:28px;">Chantiers de découpage prioritaires (par impact, pas par taille)</h3>
+    <ol class="priority-list">
+      <li>
+        <div class="title">secure-data/index.ts — découper en handlers par domaine</div>
+        <div class="desc">38 ressources en if-chain (ordonnances/offres/rappels/stories/audit) dans un seul fichier de 1367 lignes : un bug sur une ressource rappels peut aujourd'hui faire échouer tout le fichier au déploiement. Créer <code>secure-data/handlers/{ordonnances,offres,rappels,stories,audit}.ts</code>, index.ts devient un dispatcher.</div>
+      </li>
+      <li>
+        <div class="title">Dashboard.jsx — extraire ParametresTab et BottomNav</div>
+        <div class="desc">3 composants et 53 useState dans un seul fichier de 1482 lignes. Extraire vers <code>src/components/parametres/ParametresTab.jsx</code> et <code>src/components/BottomNav.jsx</code>, sur le patron rappels/.</div>
+      </li>
+      <li>
+        <div class="title">PatientPage.jsx — isoler PatientStories et generateCode()</div>
+        <div class="desc">generateCode() est une fonction critique (génération de code patient) non testée et noyée dans un composant de 1602 lignes. Extraire vers <code>src/lib/patientCode.js</code> avec un test unitaire, et PatientStories vers <code>src/components/patient/</code>.</div>
+      </li>
+      <li>
+        <div class="title">OffresSection.jsx — même traitement que rappels/</div>
+        <div class="desc">Même profil que RappelsSection avant son découpage (21 useState, pas de sous-dossier). Créer <code>src/components/offres/</code> : constantes, modales séparées, logique de validation extraite et testée.</div>
+      </li>
+      <li>
+        <div class="title">Centraliser le formatage de date avant tout nouveau découpage</div>
+        <div class="desc">18 fichiers réinventent toLocaleDateString au lieu d'importer les helpers déjà présents dans utils.js — gain rapide de cohérence, évite de reproduire le problème dans les futurs modules extraits.</div>
+      </li>
+    </ol>
+  </section>
+
+  <footer>4 revues indépendantes du dépôt (sécurité, RGPD, fiabilité/tests, qualité/modularité) menées en parallèle le 02/10/2026 sur le commit develop@6485d6f — chaque revue a relu le code source elle-même, sans confiance dans les rapports précédents. Voir audit-ordomail-2026-10-01-v3-restants.html pour l'historique antérieur.</footer>
+</div>
+</body>
+</html>

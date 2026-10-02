@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { compressImageFile } from "../lib/imageCompress.js";
+import { prepareScannedImage, fileToDataUrl } from "../lib/imageEnhance.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
 
@@ -342,9 +343,14 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
     }
 
     async function sendOne(file) {
-      const dataUrl   = await readAsDataUrl(file);
+      // Recadrage + contraste/netteté AVANT l'OCR (02/10/2026, retour
+      // pharmacien) — contrairement à compressImageFile plus bas, qui lui
+      // doit impérativement rester après : voir imageEnhance.js. PDF/HEIC
+      // ressortent inchangés.
+      const scanFile  = await prepareScannedImage(file);
+      const dataUrl   = await readAsDataUrl(scanFile);
       const base64    = dataUrl.split(",")[1] || "";
-      const extracted = await extractFromFile(base64, file.type, { fallbackName: nom || null });
+      const extracted = await extractFromFile(base64, scanFile.type, { fallbackName: nom || null });
       const ext       = file.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
@@ -353,17 +359,17 @@ function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = fa
           subject: "Ordonnance ajoutée depuis les stories", receivedAt: new Date(),
           status: "nouveau", source: "qrcode",
           code_patient: codePatient,
-          attachments: [{ name: file.name, type: ext === "pdf" ? "pdf" : "image",
-            size: `${(file.size/1024).toFixed(0)} Ko`, dataUrl }],
+          attachments: [{ name: scanFile.name, type: ext === "pdf" ? "pdf" : "image",
+            size: `${(scanFile.size/1024).toFixed(0)} Ko`, dataUrl }],
           extracted: extracted || { nom: (nom || "Patient").toUpperCase() },
         });
         return;
       }
 
-      // Compresser APRÈS l'OCR (ligne 270, sur le fichier original en pleine
-      // résolution) — jamais avant : ça dégraderait l'extraction du texte de
+      // Compresser APRÈS l'OCR, sur le fichier déjà recadré/amélioré —
+      // jamais avant l'OCR : ça dégraderait l'extraction du texte de
       // l'ordonnance. PDF/HEIC ressortent inchangés (voir imageCompress.js).
-      const uploadFile = await compressImageFile(file);
+      const uploadFile = await compressImageFile(scanFile);
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
@@ -1363,8 +1369,14 @@ function PatientPage({ pharmacie, onBack }) {
 
     // Préparer tous les envois en parallèle
     async function sendOne(item) {
-      const base64    = item.dataUrl?.split(",")[1] || "";
-      const extracted = await extractFromFile(base64, item.type, { fallbackName: nom || null });
+      // Recadrage + contraste/netteté AVANT l'OCR (02/10/2026, retour
+      // pharmacien) — voir imageEnhance.js. item.dataUrl (preview lue à
+      // l'ajout du fichier) est la version BRUTE : on ne la réutilise que si
+      // le traitement n'a rien changé (PDF/HEIC, ou traitement sans effet).
+      const scanFile  = await prepareScannedImage(item.file);
+      const dataUrl   = scanFile === item.file ? item.dataUrl : await fileToDataUrl(scanFile);
+      const base64    = dataUrl?.split(",")[1] || "";
+      const extracted = await extractFromFile(base64, scanFile.type, { fallbackName: nom || null });
       const ext       = item.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
@@ -1373,16 +1385,16 @@ function PatientPage({ pharmacie, onBack }) {
           subject: "Ordonnance envoyée via QR Code", receivedAt: new Date(),
           status: "nouveau", source: "qrcode",
           code_patient: sessionCode,
-          attachments: [{ name: item.name, type: ext === "pdf" ? "pdf" : "image",
-            size: `${(item.file.size/1024).toFixed(0)} Ko`, dataUrl: item.dataUrl }],
+          attachments: [{ name: scanFile.name, type: ext === "pdf" ? "pdf" : "image",
+            size: `${(scanFile.size/1024).toFixed(0)} Ko`, dataUrl }],
           extracted: extracted || { nom: nom.toUpperCase() },
         });
         return { ok: true, code_patient: sessionCode };
       }
 
-      // Compresser APRÈS l'OCR ci-dessus (sur item.file/base64 en pleine
-      // résolution) — jamais avant. PDF/HEIC ressortent inchangés.
-      const uploadFile = await compressImageFile(item.file);
+      // Compresser APRÈS l'OCR ci-dessus, sur le fichier déjà recadré/amélioré
+      // — jamais avant. PDF/HEIC ressortent inchangés.
+      const uploadFile = await compressImageFile(scanFile);
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const formData = new FormData();
