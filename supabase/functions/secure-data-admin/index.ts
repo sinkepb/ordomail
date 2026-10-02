@@ -564,7 +564,12 @@ Deno.serve(async (req) => {
           ? sb.from("ordonnances").select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, medecin, medicaments, fichier_url, fichier_nom, pharmacies(nom)").in("id", ordos)
           : Promise.resolve({ data: [], error: null }),
         rappels.length
-          ? sb.from("rappels_ordonnance").select("*, pharmacies(nom)").in("id", rappels)
+          // Colonnes explicites (pas de "*") — exclut volontairement `token`,
+          // qui est la clé d'accès opaque au lien patient public
+          // (resolve-rappel) : un export RGPD doit restituer les données
+          // personnelles, pas distribuer une clé encore active permettant
+          // d'agir à la place du patient tant que le cycle n'est pas clos.
+          ? sb.from("rappels_ordonnance").select("id, pharmacie_id, patient_nom, patient_prenom, patient_telephone, commentaire, consentement_sms, consentement_sms_horodatage, statut, choix_patient, mode_contact, cycle_numero, opt_out, creneau_retrait, medecin_prescripteur, specialite, date_prochaine_relance, date_dernier_sms_envoye, date_reponse_patient, date_traite, created_by, created_at, updated_at, pharmacies(nom)").in("id", rappels)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (ordonnancesRes.error) throw new Error(ordonnancesRes.error.message);
