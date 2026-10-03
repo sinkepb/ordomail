@@ -69,16 +69,31 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("statut, choix_patient, patient_prenom, pharmacies(nom)")
+        .select("statut, choix_patient, patient_prenom, groupe_id, pharmacies(nom)")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
+
+      // Rappel groupé (03/10/2026, retour pharmacien) — un seul lien envoyé
+      // par groupe (voir rappelLogic.ts:traiterGroupeRappels), mais le
+      // patient doit voir qu'il répond pour PLUSIEURS ordonnances, pas une
+      // seule. Compte simple ; pas le détail médecin/spécialité de chacune
+      // (page publique anonyme, minimisation des données affichées).
+      let nombreOrdonnances = 1;
+      if (rappel.groupe_id) {
+        const { count } = await sb
+          .from("rappels_ordonnance")
+          .select("id", { count: "exact", head: true })
+          .eq("groupe_id", rappel.groupe_id);
+        if (count) nombreOrdonnances = count;
+      }
 
       return new Response(JSON.stringify({
         data: {
           patientPrenom: rappel.patient_prenom,
           pharmacieNom: (rappel as any).pharmacies?.nom || "votre pharmacie",
           dejaRepondu: !peutEncoreRepondre(rappel),
+          nombreOrdonnances,
         },
       }), { headers: CORS });
     }
@@ -94,18 +109,30 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("id, statut, choix_patient")
+        .select("id, statut, choix_patient, groupe_id")
         .eq("token", token)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
       if (!peutEncoreRepondre(rappel)) {
         return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse" }), { status: 409, headers: CORS });
       }
-      // "Sauvetage" après escalade (01/10/2026, audit) — le patient répond
-      // enfin lui-même après avoir été basculé en "à appeler" faute de
-      // réponse : évite un appel du pharmacien devenu inutile. Tracé dans le
-      // journal pour qu'il voie que ce cas s'est résolu tout seul.
-      const apresEscalade = rappel.statut === "a_appeler";
+
+      // Rappel groupé (03/10/2026, retour pharmacien) — un seul lien reçu
+      // (celui du "porteur", voir rappelLogic.ts), mais la réponse doit
+      // s'appliquer à TOUS les membres du groupe : un patient qui répond
+      // "tout renouveler" le veut pour l'ensemble de ses ordonnances dues ce
+      // jour-là, pas seulement celle qui portait le lien. Chaque membre est
+      // revérifié individuellement (peutEncoreRepondre) avant d'être inclus
+      // — un membre déjà traité séparément entre-temps (cas limite) n'est
+      // jamais écrasé.
+      let membres = [rappel];
+      if (rappel.groupe_id) {
+        const { data: tousLesMembres } = await sb
+          .from("rappels_ordonnance")
+          .select("id, statut, choix_patient")
+          .eq("groupe_id", rappel.groupe_id);
+        if (tousLesMembres?.length) membres = tousLesMembres.filter(peutEncoreRepondre);
+      }
 
       // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
       // ne dit pas QUELS médicaments renouveler, un simple clic sur le lien
@@ -121,6 +148,7 @@ serve(async (req) => {
       // pour ce choix (ni "Marquer préparé" ni "Valider" ne s'affichent pour
       // un choix autre que tout_renouveler/partiel/rien — voir RappelsSection.jsx).
       const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
+      const ids = membres.map((m) => m.id);
       const { error } = await sb.from("rappels_ordonnance").update({
         statut: statutSuivant,
         choix_patient: choix,
@@ -128,9 +156,17 @@ serve(async (req) => {
         opt_out: choix === "stop",
         date_reponse_patient: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }).eq("id", rappel.id);
+      }).in("id", ids);
       if (error) throw new Error(error.message);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}), ...(apresEscalade ? { apres_escalade: true } : {}) } });
+
+      for (const membre of membres) {
+        // "Sauvetage" après escalade (01/10/2026, audit) — le patient répond
+        // enfin lui-même après avoir été basculé en "à appeler" faute de
+        // réponse : évite un appel du pharmacien devenu inutile. Tracé dans
+        // le journal pour qu'il voie que ce cas s'est résolu tout seul.
+        const apresEscalade = membre.statut === "a_appeler";
+        await sb.from("rappels_evenements").insert({ rappel_id: membre.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}), ...(apresEscalade ? { apres_escalade: true } : {}), ...(rappel.groupe_id ? { groupe: true } : {}) } });
+      }
 
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }

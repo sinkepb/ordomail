@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, runRappelScan, runRelanceEtEscaladeScan } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -46,6 +46,71 @@ describe('buildRappelMessage', () => {
   });
 });
 
+describe('buildRappelMessageGroupe', () => {
+  it('mentionne le nombre d\'ordonnances, sans détail médecin/spécialité', () => {
+    const msg = buildRappelMessageGroupe('Jean', 'Dupont', 'https://ordomail.fr/?r=x', 'Pharmacie du Centre', 3);
+    expect(msg).toContain('Bonjour M/Mme Jean Dupont');
+    expect(msg).toContain('le renouvellement de 3 de vos ordonnances');
+    expect(msg).toContain('https://ordomail.fr/?r=x');
+  });
+});
+
+// @fix 03/10/2026 (retour pharmacien) — un patient avec plusieurs
+// ordonnances chroniques recevait un SMS par ordonnance ; regrouperParTelephone
+// est la fonction pure qui décide quels rappels dus partent ensemble.
+describe('regrouperParTelephone', () => {
+  it('regroupe deux rappels du même patient (même pharmacie, même téléphone)', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+      { id: 'r2', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+    ];
+    expect(regrouperParTelephone(rappels)).toEqual([rappels]);
+  });
+
+  it('deux écritures différentes du même numéro (+33 vs 0) sont regroupées', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '+33612345678' },
+      { id: 'r2', pharmacie_id: 'ph1', patient_telephone: '0612345678' },
+    ];
+    expect(regrouperParTelephone(rappels)).toEqual([rappels]);
+  });
+
+  it('ne regroupe pas des téléphones différents', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+      { id: 'r2', pharmacie_id: 'ph1', patient_telephone: '0600000002' },
+    ];
+    expect(regrouperParTelephone(rappels)).toEqual([[rappels[0]], [rappels[1]]]);
+  });
+
+  it('ne regroupe pas le même numéro entre deux pharmacies différentes', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+      { id: 'r2', pharmacie_id: 'ph2', patient_telephone: '0600000001' },
+    ];
+    expect(regrouperParTelephone(rappels)).toEqual([[rappels[0]], [rappels[1]]]);
+  });
+
+  it('un numéro fixe ("appel") n\'est jamais regroupé, même avec un autre rappel du même numéro', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '0600000001', mode_contact: 'appel' },
+      { id: 'r2', pharmacie_id: 'ph1', patient_telephone: '0600000001', mode_contact: 'sms' },
+    ];
+    expect(regrouperParTelephone(rappels)).toEqual([[rappels[0]], [rappels[1]]]);
+  });
+
+  it('trois rappels du même patient forment un seul groupe de 3', () => {
+    const rappels = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+      { id: 'r2', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+      { id: 'r3', pharmacie_id: 'ph1', patient_telephone: '0600000001' },
+    ];
+    const groupes = regrouperParTelephone(rappels);
+    expect(groupes).toHaveLength(1);
+    expect(groupes[0]).toHaveLength(3);
+  });
+});
+
 // Faux client Supabase minimal — reproduit uniquement les chaînes utilisées
 // par runRappelScan : .from(...).select().eq().eq().lte() (lecture, thenable)
 // et .from(...).update(...).eq(...) / .from(...).insert(...) (écriture).
@@ -64,8 +129,13 @@ function makeMockSupabase(dus: any[], opts: { updateError?: string } = {}) {
         lte() { return chain; },
         limit() { return chain; },
         update(payload: any) {
-          updates.push({ table, payload });
-          return { eq: () => Promise.resolve(opts.updateError ? { error: { message: opts.updateError } } : { error: null }) };
+          const entry = { table, payload, ids: [] as any[] };
+          updates.push(entry);
+          const res = (_col: string, val: any) => {
+            entry.ids = Array.isArray(val) ? val : [val];
+            return Promise.resolve(opts.updateError ? { error: { message: opts.updateError } } : { error: null });
+          };
+          return { eq: res, in: res };
         },
         insert(payload: any) {
           inserts.push({ table, payload });
@@ -126,6 +196,69 @@ describe('runRappelScan', () => {
     const result = await runRappelScan(sb, 'https://ordomail.fr');
 
     expect(result).toEqual({ scanned: 2, sent: 1, failed: 1, appeler: 0 });
+  });
+
+  // @fix 03/10/2026 (retour pharmacien) — plusieurs rappels dus le même jour
+  // pour le même patient partent en UN SEUL SMS, pas un par ordonnance.
+  it('regroupe 2 rappels du même patient en un seul SMS avec groupe_id partagé', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb, updates, inserts } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 2, sent: 2, failed: 0, appeler: 0 });
+    expect(sendSms).toHaveBeenCalledTimes(1); // un seul SMS pour les 2 rappels
+    const [, message] = vi.mocked(sendSms).mock.calls[0];
+    expect(message).toContain('le renouvellement de 2 de vos ordonnances');
+
+    // Le porteur (r1) reçoit le token ; l'autre (r2) non, mais les deux
+    // partagent le même groupe_id et passent "sms_envoye".
+    const majPorteur = updates.find((u) => u.ids.includes('r1') && u.payload.token);
+    expect(majPorteur?.payload).toMatchObject({ statut: 'sms_envoye' });
+    const majAutre = updates.find((u) => u.ids.includes('r2'));
+    expect(majAutre?.payload).toMatchObject({ statut: 'sms_envoye' });
+    expect(majAutre?.payload.token).toBeUndefined();
+    expect(majAutre?.payload.groupe_id).toBe(majPorteur?.payload.groupe_id);
+    expect(majPorteur?.payload.groupe_id).toBeTruthy();
+
+    const evenements = inserts.filter((i) => i.table === 'rappels_evenements');
+    expect(evenements).toHaveLength(2);
+    expect(evenements.every((e) => e.payload.meta?.groupe === true)).toBe(true);
+  });
+
+  it('un échec d\'envoi sur un groupe est partagé par tous ses membres', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', sms_echecs_consecutifs: 2, medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', sms_echecs_consecutifs: 2, medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: false, mocked: false, error: 'numéro invalide' });
+
+    const { sb, updates } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 2, sent: 0, failed: 2, appeler: 0 });
+    // 3e échec consécutif -> escalade "à appeler" pour les 2 membres d'un coup.
+    const maj = updates.find((u) => u.table === 'rappels_ordonnance');
+    expect(maj?.payload).toMatchObject({ statut: 'a_appeler', sms_echecs_consecutifs: 3 });
+    expect(maj?.ids.sort()).toEqual(['r1', 'r2']);
+  });
+
+  it('un numéro fixe n\'est jamais fusionné avec un envoi SMS du même patient', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', mode_contact: 'appel', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', mode_contact: 'sms', medecin_prescripteur: null, specialite: null, pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+
+    const { sb } = makeMockSupabase(dus);
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 2, sent: 1, failed: 0, appeler: 1 });
+    expect(sendSms).toHaveBeenCalledTimes(1);
   });
 
   it('aucun rappel dû : ne fait aucun appel SMS', async () => {

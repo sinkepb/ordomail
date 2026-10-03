@@ -12,6 +12,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendSms } from "./sms.ts";
 import { generateShortToken } from "./shortToken.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
+import { normaliserTelephone } from "./telephone.ts";
 
 // @fix 24/09/2026 (audit) — traitement séquentiel jusqu'ici (un SMS + 2
 // écritures par rappel dû, borné par le timeout de la fonction) ; c'est le
@@ -108,6 +109,186 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
   return `${entete}\n${pharmacieNom} vous informe que ${objet}.\nCliquez ici pour nous dire ce que vous souhaitez faire :\n${lien}`;
 }
 
+// Message groupé (03/10/2026, retour pharmacien) — un seul SMS pour
+// plusieurs rappels dus le même jour chez la même pharmacie pour le même
+// numéro, plutôt qu'un message par ordonnance. Volontairement sans le
+// détail médecin/spécialité de chaque item (longueur du SMS, facturation au
+// segment) — ce détail reste visible sur la page web derrière le lien.
+export function buildRappelMessageGroupe(prenom: string, nom: string, lien: string, pharmacieNom: string, nombreOrdonnances: number): string {
+  return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que le renouvellement de ${nombreOrdonnances} de vos ordonnances est prévu prochainement.\nCliquez ici pour nous dire ce que vous souhaitez faire :\n${lien}`;
+}
+
+// Regroupe les rappels dus par (pharmacie, numéro de téléphone) avant envoi
+// (03/10/2026, retour pharmacien — un patient avec plusieurs traitements
+// chroniques recevait jusqu'ici un SMS par ordonnance, et la pharmacie
+// autant de casiers de préparation séparés pour une seule visite). Un
+// numéro fixe ("appel") n'est jamais regroupé avec un envoi SMS : il suit
+// son propre chemin (statut a_appeler direct, sans lien), toujours traité
+// individuellement même si un autre rappel du même patient part par SMS.
+export function regrouperParTelephone<T extends { pharmacie_id: string; patient_telephone: string; mode_contact?: string | null }>(rappels: T[]): T[][] {
+  const index = new Map<string, T[]>();
+  const groupes: T[][] = [];
+  for (const r of rappels) {
+    if (r.mode_contact === "appel") { groupes.push([r]); continue; }
+    const cle = `${r.pharmacie_id}::${normaliserTelephone(r.patient_telephone)}`;
+    const existant = index.get(cle);
+    if (existant) { existant.push(r); continue; }
+    const nouveauGroupe: T[] = [r];
+    index.set(cle, nouveauGroupe);
+    groupes.push(nouveauGroupe);
+  }
+  return groupes;
+}
+
+type Outcome = "sent" | "failed" | "appeler";
+
+// Traitement d'un rappel seul (comportement historique, inchangé) — utilisé
+// aussi bien pour un rappel sans groupe que pour un groupe de taille 1.
+async function traiterRappelIndividuel(sb: SupabaseClient, appUrl: string, rappel: any): Promise<Outcome> {
+  // Patient sans mobile (30/09/2026, retour titulaire) — un numéro fixe ne
+  // recevra jamais le SMS : le rappel passe directement en "à appeler"
+  // (le pharmacien décroche lui-même), sans lien ni token à générer.
+  if (rappel.mode_contact === "appel") {
+    try {
+      // Erreurs d'écriture vérifiées (01/10/2026, audit) — Supabase-js ne
+      // lève pas d'exception sur un échec Postgrest, le try/catch seul ne
+      // suffit pas : sans ce throw explicite, une écriture en échec passait
+      // inaperçue (comptée "appeler" alors que rien n'a été persisté).
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "a_appeler",
+        updated_at: new Date().toISOString(),
+      }).eq("id", rappel.id);
+      if (updErr) throw new Error(updErr.message);
+      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler" });
+      if (insErr) throw new Error(insErr.message);
+      return "appeler";
+    } catch (e) {
+      console.error(`[rappel] échec (mode appel) pour ${rappel.id}:`, (e as Error).message);
+      return "failed";
+    }
+  }
+  try {
+    const newToken = generateShortToken();
+    const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
+    const lien = buildRappelLien(appUrl, newToken);
+    const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
+
+    const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
+
+    if (!result.success) {
+      // Retry + escalade (01/10/2026) — un échec isolé reste "en_attente"
+      // tel quel, ré-essayé tout seul au prochain passage (voir
+      // SCAN_BATCH_SIZE plus haut sur la fréquence). Au bout de
+      // SMS_ECHEC_MAX échecs D'AFFILÉE, probablement permanent (numéro
+      // invalide...) : plutôt que de continuer à retenter en silence,
+      // bascule en "à appeler" comme pour un numéro fixe.
+      const echecs = (rappel.sms_echecs_consecutifs || 0) + 1;
+      if (echecs >= SMS_ECHEC_MAX) {
+        const { error: updErr } = await sb.from("rappels_ordonnance").update({
+          statut: "a_appeler",
+          sms_echecs_consecutifs: echecs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", rappel.id);
+        if (updErr) throw new Error(updErr.message);
+        const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "echec_envoi", echecs } });
+        if (insErr) throw new Error(insErr.message);
+      } else {
+        const { error: updErr } = await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).eq("id", rappel.id);
+        if (updErr) throw new Error(updErr.message);
+        const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs } });
+        if (insErr) throw new Error(insErr.message);
+      }
+      return "failed";
+    }
+
+    // Écriture critique (01/10/2026, audit) — si CE update échoue après un
+    // SMS réellement envoyé, le patient reçoit un lien dont le token n'est
+    // jamais enregistré en base (inutilisable côté resolve-rappel) sans que
+    // rien ne le signale. Le throw fait retomber dans le catch ci-dessous :
+    // compté "failed" (donc visible), et le rappel reste "en_attente" pour
+    // être retenté au prochain passage plutôt que faussement marqué "sent".
+    const { error: updErr } = await sb.from("rappels_ordonnance").update({
+      statut: "sms_envoye",
+      token: newToken,
+      date_dernier_sms_envoye: new Date().toISOString(),
+      sms_echecs_consecutifs: 0,
+      updated_at: new Date().toISOString(),
+    }).eq("id", rappel.id);
+    if (updErr) throw new Error(updErr.message);
+    const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
+    if (insErr) throw new Error(insErr.message);
+    return "sent";
+  } catch (e) {
+    console.error(`[rappel] échec pour ${rappel.id}:`, (e as Error).message);
+    return "failed";
+  }
+}
+
+// Traitement d'un groupe de 2+ rappels (03/10/2026, retour pharmacien) — un
+// seul SMS pour tout le groupe, via le "porteur" (premier membre), dont le
+// token est le seul à être régénéré et envoyé dans le lien. Un échec
+// d'envoi est partagé par tout le groupe (même numéro, même raison
+// probable) plutôt que de ne pénaliser que le porteur — pas de retry "par
+// item" qui désynchroniserait le compteur d'échecs entre membres.
+async function traiterGroupeRappels(sb: SupabaseClient, appUrl: string, groupe: any[]): Promise<Outcome[]> {
+  const ids = groupe.map((r) => r.id);
+  try {
+    const porteur = groupe[0];
+    const newToken = generateShortToken();
+    const groupeId = crypto.randomUUID();
+    const pharmacieNom = (porteur as any).pharmacies?.nom || "votre pharmacie";
+    const lien = buildRappelLien(appUrl, newToken);
+    const message = buildRappelMessageGroupe(porteur.patient_prenom, porteur.patient_nom, lien, pharmacieNom, groupe.length);
+
+    const result = await sendSms(porteur.patient_telephone, message, pharmacieNom);
+
+    if (!result.success) {
+      const echecs = Math.max(...groupe.map((r) => r.sms_echecs_consecutifs || 0)) + 1;
+      if (echecs >= SMS_ECHEC_MAX) {
+        const { error: updErr } = await sb.from("rappels_ordonnance").update({
+          statut: "a_appeler", sms_echecs_consecutifs: echecs, updated_at: new Date().toISOString(),
+        }).in("id", ids);
+        if (updErr) throw new Error(updErr.message);
+        for (const id of ids) {
+          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: id, type: "a_appeler", meta: { motif: "echec_envoi", echecs, groupe: true } });
+          if (insErr) throw new Error(insErr.message);
+        }
+      } else {
+        const { error: updErr } = await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).in("id", ids);
+        if (updErr) throw new Error(updErr.message);
+        for (const id of ids) {
+          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs, groupe: true } });
+          if (insErr) throw new Error(insErr.message);
+        }
+      }
+      return groupe.map(() => "failed" as const);
+    }
+
+    const autresIds = ids.filter((id) => id !== porteur.id);
+    if (autresIds.length) {
+      const { error: updErrAutres } = await sb.from("rappels_ordonnance").update({
+        statut: "sms_envoye", groupe_id: groupeId, date_dernier_sms_envoye: new Date().toISOString(),
+        sms_echecs_consecutifs: 0, updated_at: new Date().toISOString(),
+      }).in("id", autresIds);
+      if (updErrAutres) throw new Error(updErrAutres.message);
+    }
+    const { error: updErrPorteur } = await sb.from("rappels_ordonnance").update({
+      statut: "sms_envoye", token: newToken, groupe_id: groupeId, date_dernier_sms_envoye: new Date().toISOString(),
+      sms_echecs_consecutifs: 0, updated_at: new Date().toISOString(),
+    }).eq("id", porteur.id);
+    if (updErrPorteur) throw new Error(updErrPorteur.message);
+
+    for (const id of ids) {
+      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: id, type: "sms_envoye", meta: { mocked: result.mocked, groupe: true, groupeTaille: groupe.length } });
+      if (insErr) throw new Error(insErr.message);
+    }
+    return groupe.map(() => "sent" as const);
+  } catch (e) {
+    console.error(`[rappel] échec groupe (${ids.join(",")}):`, (e as Error).message);
+    return groupe.map(() => "failed" as const);
+  }
+}
+
 export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
   const { data: dus, error } = await sb
     .from("rappels_ordonnance")
@@ -118,85 +299,12 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
     .limit(SCAN_BATCH_SIZE);
   if (error) throw new Error(error.message);
 
-  const outcomes = await mapWithConcurrency(dus || [], RAPPEL_SCAN_CONCURRENCY, async (rappel): Promise<"sent" | "failed" | "appeler"> => {
-    // Patient sans mobile (30/09/2026, retour titulaire) — un numéro fixe ne
-    // recevra jamais le SMS : le rappel passe directement en "à appeler"
-    // (le pharmacien décroche lui-même), sans lien ni token à générer.
-    if (rappel.mode_contact === "appel") {
-      try {
-        // Erreurs d'écriture vérifiées (01/10/2026, audit) — Supabase-js ne
-        // lève pas d'exception sur un échec Postgrest, le try/catch seul ne
-        // suffit pas : sans ce throw explicite, une écriture en échec passait
-        // inaperçue (comptée "appeler" alors que rien n'a été persisté).
-        const { error: updErr } = await sb.from("rappels_ordonnance").update({
-          statut: "a_appeler",
-          updated_at: new Date().toISOString(),
-        }).eq("id", rappel.id);
-        if (updErr) throw new Error(updErr.message);
-        const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler" });
-        if (insErr) throw new Error(insErr.message);
-        return "appeler";
-      } catch (e) {
-        console.error(`[rappel] échec (mode appel) pour ${rappel.id}:`, (e as Error).message);
-        return "failed";
-      }
-    }
-    try {
-      const newToken = generateShortToken();
-      const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const lien = buildRappelLien(appUrl, newToken);
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
-
-      const result = await sendSms(rappel.patient_telephone, message, pharmacieNom);
-
-      if (!result.success) {
-        // Retry + escalade (01/10/2026) — un échec isolé reste "en_attente"
-        // tel quel, ré-essayé tout seul au prochain passage (voir
-        // SCAN_BATCH_SIZE plus haut sur la fréquence). Au bout de
-        // SMS_ECHEC_MAX échecs D'AFFILÉE, probablement permanent (numéro
-        // invalide...) : plutôt que de continuer à retenter en silence,
-        // bascule en "à appeler" comme pour un numéro fixe.
-        const echecs = (rappel.sms_echecs_consecutifs || 0) + 1;
-        if (echecs >= SMS_ECHEC_MAX) {
-          const { error: updErr } = await sb.from("rappels_ordonnance").update({
-            statut: "a_appeler",
-            sms_echecs_consecutifs: echecs,
-            updated_at: new Date().toISOString(),
-          }).eq("id", rappel.id);
-          if (updErr) throw new Error(updErr.message);
-          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "a_appeler", meta: { motif: "echec_envoi", echecs } });
-          if (insErr) throw new Error(insErr.message);
-        } else {
-          const { error: updErr } = await sb.from("rappels_ordonnance").update({ sms_echecs_consecutifs: echecs }).eq("id", rappel.id);
-          if (updErr) throw new Error(updErr.message);
-          const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_echec", meta: { error: result.error || "inconnu", echecs } });
-          if (insErr) throw new Error(insErr.message);
-        }
-        return "failed";
-      }
-
-      // Écriture critique (01/10/2026, audit) — si CE update échoue après un
-      // SMS réellement envoyé, le patient reçoit un lien dont le token n'est
-      // jamais enregistré en base (inutilisable côté resolve-rappel) sans que
-      // rien ne le signale. Le throw fait retomber dans le catch ci-dessous :
-      // compté "failed" (donc visible), et le rappel reste "en_attente" pour
-      // être retenté au prochain passage plutôt que faussement marqué "sent".
-      const { error: updErr } = await sb.from("rappels_ordonnance").update({
-        statut: "sms_envoye",
-        token: newToken,
-        date_dernier_sms_envoye: new Date().toISOString(),
-        sms_echecs_consecutifs: 0,
-        updated_at: new Date().toISOString(),
-      }).eq("id", rappel.id);
-      if (updErr) throw new Error(updErr.message);
-      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: rappel.id, type: "sms_envoye", meta: { mocked: result.mocked } });
-      if (insErr) throw new Error(insErr.message);
-      return "sent";
-    } catch (e) {
-      console.error(`[rappel] échec pour ${rappel.id}:`, (e as Error).message);
-      return "failed";
-    }
+  const groupes = regrouperParTelephone(dus || []);
+  const outcomesParGroupe = await mapWithConcurrency(groupes, RAPPEL_SCAN_CONCURRENCY, async (groupe): Promise<Outcome[]> => {
+    if (groupe.length === 1) return [await traiterRappelIndividuel(sb, appUrl, groupe[0])];
+    return traiterGroupeRappels(sb, appUrl, groupe);
   });
+  const outcomes = outcomesParGroupe.flat();
 
   const sent = outcomes.filter((o) => o === "sent").length;
   const failed = outcomes.filter((o) => o === "failed").length;

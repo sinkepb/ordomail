@@ -156,7 +156,13 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setActionError("");
     try {
       const result = await preparerRappel(rappel.id);
-      setRappels(prev => prev.map(r => r.id === rappel.id ? { ...r, statut: "prepare", case_code: result?.caseCode || null } : r));
+      // Rappel groupé (03/10/2026) — le serveur attribue le même casier à
+      // tous les membres du groupe "à traiter" ; mise à jour optimiste
+      // alignée, sinon seule la carte cliquée afficherait le casier jusqu'au
+      // prochain rechargement complet de la liste.
+      setRappels(prev => prev.map(r => (r.id === rappel.id || (rappel.groupe_id && r.groupe_id === rappel.groupe_id && r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel")))
+        ? { ...r, statut: "prepare", case_code: result?.caseCode || null }
+        : r));
       setPreparingId(null);
       return true;
     } catch (e) {
@@ -475,6 +481,19 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
                 <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}{[r.specialite, r.medecin_prescripteur].filter(Boolean).length > 0 ? ` · ${[r.specialite, r.medecin_prescripteur].filter(Boolean).join(", ")}` : ""}</div>
+                {/* Rappel groupé (03/10/2026, retour pharmacien) — plusieurs
+                    ordonnances du même patient envoyées/traitées ensemble
+                    (voir rappelLogic.ts:regrouperParTelephone) : un seul SMS
+                    et un seul casier côté pharmacien, signalé ici pour que
+                    l'équipe sache qu'il n'y a qu'une seule visite à prévoir. */}
+                {r.groupe_id && (() => {
+                  const autres = rappels.filter(x => x.groupe_id === r.groupe_id && x.id !== r.id).length;
+                  return autres > 0 && (
+                    <div style={{ fontSize: 11.5, color: "#7c3aed", marginTop: 2, fontWeight: 700 }}>
+                      👥 Groupé avec {autres} autre{autres > 1 ? "s" : ""} ordonnance{autres > 1 ? "s" : ""} du même patient
+                    </div>
+                  );
+                })()}
                 {r.statut === "en_attente" && r.date_prochaine_relance && (
                   <div style={{ fontSize: 12, color: "#4338ca", marginTop: 2 }}>
                     Rappel prévu le {new Date(r.date_prochaine_relance).toLocaleDateString("fr-FR")}

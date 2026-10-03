@@ -961,7 +961,7 @@ Deno.serve(async (req) => {
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient").eq("id", rappelId).maybeSingle();
+      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient, groupe_id").eq("id", rappelId).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
@@ -971,6 +971,23 @@ Deno.serve(async (req) => {
       if (existing.choix_patient !== "tout_renouveler" && existing.choix_patient !== "partiel") {
         return new Response(JSON.stringify({ error: "Seuls les renouvellements (total ou partiel) passent par l'étape préparation" }), { status: 409, headers: CORS });
       }
+
+      // Rappel groupé (03/10/2026, retour pharmacien) — un seul casier pour
+      // toutes les ordonnances du groupe prêtes à préparer, pas un par
+      // ordonnance : c'est une seule visite/commande pour le patient. Un
+      // membre du groupe pas encore "à traiter" (réponse différente,
+      // traitement décalé) n'est pas concerné, il sera préparé séparément.
+      let idsAPreparer = [rappelId];
+      if (existing.groupe_id) {
+        const { data: membresGroupe } = await sb
+          .from("rappels_ordonnance")
+          .select("id")
+          .eq("groupe_id", existing.groupe_id)
+          .eq("statut", "a_traiter")
+          .in("choix_patient", ["tout_renouveler", "partiel"]);
+        if (membresGroupe?.length) idsAPreparer = membresGroupe.map((m) => m.id);
+      }
+
       // Numéro de casier : incrément atomique et circulaire (0-99) côté DB —
       // jamais un tirage aléatoire, pour répartir équitablement l'usage des
       // 100 casiers physiques (voir increment_rappel_case_compteur).
@@ -988,10 +1005,12 @@ Deno.serve(async (req) => {
         case_code: caseCode,
         date_preparee: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }).eq("id", rappelId);
+      }).in("id", idsAPreparer);
       if (preparerError) throw new Error(preparerError.message);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "prepare", meta: { caseCode } });
-      return new Response(JSON.stringify({ data: { success: true, caseCode } }), { headers: CORS });
+      for (const id of idsAPreparer) {
+        await sb.from("rappels_evenements").insert({ rappel_id: id, type: "prepare", meta: { caseCode, ...(idsAPreparer.length > 1 ? { groupe: true } : {}) } });
+      }
+      return new Response(JSON.stringify({ data: { success: true, caseCode, nombreOrdonnances: idsAPreparer.length } }), { headers: CORS });
     }
 
     if (resource === "rappels_traiter") {

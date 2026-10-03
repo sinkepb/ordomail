@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estNumeroFixe } from './telephone.ts';
+import { estNumeroFixe, normaliserTelephone } from './telephone.ts';
 
 describe('estNumeroFixe', () => {
   it('reconnaît les mobiles (06/07) comme non-fixes', () => {
@@ -28,5 +28,24 @@ describe('estNumeroFixe', () => {
 
   it('numéro vide ou invalide : traité comme non-fixe par défaut (repli sur le SMS)', () => {
     expect(estNumeroFixe('')).toBe(false);
+  });
+});
+
+// @fix 03/10/2026 — regroupement des rappels par patient (voir
+// rappelLogic.ts:regrouperParTelephone) : deux écritures du même numéro
+// doivent produire la même clé.
+describe('normaliserTelephone', () => {
+  it('ramène le format +33 à la forme 0X', () => {
+    expect(normaliserTelephone('+33612345678')).toBe('0612345678');
+  });
+
+  it('retire espaces/points/tirets', () => {
+    expect(normaliserTelephone('06 12 34 56 78')).toBe('0612345678');
+    expect(normaliserTelephone('06.12.34.56.78')).toBe('0612345678');
+    expect(normaliserTelephone('06-12-34-56-78')).toBe('0612345678');
+  });
+
+  it('les deux écritures du même numéro produisent la même clé', () => {
+    expect(normaliserTelephone('+33 6 12 34 56 78')).toBe(normaliserTelephone('06.12.34.56.78'));
   });
 });
