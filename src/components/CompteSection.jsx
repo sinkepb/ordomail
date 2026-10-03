@@ -6,7 +6,7 @@ import { ACCENT_PRESETS } from "../lib/utils.js";
 import { openInvoicePDF } from "../lib/print.jsx";
 import { Btn, Input } from "./ui.jsx";
 import { PlanSwitcherModal } from "./UpgradeModal.jsx";
-import { isDemoMode, getSupabaseClient, fetchFactures, fetchAbonnement } from "../supabase.js";
+import { isDemoMode, getSupabaseClient, fetchFactures, fetchAbonnement, demanderSuppressionCompte } from "../supabase.js";
 
 function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   nom, onNomChange, adresse, onAdresseChange, siret, onSiretChange, couleur, onCouleurChange,
@@ -27,6 +27,25 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
   // change-plan/index.ts) — pas besoin d'un endpoint dédié.
   const [cancelingDowngrade,setCancelingDowngrade]=useState(false);
   const [cancelErr,setCancelErr]=useState("");
+  // Demande de suppression de compte (03/10/2026, retour titulaire — le
+  // bouton n'était relié à rien) — n'efface rien directement, enregistre
+  // juste la demande pour l'équipe OrdoMail (voir secure-data:
+  // demande_suppression_compte et son commentaire pour le pourquoi).
+  const [confirmingDelete,setConfirmingDelete]=useState(false);
+  const [deleteSending,setDeleteSending]=useState(false);
+  const [deleteSent,setDeleteSent]=useState(false);
+  const [deleteErr,setDeleteErr]=useState("");
+  async function handleConfirmDeleteRequest() {
+    setDeleteSending(true); setDeleteErr("");
+    try {
+      await demanderSuppressionCompte();
+      setDeleteSent(true);
+      setConfirmingDelete(false);
+    } catch(e) {
+      setDeleteErr(e.message || "Erreur lors de l'envoi de la demande");
+    }
+    setDeleteSending(false);
+  }
   async function cancelPendingDowngrade() {
     setCancelingDowngrade(true); setCancelErr("");
     try {
@@ -464,9 +483,36 @@ function CompteSection({ pharmacie, postes, planInfo, onUpgrade,
       <div style={{background:"#fff",borderRadius:14,padding:20,border:"1px solid #fee2e2"}}>
         <div style={{fontWeight:700,fontSize:14,color:"#dc2626",marginBottom:10}}>⚠️ Zone de danger</div>
         <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>La suppression est définitive. Les données sont conservées 90 jours.</div>
-        <Btn variant="danger" small>🗑 Supprimer mon compte</Btn>
+        {deleteSent ? (
+          <div style={{fontSize:13,color:"#15803d",fontWeight:600,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 12px"}}>
+            ✅ Demande envoyée — notre équipe revient vers vous pour finaliser la suppression.
+          </div>
+        ) : (
+          <Btn variant="danger" small onClick={()=>{setDeleteErr("");setConfirmingDelete(true);}}>🗑 Supprimer mon compte</Btn>
+        )}
       </div>
       {showPlanSwitcher&&<PlanSwitcherModal pharmacie={pharmacie} postes={postes||[]} onConfirm={onUpgrade} onClose={()=>setShowPlanSwitcher(false)}/>}
+      {confirmingDelete && (
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,47,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>!deleteSending&&setConfirmingDelete(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,width:"100%",maxWidth:400,boxShadow:"0 12px 40px rgba(0,0,0,0.25)"}}>
+            <div style={{fontWeight:800,fontSize:16,marginBottom:8}}>⚠️ Demander la suppression du compte ?</div>
+            <div style={{fontSize:13,color:"#64748b",marginBottom:16,lineHeight:1.5}}>
+              Votre demande sera transmise à l'équipe OrdoMail, qui vous recontactera pour finaliser la suppression (résiliation de l'abonnement si nécessaire). Rien n'est supprimé immédiatement.
+            </div>
+            {deleteErr && <div style={{color:"#dc2626",fontSize:13,marginBottom:12}}>{deleteErr}</div>}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setConfirmingDelete(false)} disabled={deleteSending}
+                style={{flex:1,padding:"10px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"#fff",color:"#475569",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                Annuler
+              </button>
+              <button onClick={handleConfirmDeleteRequest} disabled={deleteSending}
+                style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:"#dc2626",color:"#fff",fontWeight:700,fontSize:14,cursor:deleteSending?"default":"pointer",fontFamily:"inherit",opacity:deleteSending?0.7:1}}>
+                {deleteSending?"…":"Confirmer la demande"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
