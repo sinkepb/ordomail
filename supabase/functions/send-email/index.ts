@@ -63,10 +63,18 @@ serve(async (req) => {
   console.log("[send-email] code patient:", maskCode(codePatient));
 
   // ── 2. Identifier la pharmacie par email_reception ──────────────────────────
+  // @fix 03/10/2026 — incident prod (aucun email reçu, quelle que soit la
+  // pharmacie) : toEmailClean est toujours en minuscules (extractEmail()
+  // ci-dessus), mais email_reception est généré avec des majuscules dans son
+  // code à 4 caractères (CODE_CHARS de register-pharmacie, et le backfill
+  // 20260809_backfill_email_reception.sql fait pareil) — un .eq() sensible à
+  // la casse ne matchait donc quasiment jamais. .ilike() corrige toutes les
+  // pharmacies existantes sans toucher aux données (toEmailClean ne contient
+  // aucun caractère % ou _ pouvant agir comme joker involontaire).
   const { data: ph } = await supabase
     .from("pharmacies")
     .select("id, nom")
-    .eq("email_reception", toEmailClean)
+    .ilike("email_reception", toEmailClean)
     .single();
 
   if (!ph) {

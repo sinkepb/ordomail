@@ -59,12 +59,18 @@ Deno.serve(async (req) => {
     // Générer le code vendeur (6 chiffres unique)
     const codeVendeur = String(100000 + Math.floor(Math.random() * 900000));
 
-    // email_slug : code court "pharmacie-XXXX" (4 caractères alphanumériques), PAS dérivé
+    // email_slug : code court "pharmacie-xxxx" (4 caractères alphanumériques), PAS dérivé
     // du nom — deux pharmacies au nom identique ou proche (ex: deux officines "Pharmacie
     // Centrale" dans des villes différentes) auraient sinon produit le même slug et donc
     // violé la contrainte UNIQUE sur email_reception à l'inscription de la seconde. Le code
     // court élimine aussi la fuite du nom de la pharmacie dans une adresse email publique.
-    const CODE_CHARS = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // sans I/O (confusion avec 1/0)
+    // @fix 03/10/2026 (incident prod) — généré EN MINUSCULE : send-email
+    // compare l'adresse reçue (toujours passée en minuscules, Postmark/RFC
+    // 5321 ne garantit pas la casse d'origine) à cette valeur. Un alphabet
+    // majuscule ici cassait silencieusement la réception pour quasiment
+    // toutes les pharmacies — voir send-email/index.ts pour le .ilike() qui
+    // couvre déjà les comptes existants générés avant ce correctif.
+    const CODE_CHARS = "0123456789abcdefghjklmnpqrstuvwxyz"; // sans i/o (confusion avec 1/0)
     function generateEmailCode() {
       const arr = new Uint8Array(4);
       crypto.getRandomValues(arr);
