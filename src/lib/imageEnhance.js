@@ -123,3 +123,49 @@ export async function prepareScannedImage(file) {
   const cropped = await autoCropDocument(file);
   return enhanceContrastAndSharpness(cropped || file);
 }
+
+// Détection de flou — variance du Laplacien (02/10/2026, retour pharmacien) :
+// technique standard et rapide (quelques ms), ne nécessite aucune dépendance.
+// Une image nette a des contours marqués (différences de luminance fortes
+// entre pixels voisins, donc variance élevée) ; une image floue les a lissés
+// (variance faible). Seuil choisi empiriquement, volontairement conservateur
+// (ne flague que du flou net) — jamais bloquant en soi, voir PatientPage.jsx
+// où ce score sert uniquement à proposer, pas à empêcher, de reprendre la photo.
+const BLUR_WORK_DIMENSION = 600;
+export const BLUR_VARIANCE_THRESHOLD = 60;
+
+/** Variance du Laplacien de `file`, ou `null` si non applicable/échec. Plus
+ * la valeur est basse, plus l'image est probablement floue. */
+export async function computeBlurScore(file) {
+  if (!file || !ENHANCEABLE_TYPES.has(file.type)) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, BLUR_WORK_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const gray = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      gray[p] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    }
+    let sum = 0, sumSq = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        const lap = gray[idx - 1] + gray[idx + 1] + gray[idx - w] + gray[idx + w] - 4 * gray[idx];
+        sum += lap; sumSq += lap * lap; n++;
+      }
+    }
+    const mean = sum / n;
+    return sumSq / n - mean * mean;
+  } catch (e) {
+    console.error("[computeBlurScore]", e?.message || e);
+    return null;
+  }
+}

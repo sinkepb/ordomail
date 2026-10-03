@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { compressImageFile } from "../lib/imageCompress.js";
-import { prepareScannedImage, fileToDataUrl } from "../lib/imageEnhance.js";
+import { prepareScannedImage, fileToDataUrl, computeBlurScore, BLUR_VARIANCE_THRESHOLD } from "../lib/imageEnhance.js";
 import { Input } from "../components/ui.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
 
@@ -1306,25 +1306,57 @@ function PatientPage({ pharmacie, onBack }) {
   function handleFiles(selectedFiles) {
     const arr = Array.from(selectedFiles);
     const newFiles = arr.map(f => ({
+      id: `${Date.now()}-${Math.random()}`,
       file: f,
       name: f.name,
       type: f.type,
       dataUrl: null,
       preview: null,
+      // Lisibilité (02/10/2026, retour pharmacien) — analysée dès l'ajout de
+      // la photo, pas seulement à l'envoi : le patient peut reprendre une
+      // photo avant de soumettre. scanFile/extracted mis en cache ici sont
+      // réutilisés tels quels par sendOne (handleSubmit) pour ne jamais
+      // relancer le recadrage/OCR une seconde fois.
+      checking: true,
+      warning: null,
+      scanFile: null,
+      extracted: null,
     }));
-    // Lire les previews
-    newFiles.forEach((item, idx) => {
+    setFiles(prev => [...prev, ...newFiles]);
+
+    newFiles.forEach(item => {
       const r = new FileReader();
-      r.onload = e => {
-        setFiles(prev => prev.map((x, i) =>
-          i === prev.length - newFiles.length + idx
-            ? { ...x, dataUrl: e.target.result }
-            : x
-        ));
+      r.onload = async e => {
+        const rawDataUrl = e.target.result;
+        setFiles(prev => prev.map(x => x.id === item.id ? { ...x, dataUrl: rawDataUrl } : x));
+
+        try {
+          const scanFile = await prepareScannedImage(item.file);
+          const scanDataUrl = scanFile === item.file ? rawDataUrl : await fileToDataUrl(scanFile);
+          const base64 = scanDataUrl?.split(",")[1] || "";
+          const [blurScore, extracted] = await Promise.all([
+            computeBlurScore(scanFile),
+            extractFromFile(base64, scanFile.type, { fallbackName: nom || null }),
+          ]);
+          const flou = blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD;
+          // _confidence === 0 avec _ocrSuccess=false peut aussi signifier "OCR
+          // indisponible" (voir ocr.js), pas forcément une photo illisible —
+          // on ne prévient le patient que si l'OCR a vraiment tourné et a eu
+          // du mal (confidence > 0 mais insuffisante pour réussir).
+          const confianceFaible = extracted && !extracted._ocrSuccess && (extracted._confidence || 0) > 0;
+          const warning = flou ? "Cette photo semble floue."
+            : confianceFaible ? "Le texte de cette photo semble difficile à lire."
+            : null;
+          setFiles(prev => prev.map(x => x.id === item.id
+            ? { ...x, dataUrl: scanDataUrl, scanFile, extracted, checking: false, warning }
+            : x));
+        } catch (err) {
+          console.error("[handleFiles] analyse lisibilité", err?.message || err);
+          setFiles(prev => prev.map(x => x.id === item.id ? { ...x, checking: false } : x));
+        }
       };
       r.readAsDataURL(item.file);
     });
-    setFiles(prev => [...prev, ...newFiles]);
   }
 
   function removeFile(idx) {
@@ -1369,14 +1401,16 @@ function PatientPage({ pharmacie, onBack }) {
 
     // Préparer tous les envois en parallèle
     async function sendOne(item) {
-      // Recadrage + contraste/netteté AVANT l'OCR (02/10/2026, retour
-      // pharmacien) — voir imageEnhance.js. item.dataUrl (preview lue à
-      // l'ajout du fichier) est la version BRUTE : on ne la réutilise que si
-      // le traitement n'a rien changé (PDF/HEIC, ou traitement sans effet).
-      const scanFile  = await prepareScannedImage(item.file);
-      const dataUrl   = scanFile === item.file ? item.dataUrl : await fileToDataUrl(scanFile);
+      // Recadrage + contraste/netteté + OCR déjà calculés et mis en cache
+      // sur l'item dès son ajout (voir handleFiles) dans l'immense majorité
+      // des cas — jamais relancés ici. Le repli ci-dessous ne sert que si
+      // l'envoi est déclenché avant la fin de cette analyse en arrière-plan.
+      const scanFile  = item.scanFile || await prepareScannedImage(item.file);
+      const dataUrl   = item.scanFile ? item.dataUrl
+        : scanFile === item.file ? item.dataUrl
+        : await fileToDataUrl(scanFile);
       const base64    = dataUrl?.split(",")[1] || "";
-      const extracted = await extractFromFile(base64, scanFile.type, { fallbackName: nom || null });
+      const extracted = item.extracted || await extractFromFile(base64, scanFile.type, { fallbackName: nom || null });
       const ext       = item.name.split(".").pop().toLowerCase();
 
       if (isDemoMode) {
@@ -1526,10 +1560,21 @@ function PatientPage({ pharmacie, onBack }) {
           {files.length > 0 && (
             <div style={{ padding:"10px 14px 0", display:"flex", flexDirection:"column", gap:6 }}>
               {files.map((item, idx) => (
-                <div key={idx} style={{ display:"flex", alignItems:"center", gap:8, background:"#f8faff", borderRadius:8, padding:"8px 10px", border:"1px solid #e0e7ff" }}>
-                  <span style={{ fontSize:16 }}>{item.type === "application/pdf" ? "📄" : "🖼️"}</span>
-                  <span style={{ flex:1, fontSize:12, color:"#1a1a1a", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.name}</span>
-                  <button onClick={()=>removeFile(idx)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:16, padding:"0 2px", flexShrink:0 }}>×</button>
+                <div key={item.id ?? idx} style={{ background: item.warning ? "#fff7ed" : "#f8faff", borderRadius:8, border: `1px solid ${item.warning ? "#fed7aa" : "#e0e7ff"}` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px" }}>
+                    <span style={{ fontSize:16 }}>{item.type === "application/pdf" ? "📄" : "🖼️"}</span>
+                    <span style={{ flex:1, fontSize:12, color:"#1a1a1a", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.name}</span>
+                    {item.checking && <span style={{ fontSize:11, color:"#94a3b8" }}>Analyse…</span>}
+                    <button onClick={()=>removeFile(idx)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:16, padding:"0 2px", flexShrink:0 }}>×</button>
+                  </div>
+                  {/* Avertissement de lisibilité (02/10/2026, retour pharmacien)
+                      — jamais bloquant : le patient choisit de reprendre la
+                      photo (retirer + rajouter) ou de l'envoyer quand même. */}
+                  {item.warning && (
+                    <div style={{ display:"flex", alignItems:"center", gap:6, padding:"0 10px 8px", fontSize:11.5, color:"#9a3412" }}>
+                      ⚠️ {item.warning} Vous pouvez reprendre la photo ou l'envoyer quand même.
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
