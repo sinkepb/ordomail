@@ -290,7 +290,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
           )}
           {!(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && (
             <div style={{ display: "flex", gap: 4 }}>
-              <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+              <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(f, ev.target.result); r.readAsDataURL(f); }}/>
               {ordo.source === "email" && (
                 <button onClick={() => { const url = generateOrdoPDF(ordo); window.open(url, "_blank", "noopener,noreferrer"); }}

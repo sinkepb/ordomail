@@ -693,8 +693,8 @@ function RappelOrdonnanceUpload({ onCancel, onUpload, uploading, error }) {
         <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "32px 16px", borderRadius: 12, border: "2px dashed #c7d2fe", cursor: uploading ? "wait" : "pointer", background: "#f8fafc", marginBottom: 12 }}>
           <span style={{ fontSize: 32 }}>{uploading ? "⏳" : "📎"}</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: "#1a3a6e" }}>{uploading ? "Envoi en cours…" : "Choisir un fichier"}</span>
-          <span style={{ fontSize: 11, color: "#94a3b8" }}>JPG, PNG ou PDF — 15 Mo maximum</span>
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} style={{ display: "none" }}
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>JPG, PNG, PDF ou TIFF — 15 Mo maximum</span>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif" disabled={uploading} style={{ display: "none" }}
             onChange={e => {
               const f = e.target.files?.[0];
               e.target.value = "";

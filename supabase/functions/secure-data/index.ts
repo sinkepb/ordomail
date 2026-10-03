@@ -25,6 +25,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
+import { isTiff, convertTiffToPng } from "../_shared/tiffConvert.ts";
 import { signToken } from "../_shared/jwt.ts";
 import { planHasFeature } from "../_shared/planFeatures.ts";
 import { reportAlert } from "../_shared/alert.ts";
@@ -326,6 +327,21 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: checkFile.error }), { status: 400, headers: CORS });
       }
 
+      // TIFF → PNG au dépôt (03/10/2026, retour pharmacien — LGO qui exporte
+      // en .tiff) — voir _shared/tiffConvert.ts. Jamais de .tiff stocké tel
+      // quel : aucun navigateur ne sait l'afficher (OrdonnanceViewerModal,
+      // impression, OCR en dépendent tous).
+      let uploadBytes = bytes, uploadFileType = fileType, uploadFileName = fileName;
+      if (isTiff(fileName, fileType)) {
+        try {
+          uploadBytes = convertTiffToPng(bytes);
+          uploadFileType = "image/png";
+          uploadFileName = fileName.replace(/\.\w+$/, "") + ".png";
+        } catch (e) {
+          return new Response(JSON.stringify({ error: (e as Error).message || "Fichier TIFF illisible" }), { status: 400, headers: CORS });
+        }
+      }
+
       const { data: ordo, error: insertError } = await sb.from("ordonnances").insert({
         pharmacie_id: pharmacieId,
         source: "upload",
@@ -339,16 +355,16 @@ Deno.serve(async (req) => {
       }).select().single();
       if (insertError) throw new Error(insertError.message);
 
-      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      const ext  = uploadFileName.split(".").pop()?.toLowerCase() || "jpg";
       const path = `${pharmacieId}/${ordo.id}/ordonnance.${ext}`;
-      const { error: upErr } = await sb.storage.from("ordonnances-files").upload(path, bytes, { contentType: fileType, upsert: true });
+      const { error: upErr } = await sb.storage.from("ordonnances-files").upload(path, uploadBytes, { contentType: uploadFileType, upsert: true });
       if (upErr) throw new Error(upErr.message);
 
       await sb.from("ordonnances").update({
         fichier_url:    path,
-        fichier_nom:    fileName,
+        fichier_nom:    uploadFileName,
         fichier_type:   ext === "pdf" ? "pdf" : "image",
-        fichier_taille: `${Math.round(bytes.length / 1024)} Ko`,
+        fichier_taille: `${Math.round(uploadBytes.length / 1024)} Ko`,
       }).eq("id", ordo.id);
 
       const { data: signed } = await sb.storage.from("ordonnances-files").createSignedUrl(path, 3600);
@@ -405,19 +421,33 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
       }
 
-      const ext  = fileName.split(".").pop()?.toLowerCase() || "jpg";
+      // TIFF → PNG au dépôt (03/10/2026, retour pharmacien) — voir
+      // _shared/tiffConvert.ts et le commentaire équivalent sur
+      // ordonnances_create ci-dessus.
+      let uploadBytes = bytes, uploadFileType = fileType, uploadFileName = fileName;
+      if (isTiff(fileName, fileType)) {
+        try {
+          uploadBytes = convertTiffToPng(bytes);
+          uploadFileType = "image/png";
+          uploadFileName = fileName.replace(/\.\w+$/, "") + ".png";
+        } catch (e) {
+          return new Response(JSON.stringify({ error: (e as Error).message || "Fichier TIFF illisible" }), { status: 400, headers: CORS });
+        }
+      }
+
+      const ext  = uploadFileName.split(".").pop()?.toLowerCase() || "jpg";
       const path = `${pharmacieId}/${ordoId}/ordonnance.${ext}`;
 
       const { error: upErr } = await sb.storage
         .from("ordonnances-files")
-        .upload(path, bytes, { contentType: fileType, upsert: true });
+        .upload(path, uploadBytes, { contentType: uploadFileType, upsert: true });
       if (upErr) throw new Error(upErr.message);
 
       await sb.from("ordonnances").update({
         fichier_url:    path,
-        fichier_nom:    fileName,
+        fichier_nom:    uploadFileName,
         fichier_type:   ext === "pdf" ? "pdf" : "image",
-        fichier_taille: `${Math.round(bytes.length / 1024)} Ko`,
+        fichier_taille: `${Math.round(uploadBytes.length / 1024)} Ko`,
       }).eq("id", ordoId);
 
       const { data: signed } = await sb.storage
@@ -1355,6 +1385,41 @@ Deno.serve(async (req) => {
       }
       const conso = await getSmsConsommation(sb, pharmacieId);
       return new Response(JSON.stringify({ data: conso }), { headers: CORS });
+    }
+
+    // Demande de suppression de compte (03/10/2026, retour titulaire — le
+    // bouton "Supprimer mon compte" de CompteSection.jsx n'était relié à
+    // rien) — volontairement PAS une suppression immédiate : contrairement à
+    // admin_delete_pharmacie (secure-data-admin, réservé à l'équipe OrdoMail,
+    // qui vérifie l'abonnement Stripe et fait la cascade réelle), ceci
+    // enregistre juste la demande pour qu'un humain la traite — une
+    // suppression de compte potentiellement avec abonnement actif ne doit
+    // pas partir d'un clic sans supervision. Réservé au titulaire, jamais
+    // un poste vendeur (voir canAdmin côté client, mais revérifié ici :
+    // ne jamais faire confiance au seul gating de l'interface).
+    if (resource === "demande_suppression_compte") {
+      if (!pharmacieId || vendeurSub) {
+        return new Response(JSON.stringify({ error: "Réservé au titulaire" }), { status: 403, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies").select("nom, email, plan, plan_status").eq("id", pharmacieId).maybeSingle();
+      if (!ph) {
+        return new Response(JSON.stringify({ error: "Pharmacie introuvable" }), { status: 404, headers: CORS });
+      }
+      // Idempotence — un double clic ou un rechargement de page ne doit pas
+      // créer une seconde alerte pour la même pharmacie tant que la première
+      // n'a pas été traitée (même pattern que facturer-depassement-sms).
+      const { data: dejaDemande } = await sb.from("alerts")
+        .select("id").eq("source", "demande-suppression-compte").eq("resolved", false)
+        .contains("meta", { pharmacieId }).limit(1);
+      if (!dejaDemande || dejaDemande.length === 0) {
+        await reportAlert(sb, {
+          source: "demande-suppression-compte",
+          severity: "critical",
+          message: `Demande de suppression de compte — ${ph.nom}`,
+          meta: { pharmacieId, nom: ph.nom, email: ph.email, plan: ph.plan, plan_status: ph.plan_status },
+        });
+      }
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: `Ressource inconnue: ${resource}` }),

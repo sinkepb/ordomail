@@ -10,6 +10,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isValidPatientCode, validateFile } from "../_shared/upload-validation.ts";
+import { isTiff, convertTiffToPng } from "../_shared/tiffConvert.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
@@ -106,21 +107,42 @@ serve(async (req) => {
 
     // 4. Uploader le fichier si présent
     if (file && file.size > 0) {
-      const ext  = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const path = `${pharmacie_id}/${ordo.id}/ordonnance.${ext}`;
-      const buf  = await file.arrayBuffer();
+      let uploadBuf: Uint8Array | ArrayBuffer = await file.arrayBuffer();
+      let uploadFileType = file.type;
+      let uploadFileName = file.name;
 
-      const { error: upErr } = await sb.storage
-        .from("ordonnances-files")
-        .upload(path, buf, { contentType: file.type, upsert: true });
+      // TIFF → PNG au dépôt (03/10/2026, retour pharmacien) — voir
+      // _shared/tiffConvert.ts. Un TIFF corrompu ne doit pas faire échouer
+      // tout le dépôt (le patient a déjà son code) : juste ne pas attacher
+      // le fichier, comme le cas upErr existant juste en dessous.
+      if (isTiff(file.name, file.type)) {
+        try {
+          uploadBuf = convertTiffToPng(new Uint8Array(uploadBuf as ArrayBuffer));
+          uploadFileType = "image/png";
+          uploadFileName = file.name.replace(/\.\w+$/, "") + ".png";
+        } catch (e) {
+          console.error("[submit-ordonnance] TIFF illisible:", (e as Error).message);
+          uploadBuf = null as unknown as ArrayBuffer;
+        }
+      }
 
-      if (!upErr) {
-        await sb.from("ordonnances").update({
-          fichier_url:    path,
-          fichier_nom:    file.name,
-          fichier_type:   ext === "pdf" ? "pdf" : "image",
-          fichier_taille: `${Math.round(file.size / 1024)} Ko`,
-        }).eq("id", ordo.id);
+      if (uploadBuf) {
+        const ext  = uploadFileName.split(".").pop()?.toLowerCase() || "jpg";
+        const path = `${pharmacie_id}/${ordo.id}/ordonnance.${ext}`;
+
+        const { error: upErr } = await sb.storage
+          .from("ordonnances-files")
+          .upload(path, uploadBuf, { contentType: uploadFileType, upsert: true });
+
+        if (!upErr) {
+          const byteLength = (uploadBuf as ArrayBuffer | Uint8Array).byteLength;
+          await sb.from("ordonnances").update({
+            fichier_url:    path,
+            fichier_nom:    uploadFileName,
+            fichier_type:   ext === "pdf" ? "pdf" : "image",
+            fichier_taille: `${Math.round(byteLength / 1024)} Ko`,
+          }).eq("id", ordo.id);
+        }
       }
     }
 
