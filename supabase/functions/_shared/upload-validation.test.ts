@@ -39,6 +39,19 @@ describe("validateFile", () => {
     expect(result.ok).toBe(true);
   });
 
+  // @fix 03/10/2026 (retour pharmacien — LGO qui exporte en .tiff) — accepté
+  // en entrée uniquement, converti en PNG au dépôt avant stockage (voir
+  // _shared/tiffConvert.ts), jamais stocké tel quel.
+  it("accepte un TIFF (.tiff) sous la limite de taille", () => {
+    const result = validateFile({ name: "ordo.tiff", type: "image/tiff", size: 1024 });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepte un TIFF (.tif, MIME x-tiff)", () => {
+    const result = validateFile({ name: "ordo.tif", type: "image/x-tiff", size: 1024 });
+    expect(result.ok).toBe(true);
+  });
+
   it("rejette un fichier dépassant 15 Mo", () => {
     const result = validateFile({ name: "ordo.jpg", type: "image/jpeg", size: MAX_FILE_SIZE_BYTES + 1 });
     expect(result.ok).toBe(false);

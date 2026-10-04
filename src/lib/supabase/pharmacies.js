@@ -120,3 +120,12 @@ export async function updateTitulaire(nom) {
   if (error) throw error;
   return { nom };
 }
+
+// Demande de suppression de compte (03/10/2026, retour titulaire) — enregistre
+// la demande pour traitement par l'équipe OrdoMail (voir secure-data:
+// demande_suppression_compte), ne supprime rien directement : un abonnement
+// actif ou des données à conserver ne doivent pas partir d'un clic seul.
+export async function demanderSuppressionCompte() {
+  if (IS_DEMO) return { success: true };
+  return await callSecureData('demande_suppression_compte', {});
+}

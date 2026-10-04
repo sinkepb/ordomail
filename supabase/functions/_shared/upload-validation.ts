@@ -2,8 +2,13 @@
 // Extrait en module pur pour être testable sous Vitest sans dépendances Deno.
 
 export const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Mo
-export const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]);
-export const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
+// TIFF (03/10/2026, retour pharmacien — LGO qui exporte en .tiff) accepté ici
+// uniquement en entrée : converti en PNG au dépôt (voir _shared/tiffConvert.ts,
+// appelé par secure-data:ordonnances_upload_file/ordonnances_create) avant
+// d'atteindre le stockage — aucun fichier .tiff ne doit jamais s'y retrouver
+// tel quel, aucun navigateur ne sachant l'afficher nativement.
+export const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf", "image/tiff", "image/x-tiff"]);
+export const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf", "tiff", "tif"]);
 
 export function isValidPatientCode(s: string): boolean {
   return s.length === 4 && (s.match(/[0-9]/g)?.length === 3) && (s.match(/[A-Za-z]/g)?.length === 1);
@@ -15,7 +20,7 @@ export function validateFile(file: { name: string; type: string; size: number })
     return { ok: false, error: "Fichier trop volumineux (15 Mo maximum)" };
   }
   if (!ALLOWED_MIME_TYPES.has(file.type) || !ALLOWED_EXTENSIONS.has(ext)) {
-    return { ok: false, error: "Type de fichier non autorisé (jpg, png, webp ou pdf uniquement)" };
+    return { ok: false, error: "Type de fichier non autorisé (jpg, png, webp, pdf ou tiff uniquement)" };
   }
   return { ok: true };
 }

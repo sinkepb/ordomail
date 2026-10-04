@@ -88,7 +88,12 @@ function RappelChoixPage({ token }) {
             Bonjour {info.patientPrenom} 👋
           </div>
           <div style={{ fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, marginBottom: 28 }}>
-            Votre renouvellement d'ordonnance chez <strong>{info.pharmacieNom}</strong> est prévu prochainement. Que souhaitez-vous faire ?
+            {/* Rappel groupé (03/10/2026) — plusieurs ordonnances dues le
+                même jour, un seul lien pour toutes : le texte doit le dire
+                clairement, le choix fait ci-dessous s'appliquera à toutes. */}
+            {info.nombreOrdonnances > 1
+              ? <>Le renouvellement de <strong>{info.nombreOrdonnances} de vos ordonnances</strong> chez <strong>{info.pharmacieNom}</strong> est prévu prochainement. Votre choix s'appliquera à l'ensemble. Que souhaitez-vous faire ?</>
+              : <>Votre renouvellement d'ordonnance chez <strong>{info.pharmacieNom}</strong> est prévu prochainement. Que souhaitez-vous faire ?</>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {CHOIX.map(c => (

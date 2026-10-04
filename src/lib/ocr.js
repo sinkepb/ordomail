@@ -16,6 +16,7 @@
 // (pas de code exécuté), self-host possible mais nécessite de vendoriser et
 // maintenir à jour ce binaire séparément ; pas traité ici.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import UTIF from 'utif2';
 
 let _tesseractWorker  = null;
 let _tesseractLoading = false;
@@ -57,9 +58,37 @@ async function getTesseractWorker() {
 }
 
 
+// TIFF (03/10/2026) — aucun navigateur ne décode le TIFF dans <img> : sans ce
+// détour, img.onload ne se déclenche jamais et l'analyse reste bloquée
+// indéfiniment (spinner infini à l'envoi). Décodé ici via UTIF (pur JS),
+// puis réexposé en PNG pour la suite du pipeline.
+function tiffBase64ToPngDataUrl(base64) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const ifds = UTIF.decode(bytes.buffer);
+  UTIF.decodeImage(bytes.buffer, ifds[0]);
+  const rgba = UTIF.toRGBA8(ifds[0]);
+  const canvas = document.createElement('canvas');
+  canvas.width = ifds[0].width; canvas.height = ifds[0].height;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(canvas.width, canvas.height);
+  imgData.data.set(rgba);
+  ctx.putImageData(imgData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
 async function preprocessImage(base64, mimeType) {
+  if (mimeType === 'image/tiff' || mimeType === 'image/x-tiff') {
+    try {
+      base64 = tiffBase64ToPngDataUrl(base64).split(',')[1];
+      mimeType = 'image/png';
+    } catch (e) {
+      console.warn('[OCR] TIFF illisible:', e.message);
+      return null;
+    }
+  }
   return new Promise(resolve => {
     const img = new Image();
+    img.onerror = () => resolve(null);
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const scale = Math.max(1, Math.min(3, 2400 / Math.max(img.width, img.height)));
@@ -240,6 +269,7 @@ async function extractFromFile(base64, mimeType, { fallbackName = null } = {}) {
 
     // Pré-traitement
     const processed = await preprocessImage(imgB64, mimeType);
+    if (!processed) return { nom: fallbackName, carteVitale: null, medecin: null, date: null, medicaments: [], _ocrSuccess: false, _confidence: 0 };
 
     // OCR Tesseract
     const worker = await getTesseractWorker();

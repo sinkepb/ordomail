@@ -10,8 +10,16 @@
 // exploitable : replié sur "non-fixe" (mode SMS, le comportement par défaut
 // historique) plutôt que de bloquer la création du rappel.
 export function estNumeroFixe(tel: string): boolean {
-  const digits = (tel || "").replace(/[\s.-]/g, "");
-  const local = digits.startsWith("+33") ? "0" + digits.slice(3) : digits;
-  const prefix = local[1];
+  const digits = normaliserTelephone(tel);
+  const prefix = digits[1];
   return prefix !== undefined && prefix !== "6" && prefix !== "7";
+}
+
+// Forme canonique d'un numéro français, "0X XX XX XX XX" ou "+33" ramené à
+// cette même forme (03/10/2026, extrait pour le regroupement des rappels par
+// patient — deux écritures du même numéro, saisies à des moments différents,
+// doivent produire la même clé de regroupement).
+export function normaliserTelephone(tel: string): string {
+  const digits = (tel || "").replace(/[\s.-]/g, "");
+  return digits.startsWith("+33") ? "0" + digits.slice(3) : digits;
 }

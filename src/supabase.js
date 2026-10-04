@@ -41,6 +41,7 @@ export {
   savePharmacie,
   savePostes,
   updateTitulaire,
+  demanderSuppressionCompte,
 } from './lib/supabase/pharmacies.js';
 
 export {
@@ -99,6 +100,7 @@ export {
   traiterRappel,
   preparerRappel,
   terminerRappel,
+  supprimerRappel,
   reactiverRappel,
   updateRappel,
   envoyerTestRappel,

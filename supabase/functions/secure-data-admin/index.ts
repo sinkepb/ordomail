@@ -564,7 +564,12 @@ Deno.serve(async (req) => {
           ? sb.from("ordonnances").select("id, pharmacie_id, patient_nom, from_name, code_patient, status, received_at, medecin, medicaments, fichier_url, fichier_nom, pharmacies(nom)").in("id", ordos)
           : Promise.resolve({ data: [], error: null }),
         rappels.length
-          ? sb.from("rappels_ordonnance").select("*, pharmacies(nom)").in("id", rappels)
+          // Colonnes explicites (pas de "*") — exclut volontairement `token`,
+          // qui est la clé d'accès opaque au lien patient public
+          // (resolve-rappel) : un export RGPD doit restituer les données
+          // personnelles, pas distribuer une clé encore active permettant
+          // d'agir à la place du patient tant que le cycle n'est pas clos.
+          ? sb.from("rappels_ordonnance").select("id, pharmacie_id, patient_nom, patient_prenom, patient_telephone, commentaire, consentement_sms, consentement_sms_horodatage, statut, choix_patient, mode_contact, cycle_numero, opt_out, creneau_retrait, medecin_prescripteur, specialite, date_prochaine_relance, date_dernier_sms_envoye, date_reponse_patient, date_traite, created_by, created_at, updated_at, pharmacies(nom)").in("id", rappels)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (ordonnancesRes.error) throw new Error(ordonnancesRes.error.message);
@@ -823,6 +828,29 @@ Deno.serve(async (req) => {
     // anormale AVANT la facture, pas après. rappels_evenements n'a pas de
     // pharmacie_id direct (seulement rappel_id) — jointure faite ici en mémoire
     // plutôt qu'une vue SQL, volume actuel du produit ne le justifie pas encore.
+    // Suivi des cron jobs (05/10/2026) — état et dernières exécutions de chaque
+    // job pg_cron, lues par la fonction admin_cron_runs (voir la migration).
+    if (resource === "admin_cron_runs") {
+      const limite = Math.min(Math.max(Number(params?.limit) || 20, 1), 50);
+      const { data, error } = await sb.rpc("admin_cron_runs", { p_limit: limite });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_rappels_detail") {
+      const pharmacieId = params?.pharmacieId;
+      if (!pharmacieId || typeof pharmacieId !== "string") {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("rappels_ordonnance")
+        .select("id, patient_prenom, patient_nom, patient_telephone, mode_contact, statut, choix_patient, cycle_numero, date_prochaine_relance, date_dernier_sms_envoye, date_preparee, case_code, groupe_id, supprime_le, created_at")
+        .eq("pharmacie_id", pharmacieId)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "admin_rappels_metrics") {
       const now = Date.now();
       const jourStart = new Date(now); jourStart.setHours(0, 0, 0, 0);
@@ -1007,8 +1035,8 @@ Deno.serve(async (req) => {
       try {
         const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
         const balance = await stripe.balance.retrieve();
-        soldeStripeDisponible = balance.available.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
-        soldeStripeAttente = balance.pending.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
+        soldeStripeDisponible = balance.available.filter((b: { currency: string }) => b.currency === "eur").reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
+        soldeStripeAttente = balance.pending.filter((b: { currency: string }) => b.currency === "eur").reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
       } catch { /* balance indisponible (clé test, permissions) — non bloquant */ }
 
       const { data: parametres } = await sb.from("gestion_entries").select("data").eq("category", "parametre").maybeSingle();

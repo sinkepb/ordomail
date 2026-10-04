@@ -5,14 +5,15 @@ import { ClientDetail } from "../components/ClientDetail.jsx";
 import { ContratEditor } from "../components/ContratEditor.jsx";
 import { PricingEditor } from "../components/PricingEditor.jsx";
 import { PromotionsAdmin } from "../components/PromotionsAdmin.jsx";
-import { KitCommandesAdmin } from "../components/KitCommandesAdmin.jsx";
 import { BillingModule } from "../components/BillingModule.jsx";
 import { MonitoringPanel } from "../components/MonitoringPanel.jsx";
+import { CronMonitorPanel } from "../components/CronMonitorPanel.jsx";
 import { RgpdPanel } from "../components/RgpdPanel.jsx";
 import { PurgeAdmin } from "../components/PurgeAdmin.jsx";
 import { GestionAdmin } from "../components/GestionAdmin.jsx";
 import { QrCodesAdmin } from "../components/QrCodesAdmin.jsx";
 import { RappelsMetricsAdmin } from "../components/RappelsMetricsAdmin.jsx";
+import { RappelsDetailAdmin } from "../components/RappelsDetailAdmin.jsx";
 import { PaginationControls } from "../components/PaginationControls.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
@@ -329,7 +330,7 @@ function AdminDashboardLive({ adminToken } = {}) {
 
         {/* Tabs */}
         <div className="admin-tabs" style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["materiel","📦 Matériel"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"],...(IS_PREVIEW_PROJECT ? [["gestion","🏛️ Gestion"]] : [])].map(([k,l]) => (
+          {[["clients","👥 Clients"],["carte","🗺️ Carte"],["contrats","📋 Contrats"],["tarifs","🏷️ Tarifs"],["promotions","🚀 Promotions"],["qrcodes","🏷️ QR Codes"],["rappels","🔔 Rappels & SMS"],["stories","📱 Stories"],["monitoring","🔔 Monitoring"],["cron","⏱ Cron"],["rgpd","🔐 RGPD"],["purge","🗑️ Purge"],...(IS_PREVIEW_PROJECT ? [["gestion","🏛️ Gestion"]] : [])].map(([k,l]) => (
             <button key={k} onClick={()=>{setTab(k);setSelected(null);}}
               style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,
                 fontWeight:tab===k?700:500,
@@ -425,14 +426,14 @@ function AdminDashboardLive({ adminToken } = {}) {
           <PricingEditor adminToken={adminToken}/>
         ) : tab === "promotions" ? (
           <PromotionsAdmin adminToken={adminToken}/>
-        ) : tab === "materiel" ? (
-          <KitCommandesAdmin adminToken={adminToken}/>
         ) : tab === "qrcodes" ? (
           <QrCodesAdmin adminToken={adminToken}/>
         ) : tab === "rappels" ? (
-          <RappelsMetricsAdmin adminToken={adminToken}/>
+          <><RappelsMetricsAdmin adminToken={adminToken}/><RappelsDetailAdmin adminToken={adminToken}/></>
         ) : tab === "monitoring" ? (
           <MonitoringPanel adminToken={adminToken}/>
+        ) : tab === "cron" ? (
+          <CronMonitorPanel adminToken={adminToken}/>
         ) : tab === "rgpd" ? (
           <RgpdPanel adminToken={adminToken}/>
         ) : tab === "purge" ? (
