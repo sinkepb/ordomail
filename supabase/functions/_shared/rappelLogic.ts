@@ -13,6 +13,7 @@ import { sendSms } from "./sms.ts";
 import { generateShortToken } from "./shortToken.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { normaliserTelephone } from "./telephone.ts";
+import { reportAlert } from "./alert.ts";
 
 // @fix 24/09/2026 (audit) — traitement séquentiel jusqu'ici (un SMS + 2
 // écritures par rappel dû, borné par le timeout de la fonction) ; c'est le
@@ -264,25 +265,36 @@ async function traiterGroupeRappels(sb: SupabaseClient, appUrl: string, groupe: 
       return groupe.map(() => "failed" as const);
     }
 
-    const autresIds = ids.filter((id) => id !== porteur.id);
-    if (autresIds.length) {
-      const { error: updErrAutres } = await sb.from("rappels_ordonnance").update({
-        statut: "sms_envoye", groupe_id: groupeId, date_dernier_sms_envoye: new Date().toISOString(),
-        sms_echecs_consecutifs: 0, updated_at: new Date().toISOString(),
-      }).in("id", autresIds);
-      if (updErrAutres) throw new Error(updErrAutres.message);
-    }
+    // Porteur d'abord (04/10/2026, audit) : c'est lui qui reçoit le token du
+    // lien déjà envoyé. S'il n'est pas enregistré, rien d'autre n'est modifié :
+    // les autres membres restent en_attente et seront traités à part.
     const { error: updErrPorteur } = await sb.from("rappels_ordonnance").update({
       statut: "sms_envoye", token: newToken, groupe_id: groupeId, date_dernier_sms_envoye: new Date().toISOString(),
       sms_echecs_consecutifs: 0, updated_at: new Date().toISOString(),
     }).eq("id", porteur.id);
     if (updErrPorteur) throw new Error(updErrPorteur.message);
+    const { error: insPorteur } = await sb.from("rappels_evenements").insert({ rappel_id: porteur.id, type: "sms_envoye", meta: { mocked: result.mocked, groupe: true, groupeTaille: groupe.length } });
+    if (insPorteur) throw new Error(insPorteur.message);
 
-    for (const id of ids) {
-      const { error: insErr } = await sb.from("rappels_evenements").insert({ rappel_id: id, type: "sms_envoye", meta: { mocked: result.mocked, groupe: true, groupeTaille: groupe.length } });
-      if (insErr) throw new Error(insErr.message);
+    // Les autres membres suivent. Un échec ici ne remet pas en cause le lien
+    // déjà envoyé : le porteur répond pour le groupe, et ces membres sont
+    // signalés pour un traitement individuel.
+    const outcomes: Outcome[] = [ "sent" ];
+    for (const membre of groupe.slice(1)) {
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
+        statut: "sms_envoye", groupe_id: groupeId, date_dernier_sms_envoye: new Date().toISOString(),
+        sms_echecs_consecutifs: 0, updated_at: new Date().toISOString(),
+      }).eq("id", membre.id);
+      if (updErr) {
+        console.error(`[rappel] membre ${membre.id} non enregistré dans le groupe ${groupeId}:`, updErr.message);
+        await reportAlert(sb, { source: "rappel-groupe", severity: "warning", message: "Membre de groupe non enregistré après envoi SMS", meta: { rappelId: membre.id, groupeId } });
+        outcomes.push("failed");
+        continue;
+      }
+      await sb.from("rappels_evenements").insert({ rappel_id: membre.id, type: "sms_envoye", meta: { mocked: result.mocked, groupe: true, groupeTaille: groupe.length } });
+      outcomes.push("sent");
     }
-    return groupe.map(() => "sent" as const);
+    return outcomes;
   } catch (e) {
     console.error(`[rappel] échec groupe (${ids.join(",")}):`, (e as Error).message);
     return groupe.map(() => "failed" as const);

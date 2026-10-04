@@ -505,3 +505,27 @@ describe('peutEncoreRepondre', () => {
     expect(peutEncoreRepondre({ statut: 'en_attente', choix_patient: null })).toBe(false);
   });
 });
+
+// @fix 04/10/2026 (audit) — si le porteur (détenteur du token envoyé) n'est pas
+// enregistré, aucun autre membre ne doit être modifié.
+describe('traiterGroupeRappels : ordre d\'écriture', () => {
+  beforeEach(() => {
+    vi.mocked(sendSms).mockReset();
+  });
+
+  it('porteur en échec : aucun autre membre n\'est mis à jour', async () => {
+    const dus = [
+      { id: 'r1', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', pharmacies: { nom: 'Pharma A' } },
+      { id: 'r2', pharmacie_id: 'ph1', patient_prenom: 'Jean', patient_nom: 'Dupont', patient_telephone: '0600000001', pharmacies: { nom: 'Pharma A' } },
+    ];
+    vi.mocked(sendSms).mockResolvedValueOnce({ success: true, mocked: true });
+    const { sb, updates } = makeMockSupabase(dus, { updateError: 'écriture refusée' });
+    const result = await runRappelScan(sb, 'https://ordomail.fr');
+
+    expect(result).toEqual({ scanned: 2, sent: 0, failed: 2, appeler: 0 });
+    const misesAJour = updates.filter((u) => u.table === 'rappels_ordonnance');
+    expect(misesAJour).toHaveLength(1);
+    expect(misesAJour[0].ids).toEqual(['r1']);
+    expect(misesAJour[0].payload.token).toBeTruthy();
+  });
+});
