@@ -983,6 +983,9 @@ Deno.serve(async (req) => {
           .from("rappels_ordonnance")
           .select("id")
           .eq("groupe_id", existing.groupe_id)
+          .eq("pharmacie_id", pharmacieId)
+          .eq("opt_out", false)
+          .is("supprime_le", null)
           .eq("statut", "a_traiter")
           .in("choix_patient", ["tout_renouveler", "partiel"]);
         if (membresGroupe?.length) idsAPreparer = membresGroupe.map((m) => m.id);

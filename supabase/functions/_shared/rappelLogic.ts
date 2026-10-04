@@ -396,3 +396,11 @@ export function canSupprimerRappel(rappel: { statut: string; choix_patient: stri
   if (rappel.statut === "termine") return { ok: false, error: "Ce rappel est terminé : il ne peut pas être supprimé" };
   return { ok: true };
 }
+
+// Membres d'un groupe concernés par une réponse ou une préparation (04/10/2026,
+// audit). Un groupe ne doit jamais s'étendre à une autre pharmacie, ni à un
+// rappel en opposition ; les autres membres ne sont retenus que s'ils portent
+// le même groupe et la même pharmacie que le porteur.
+export function membresActifsDuGroupe<T extends { pharmacie_id: string; opt_out?: boolean | null }>(porteur: { pharmacie_id: string }, membres: T[]): T[] {
+  return membres.filter((m) => m.pharmacie_id === porteur.pharmacie_id && !m.opt_out);
+}

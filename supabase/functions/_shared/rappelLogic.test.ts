@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel, membresActifsDuGroupe } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -466,5 +466,25 @@ describe('canSupprimerRappel', () => {
 
   it('refuse un rappel terminé', () => {
     expect(canSupprimerRappel({ statut: 'termine', choix_patient: null }).ok).toBe(false);
+  });
+});
+
+describe('membresActifsDuGroupe', () => {
+  it('ne retient que les membres de la même pharmacie que le porteur', () => {
+    const porteur = { pharmacie_id: 'ph1' };
+    const membres = [
+      { id: 'a', pharmacie_id: 'ph1', opt_out: false },
+      { id: 'b', pharmacie_id: 'ph2', opt_out: false },
+    ];
+    expect(membresActifsDuGroupe(porteur, membres).map((m) => m.id)).toEqual(['a']);
+  });
+
+  it('exclut un membre en opposition', () => {
+    const porteur = { pharmacie_id: 'ph1' };
+    const membres = [
+      { id: 'a', pharmacie_id: 'ph1', opt_out: false },
+      { id: 'b', pharmacie_id: 'ph1', opt_out: true },
+    ];
+    expect(membresActifsDuGroupe(porteur, membres).map((m) => m.id)).toEqual(['a']);
   });
 });

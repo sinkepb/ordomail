@@ -20,6 +20,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { membresActifsDuGroupe } from "../_shared/rappelLogic.ts";
 
 // "stop" (01/10/2026, audit RGPD) — canal d'opposition : jusqu'ici le patient
 // n'avait aucun moyen de signifier "ne plus me recontacter" (seuls choix
@@ -69,7 +70,7 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("statut, choix_patient, patient_prenom, groupe_id, pharmacies(nom)")
+        .select("statut, choix_patient, patient_prenom, groupe_id, pharmacie_id, pharmacies(nom)")
         .eq("token", token)
         .is("supprime_le", null)
         .maybeSingle();
@@ -86,6 +87,8 @@ serve(async (req) => {
           .from("rappels_ordonnance")
           .select("id", { count: "exact", head: true })
           .eq("groupe_id", rappel.groupe_id)
+          .eq("pharmacie_id", rappel.pharmacie_id)
+          .eq("opt_out", false)
           .is("supprime_le", null);
         if (count) nombreOrdonnances = count;
       }
@@ -111,7 +114,7 @@ serve(async (req) => {
 
       const { data: rappel } = await sb
         .from("rappels_ordonnance")
-        .select("id, statut, choix_patient, groupe_id")
+        .select("id, statut, choix_patient, groupe_id, pharmacie_id, opt_out")
         .eq("token", token)
         .is("supprime_le", null)
         .maybeSingle();
@@ -132,10 +135,10 @@ serve(async (req) => {
       if (rappel.groupe_id) {
         const { data: tousLesMembres } = await sb
           .from("rappels_ordonnance")
-          .select("id, statut, choix_patient")
+          .select("id, statut, choix_patient, pharmacie_id, opt_out")
           .eq("groupe_id", rappel.groupe_id)
           .is("supprime_le", null);
-        if (tousLesMembres?.length) membres = tousLesMembres.filter(peutEncoreRepondre);
+        if (tousLesMembres?.length) membres = membresActifsDuGroupe(rappel, tousLesMembres).filter(peutEncoreRepondre);
       }
 
       // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
