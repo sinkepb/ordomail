@@ -15,6 +15,7 @@
 // en l'absence d'environnement Deno local pour un test automatisé direct.
 import UTIF from "https://esm.sh/utif2@4.1.0";
 import UPNG from "https://esm.sh/upng-js@2.1.0";
+import { dimensionsTiffAcceptables } from "./tiffLimits.ts";
 
 export const TIFF_MIME_TYPES = new Set(["image/tiff", "image/x-tiff"]);
 export const TIFF_EXTENSIONS = new Set(["tiff", "tif"]);
@@ -40,6 +41,11 @@ export function convertTiffToPng(bytes: Uint8Array): Uint8Array {
     throw new Error("Fichier TIFF illisible (aucune image trouvée)");
   }
   const page = ifds[0];
+  // Contrôle AVANT décodage : les dimensions viennent de l'en-tête, l'allocation
+  // RGBA suit immédiatement (voir tiffLimits.ts).
+  if (!dimensionsTiffAcceptables(page.width, page.height)) {
+    throw new Error("Image TIFF trop grande (dimensions au-delà de la limite autorisée)");
+  }
   UTIF.decodeImage(bytes.buffer, page);
   const rgba = UTIF.toRGBA8(page);
   const png = UPNG.encode([rgba.buffer], page.width, page.height, 0);

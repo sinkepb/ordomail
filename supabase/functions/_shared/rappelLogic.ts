@@ -295,6 +295,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
     .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, sms_echecs_consecutifs, pharmacies(nom)")
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
+    .is("supprime_le", null)
     .lte("date_prochaine_relance", new Date().toISOString())
     .limit(SCAN_BATCH_SIZE);
   if (error) throw new Error(error.message);
@@ -324,6 +325,7 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
     .select("id, token, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, pharmacies(nom)")
     .eq("statut", "sms_envoye")
     .eq("relance_sms_envoyee", false)
+    .is("supprime_le", null)
     .lte("date_dernier_sms_envoye", relanceAvant)
     .limit(SCAN_BATCH_SIZE);
   if (errRelance) throw new Error(errRelance.message);
@@ -360,6 +362,7 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
     .select("id")
     .eq("statut", "sms_envoye")
     .eq("relance_sms_envoyee", true)
+    .is("supprime_le", null)
     .lte("date_dernier_sms_envoye", escaladeAvant)
     .limit(SCAN_BATCH_SIZE);
   if (errEscalade) throw new Error(errEscalade.message);
@@ -381,4 +384,15 @@ export async function runRelanceEtEscaladeScan(sb: SupabaseClient, appUrl: strin
   });
 
   return { relances, escalades };
+}
+
+// Garde-fou de suppression d'un rappel (04/10/2026, audit RGPD). Une fois le
+// patient intervenu (réponse, opposition) ou le cycle terminé, la ligne est
+// une preuve : on ne la retire pas de la base, on refuse. Le pharmacien doit
+// passer par "Fin de traitement" dans ce cas.
+export function canSupprimerRappel(rappel: { statut: string; choix_patient: string | null; opt_out?: boolean | null }): { ok: true } | { ok: false; error: string } {
+  if (rappel.opt_out) return { ok: false, error: "Ce patient a demandé à ne plus être recontacté : le rappel ne peut pas être supprimé" };
+  if (rappel.choix_patient) return { ok: false, error: "Le patient a déjà répondu : utilisez « Fin de traitement » au lieu de supprimer" };
+  if (rappel.statut === "termine") return { ok: false, error: "Ce rappel est terminé : il ne peut pas être supprimé" };
+  return { ok: true };
 }

@@ -33,7 +33,7 @@ import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
-import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
+import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel, canSupprimerRappel } from "../_shared/rappelLogic.ts";
 import { computeRappelsStats } from "../_shared/rappelsStatsLogic.ts";
 import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
@@ -882,7 +882,7 @@ Deno.serve(async (req) => {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      let q = sb.from("rappels_ordonnance").select("*").eq("pharmacie_id", pharmacieId);
+      let q = sb.from("rappels_ordonnance").select("*").eq("pharmacie_id", pharmacieId).is("supprime_le", null);
       if (params?.statut) q = q.eq("statut", params.statut);
       q = q.order("created_at", { ascending: false }).limit(params?.limit || 200);
       const { data, error } = await q;
@@ -908,7 +908,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
       const since90 = new Date(Date.now() - 90 * 86400000).toISOString();
-      const { data: rappels } = await sb.from("rappels_ordonnance").select("id, statut").eq("pharmacie_id", pharmacieId);
+      const { data: rappels } = await sb.from("rappels_ordonnance").select("id, statut").eq("pharmacie_id", pharmacieId).is("supprime_le", null);
       const rappelIds = (rappels || []).map((r) => r.id);
       const { data: evenements } = rappelIds.length
         ? await sb.from("rappels_evenements").select("rappel_id, type, meta, created_at").in("rappel_id", rappelIds).gte("created_at", since90)
@@ -1125,12 +1125,35 @@ Deno.serve(async (req) => {
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      const { data: existing } = await sb.from("rappels_ordonnance")
+        .select("id, pharmacie_id, statut, choix_patient, opt_out, consentement_sms_horodatage")
+        .eq("id", rappelId).is("supprime_le", null).maybeSingle();
       if (!existing || existing.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
-      const { error } = await sb.from("rappels_ordonnance").delete().eq("id", rappelId);
+      // Suppression logique (04/10/2026, audit RGPD) : la ligne reste en base
+      // comme preuve (consentement horodaté, opposition), elle sort simplement
+      // de toutes les lectures. La purge de rétention la retire ensuite.
+      const garde = canSupprimerRappel(existing);
+      if (!garde.ok) {
+        return new Response(JSON.stringify({ error: garde.error }), { status: 409, headers: CORS });
+      }
+      const maintenant = new Date().toISOString();
+      const { error } = await sb.from("rappels_ordonnance").update({ supprime_le: maintenant, updated_at: maintenant }).eq("id", rappelId);
       if (error) throw new Error(error.message);
+      const { error: auditErr } = await sb.from("audit_logs").insert({
+        pharmacie_id: pharmacieId,
+        user_id: vendeurSub || callerUserId || null,
+        user_role: vendeurSub ? "vendeur" : "titulaire",
+        action: "delete_rappel",
+        metadata: {
+          rappel_id: rappelId,
+          statut: existing.statut,
+          consentement_sms_horodatage: existing.consentement_sms_horodatage,
+          supprime_le: maintenant,
+        },
+      });
+      if (auditErr) throw new Error(auditErr.message);
       return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 

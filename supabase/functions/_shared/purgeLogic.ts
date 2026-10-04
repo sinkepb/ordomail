@@ -100,6 +100,24 @@ export async function runRappelsPurge(sb: any, triggeredBy: string): Promise<Pur
     const { data: batch, error: selErr } = await sb
       .from("rappels_ordonnance")
       .select("id")
+      .not("supprime_le", "is", null)
+      .lt("supprime_le", cutoff)
+      .limit(BATCH_SIZE);
+    if (selErr) throw new Error(selErr.message);
+    if (!batch || batch.length === 0) break;
+
+    const ids = batch.map((r: any) => r.id);
+    const { error: delErr } = await sb.from("rappels_ordonnance").delete().in("id", ids);
+    if (delErr) throw new Error(delErr.message);
+
+    totalDeleted += ids.length;
+    if (batch.length < BATCH_SIZE) break;
+  }
+
+  for (;;) {
+    const { data: batch, error: selErr } = await sb
+      .from("rappels_ordonnance")
+      .select("id")
       .eq("statut", "termine")
       .lt("updated_at", cutoff)
       .limit(BATCH_SIZE);

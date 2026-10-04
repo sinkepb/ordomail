@@ -71,6 +71,7 @@ serve(async (req) => {
         .from("rappels_ordonnance")
         .select("statut, choix_patient, patient_prenom, groupe_id, pharmacies(nom)")
         .eq("token", token)
+        .is("supprime_le", null)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
 
@@ -84,7 +85,8 @@ serve(async (req) => {
         const { count } = await sb
           .from("rappels_ordonnance")
           .select("id", { count: "exact", head: true })
-          .eq("groupe_id", rappel.groupe_id);
+          .eq("groupe_id", rappel.groupe_id)
+          .is("supprime_le", null);
         if (count) nombreOrdonnances = count;
       }
 
@@ -111,6 +113,7 @@ serve(async (req) => {
         .from("rappels_ordonnance")
         .select("id, statut, choix_patient, groupe_id")
         .eq("token", token)
+        .is("supprime_le", null)
         .maybeSingle();
       if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
       if (!peutEncoreRepondre(rappel)) {
@@ -130,7 +133,8 @@ serve(async (req) => {
         const { data: tousLesMembres } = await sb
           .from("rappels_ordonnance")
           .select("id, statut, choix_patient")
-          .eq("groupe_id", rappel.groupe_id);
+          .eq("groupe_id", rappel.groupe_id)
+          .is("supprime_le", null);
         if (tousLesMembres?.length) membres = tousLesMembres.filter(peutEncoreRepondre);
       }
 

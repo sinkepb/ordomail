@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -127,6 +127,7 @@ function makeMockSupabase(dus: any[], opts: { updateError?: string } = {}) {
         select() { return chain; },
         eq() { return chain; },
         lte() { return chain; },
+        is() { return chain; },
         limit() { return chain; },
         update(payload: any) {
           const entry = { table, payload, ids: [] as any[] };
@@ -360,6 +361,7 @@ function makeFilterableMockSupabase(initialRows: any[]) {
         select() { return chain; },
         eq(col: string, val: any) { filters.push((r) => r[col] === val); return chain; },
         lte(col: string, val: any) { filters.push((r) => r[col] <= val); return chain; },
+        is(col: string, val: any) { filters.push((r) => (r[col] ?? null) === val); return chain; },
         limit() { return chain; },
         update(payload: any) {
           return {
@@ -444,5 +446,25 @@ describe('runRelanceEtEscaladeScan', () => {
     expect(result).toEqual({ relances: 1, escalades: 1 });
     expect(rowsApres.find((r) => r.id === 'r1')?.relance_sms_envoyee).toBe(true);
     expect(rowsApres.find((r) => r.id === 'r2')?.statut).toBe('a_appeler');
+  });
+});
+
+// @fix 04/10/2026 (audit RGPD) — garde-fou de suppression.
+describe('canSupprimerRappel', () => {
+  it('autorise la suppression d\'un rappel sans réponse ni opposition', () => {
+    expect(canSupprimerRappel({ statut: 'en_attente', choix_patient: null, opt_out: false }).ok).toBe(true);
+    expect(canSupprimerRappel({ statut: 'sms_envoye', choix_patient: null }).ok).toBe(true);
+  });
+
+  it('refuse un rappel auquel le patient a déjà répondu', () => {
+    expect(canSupprimerRappel({ statut: 'a_traiter', choix_patient: 'tout_renouveler' }).ok).toBe(false);
+  });
+
+  it('refuse un rappel en opposition, même sans choix enregistré', () => {
+    expect(canSupprimerRappel({ statut: 'termine', choix_patient: 'stop', opt_out: true }).ok).toBe(false);
+  });
+
+  it('refuse un rappel terminé', () => {
+    expect(canSupprimerRappel({ statut: 'termine', choix_patient: null }).ok).toBe(false);
   });
 });
