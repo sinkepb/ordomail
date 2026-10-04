@@ -5,6 +5,7 @@
 // écoulée. Déclenchée par pg_cron, quotidienne (même schéma que
 // purge-ordonnances) — pas de vérification de session : appelée uniquement
 // par le planificateur interne, jamais par un client.
+import { verifyCronSecret } from "../_shared/webhook-secret.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.0.0";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -25,8 +26,7 @@ Deno.serve(async (req) => {
   const CORS = corsHeaders(req, { "Content-Type": "application/json" });
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
-  const cronSecret = req.headers.get("x-cron-secret") || new URL(req.url).searchParams.get("secret");
-  if (cronSecret !== Deno.env.get("PURGE_CRON_SECRET")) {
+  if (!verifyCronSecret(req, "APPLY_DOWNGRADES_CRON_SECRET")) {
     return new Response(JSON.stringify({ error: "Non autorisé" }), { status: 401, headers: CORS });
   }
 
