@@ -37,16 +37,23 @@ const MIN_AREA_RATIO = 0.25;
 const MAX_AREA_RATIO = 0.95;
 const MAX_OUTPUT_DIMENSION = 2000;
 
+// Délai maximal de chargement d'OpenCV (04/10/2026, audit) : si l'initialisation
+// WASM ne se termine jamais (réseau coupé, appareil trop modeste), l'envoi ne doit
+// pas rester bloqué — on renonce au recadrage et le fichier continue tel quel.
+const CV_LOAD_TIMEOUT_MS = 20000;
 let cvPromise = null;
 function loadCv() {
   if (!cvPromise) {
-    cvPromise = import("@techstark/opencv-js").then(async (mod) => {
+    const chargement = import("@techstark/opencv-js").then(async (mod) => {
       const cvModule = mod.default || mod;
       if (cvModule instanceof Promise) return await cvModule;
       if (cvModule.Mat) return cvModule;
       await new Promise((resolve) => { cvModule.onRuntimeInitialized = resolve; });
       return cvModule;
     });
+    const delai = new Promise((_, reject) => setTimeout(() => reject(new Error("délai OpenCV dépassé")), CV_LOAD_TIMEOUT_MS));
+    cvPromise = Promise.race([chargement, delai]);
+    cvPromise.catch(() => { cvPromise = null; });
   }
   return cvPromise;
 }

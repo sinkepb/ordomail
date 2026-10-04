@@ -74,7 +74,7 @@ serve(async (req) => {
   const { data: ph } = await supabase
     .from("pharmacies")
     .select("id, nom")
-    .ilike("email_reception", toEmailClean)
+    .ilike("email_reception", toEmailClean.replace(/[\\%_]/g, (c) => "\\" + c))
     .single();
 
   if (!ph) {
