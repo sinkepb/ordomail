@@ -404,3 +404,10 @@ export function canSupprimerRappel(rappel: { statut: string; choix_patient: stri
 export function membresActifsDuGroupe<T extends { pharmacie_id: string; opt_out?: boolean | null }>(porteur: { pharmacie_id: string }, membres: T[]): T[] {
   return membres.filter((m) => m.pharmacie_id === porteur.pharmacie_id && !m.opt_out);
 }
+
+// Un rappel accepte une réponse tant qu'il attend le patient, ou qu'il a été
+// escaladé sans réponse (et sans choix déjà connu). Extrait de resolve-rappel
+// (04/10/2026) pour être testé unitairement.
+export function peutEncoreRepondre(rappel: { statut: string; choix_patient: string | null }): boolean {
+  return rappel.statut === "sms_envoye" || (rappel.statut === "a_appeler" && !rappel.choix_patient);
+}

@@ -20,7 +20,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
-import { membresActifsDuGroupe } from "../_shared/rappelLogic.ts";
+import { membresActifsDuGroupe, peutEncoreRepondre } from "../_shared/rappelLogic.ts";
 
 // "stop" (01/10/2026, audit RGPD) — canal d'opposition : jusqu'ici le patient
 // n'avait aucun moyen de signifier "ne plus me recontacter" (seuls choix
@@ -37,9 +37,6 @@ const CRENEAUX_VALIDES = ["ce_matin", "cet_apres_midi", "demain_matin", "demain_
 // appel inutile au pharmacien. À l'inverse, un "à appeler" dont le choix est
 // déjà connu (ex. "partiel" répondu par SMS, en attente de l'appel de
 // clarification) a déjà répondu : un second POST ne doit pas l'écraser.
-function peutEncoreRepondre(rappel: { statut: string; choix_patient: string | null }): boolean {
-  return rappel.statut === "sms_envoye" || (rappel.statut === "a_appeler" && !rappel.choix_patient);
-}
 
 serve(async (req) => {
   const CORS = corsHeaders(req, {
@@ -135,7 +132,7 @@ serve(async (req) => {
       if (rappel.groupe_id) {
         const { data: tousLesMembres } = await sb
           .from("rappels_ordonnance")
-          .select("id, statut, choix_patient, pharmacie_id, opt_out")
+          .select("id, statut, choix_patient, groupe_id, pharmacie_id, opt_out")
           .eq("groupe_id", rappel.groupe_id)
           .is("supprime_le", null);
         if (tousLesMembres?.length) membres = membresActifsDuGroupe(rappel, tousLesMembres).filter(peutEncoreRepondre);

@@ -13,7 +13,8 @@
 // validée par un aller-retour pixel-exact (image de test encodée en TIFF
 // puis redécodée/réencodée en PNG, comparaison visuelle) avant intégration,
 // en l'absence d'environnement Deno local pour un test automatisé direct.
-import UTIF from "https://esm.sh/utif2@4.1.0";
+// @ts-ignore: les types npm de utif2 importent "node" ; l'exécution n'en a pas besoin
+import UTIF from "https://esm.sh/utif2@4.1.0?no-dts";
 import UPNG from "https://esm.sh/upng-js@2.1.0";
 import { dimensionsTiffAcceptables } from "./tiffLimits.ts";
 
@@ -43,7 +44,9 @@ export function convertTiffToPng(bytes: Uint8Array): Uint8Array {
   const page = ifds[0];
   // Contrôle AVANT décodage : les dimensions viennent de l'en-tête, l'allocation
   // RGBA suit immédiatement (voir tiffLimits.ts).
-  if (!dimensionsTiffAcceptables(page.width, page.height)) {
+  // width/height ne sont renseignés qu'après decodeImage : on lit les balises
+  // TIFF 256 (largeur) et 257 (hauteur), déjà présentes après decode.
+  if (!dimensionsTiffAcceptables(page.t256?.[0], page.t257?.[0])) {
     throw new Error("Image TIFF trop grande (dimensions au-delà de la limite autorisée)");
   }
   UTIF.decodeImage(bytes.buffer, page);

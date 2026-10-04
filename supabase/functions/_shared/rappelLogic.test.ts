@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel, membresActifsDuGroupe } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel, membresActifsDuGroupe, peutEncoreRepondre } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -486,5 +486,22 @@ describe('membresActifsDuGroupe', () => {
       { id: 'b', pharmacie_id: 'ph1', opt_out: true },
     ];
     expect(membresActifsDuGroupe(porteur, membres).map((m) => m.id)).toEqual(['a']);
+  });
+});
+
+describe('peutEncoreRepondre', () => {
+  it('accepte une réponse sur un SMS envoyé', () => {
+    expect(peutEncoreRepondre({ statut: 'sms_envoye', choix_patient: null })).toBe(true);
+  });
+  it('accepte une réponse sur un à-appeler escaladé sans choix', () => {
+    expect(peutEncoreRepondre({ statut: 'a_appeler', choix_patient: null })).toBe(true);
+  });
+  it('refuse une seconde réponse (choix déjà connu)', () => {
+    expect(peutEncoreRepondre({ statut: 'a_appeler', choix_patient: 'partiel' })).toBe(false);
+    expect(peutEncoreRepondre({ statut: 'a_traiter', choix_patient: 'tout_renouveler' })).toBe(false);
+  });
+  it('refuse un rappel terminé ou en attente', () => {
+    expect(peutEncoreRepondre({ statut: 'termine', choix_patient: null })).toBe(false);
+    expect(peutEncoreRepondre({ statut: 'en_attente', choix_patient: null })).toBe(false);
   });
 });

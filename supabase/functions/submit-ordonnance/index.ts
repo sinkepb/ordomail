@@ -162,7 +162,7 @@ serve(async (req) => {
     );
     await reportAlert(alertClient, {
       source: "submit-ordonnance", severity: "critical",
-      message: `Échec dépôt ordonnance — ${e.message}`,
+      message: `Échec dépôt ordonnance — ${(e as Error).message}`,
     });
     return new Response(
       JSON.stringify({ error: safeErrorMessage(e, "submit-ordonnance") }),
