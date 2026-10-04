@@ -157,11 +157,9 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
     setActionError("");
     try {
       const result = await preparerRappel(rappel.id);
-      // Rappel groupé (03/10/2026) — le serveur attribue le même casier à
-      // tous les membres du groupe "à traiter" ; mise à jour optimiste
-      // alignée, sinon seule la carte cliquée afficherait le casier jusqu'au
-      // prochain rechargement complet de la liste.
-      setRappels(prev => prev.map(r => (r.id === rappel.id || (rappel.groupe_id && r.groupe_id === rappel.groupe_id && r.statut === "a_traiter" && (r.choix_patient === "tout_renouveler" || r.choix_patient === "partiel")))
+      // Une seule ordonnance est préparée à la fois : les autres membres du
+      // groupe restent à traiter, avec le même casier s'il existe déjà.
+      setRappels(prev => prev.map(r => r.id === rappel.id
         ? { ...r, statut: "prepare", case_code: result?.caseCode || null }
         : r));
       setPreparingId(null);

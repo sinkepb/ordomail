@@ -55,22 +55,21 @@ export async function preparerRappelAction(sb: any, ctx: ContextePreparation): P
   if (existing.choix_patient !== "tout_renouveler" && existing.choix_patient !== "partiel") {
     return erreur(409, "Seuls les renouvellements (total ou partiel) passent par l'étape préparation");
   }
-  let idsAPreparer = [ctx.rappelId];
+  let caseCode: string | null = null;
   if (existing.groupe_id) {
-    const { data: membres } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, opt_out")
-      .eq("groupe_id", existing.groupe_id).eq("statut", "a_traiter").in("choix_patient", ["tout_renouveler", "partiel"]);
-    const actifs = membresActifsDuGroupe<any>({ pharmacie_id: ctx.pharmacieId }, membres || []);
-    if (actifs.length) idsAPreparer = actifs.map((m: { id: string }) => m.id);
+    const { data: prepares } = await sb.from("rappels_ordonnance").select("case_code")
+      .eq("groupe_id", existing.groupe_id).eq("pharmacie_id", ctx.pharmacieId).eq("statut", "prepare");
+    caseCode = prepares?.[0]?.case_code ?? null;
   }
-  const { numero, error: compteurError } = await ctx.incrementerCompteur(ctx.pharmacieId);
-  if (compteurError || numero == null) throw new Error(compteurError || "Échec de l'attribution du casier");
-  const caseCode = `${ctx.prefixe()}${String(numero).padStart(2, "0")}`;
-  const { error } = await sb.from("rappels_ordonnance").update({ statut: "prepare", case_code: caseCode, date_preparee: new Date().toISOString(), updated_at: new Date().toISOString() }).in("id", idsAPreparer);
+  if (!caseCode) {
+    const { numero, error: compteurError } = await ctx.incrementerCompteur(ctx.pharmacieId);
+    if (compteurError || numero == null) throw new Error(compteurError || "Échec de l'attribution du casier");
+    caseCode = `${ctx.prefixe()}${String(numero).padStart(2, "0")}`;
+  }
+  const { error } = await sb.from("rappels_ordonnance").update({ statut: "prepare", case_code: caseCode, date_preparee: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", ctx.rappelId);
   if (error) throw new Error(error.message);
-  for (const id of idsAPreparer) {
-    await sb.from("rappels_evenements").insert({ rappel_id: id, type: "prepare", meta: { caseCode, ...(idsAPreparer.length > 1 ? { groupe: true } : {}) } });
-  }
-  return { status: 200, body: { data: { success: true, caseCode, nombreOrdonnances: idsAPreparer.length } } };
+  await sb.from("rappels_evenements").insert({ rappel_id: ctx.rappelId, type: "prepare", meta: { caseCode, ...(existing.groupe_id ? { groupe: true } : {}) } });
+  return { status: 200, body: { data: { success: true, caseCode } } };
 }
 
 export const CHOIX_VALIDES = ["tout_renouveler", "rien", "partiel", "stop"];

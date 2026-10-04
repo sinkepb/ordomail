@@ -1,6 +1,6 @@
 // Tests des actions rappels (supprimer, préparer, répondre) avec un faux client
 // Supabase qui applique réellement les filtres et garde l'état en mémoire.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { supprimerRappelAction, preparerRappelAction, repondreRappelAction } from './rappelHandlers.ts';
 
 function makeDb(initial: Record<string, any[]>) {
@@ -91,33 +91,41 @@ describe('preparerRappelAction', () => {
   it('attribue un casier à un rappel seul', async () => {
     const db = makeDb({ rappels_ordonnance: [{ ...base, statut: 'a_traiter', choix_patient: 'partiel' }] });
     const r = await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r1', incrementerCompteur: casier(7), prefixe });
-    expect(r.body).toMatchObject({ data: { caseCode: 'AB07', nombreOrdonnances: 1 } });
+    expect(r.body).toMatchObject({ data: { caseCode: 'AB07' } });
     expect(db.tables.rappels_ordonnance[0]).toMatchObject({ statut: 'prepare', case_code: 'AB07' });
   });
 
-  it('un casier unique pour tout un groupe de renouvellements', async () => {
+  it('prépare une ordonnance du groupe seule, les autres restent à traiter', async () => {
     const db = makeDb({ rappels_ordonnance: [
       { ...base, id: 'r1', statut: 'a_traiter', choix_patient: 'tout_renouveler', groupe_id: 'g1' },
       { ...base, id: 'r2', statut: 'a_traiter', choix_patient: 'partiel', groupe_id: 'g1' },
-      { ...base, id: 'r3', statut: 'a_traiter', choix_patient: 'rien', groupe_id: 'g1' },
     ] });
-    const r = await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r1', incrementerCompteur: casier(3), prefixe });
-    expect(r.body).toMatchObject({ data: { caseCode: 'AB03', nombreOrdonnances: 2 } });
-    const [a, b, c] = db.tables.rappels_ordonnance;
-    expect(a.case_code).toBe('AB03');
-    expect(b.case_code).toBe('AB03');
-    expect(c.case_code).toBeUndefined(); // "rien" n'est pas préparé
+    await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r1', incrementerCompteur: casier(3), prefixe });
+    const [a, b] = db.tables.rappels_ordonnance;
+    expect(a).toMatchObject({ statut: 'prepare', case_code: 'AB03' });
+    expect(b).toMatchObject({ statut: 'a_traiter' });
+    expect(b.case_code).toBeUndefined();
   });
 
-  it('n\'inclut pas un membre en opposition ou d\'une autre pharmacie', async () => {
+  it('réutilise le casier du groupe pour une ordonnance préparée plus tard', async () => {
+    const db = makeDb({ rappels_ordonnance: [
+      { ...base, id: 'r1', statut: 'prepare', choix_patient: 'tout_renouveler', groupe_id: 'g1', case_code: 'AB03' },
+      { ...base, id: 'r2', statut: 'a_traiter', choix_patient: 'partiel', groupe_id: 'g1' },
+    ] });
+    const incrementer = vi.fn(casier(9));
+    const r = await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r2', incrementerCompteur: incrementer, prefixe });
+    expect(r.body).toMatchObject({ data: { caseCode: 'AB03' } });
+    expect(incrementer).not.toHaveBeenCalled();
+    expect(db.tables.rappels_ordonnance[1]).toMatchObject({ statut: 'prepare', case_code: 'AB03' });
+  });
+
+  it("ne prépare pas un rappel \"rien\" et ne lui attribue pas de casier", async () => {
     const db = makeDb({ rappels_ordonnance: [
       { ...base, id: 'r1', statut: 'a_traiter', choix_patient: 'tout_renouveler', groupe_id: 'g1' },
-      { ...base, id: 'r2', statut: 'a_traiter', choix_patient: 'partiel', groupe_id: 'g1', opt_out: true },
-      { ...base, id: 'r3', statut: 'a_traiter', choix_patient: 'partiel', groupe_id: 'g1', pharmacie_id: 'ph2' },
+      { ...base, id: 'r2', statut: 'a_traiter', choix_patient: 'rien', groupe_id: 'g1' },
     ] });
-    const r = await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r1', incrementerCompteur: casier(1), prefixe });
-    expect(r.body).toMatchObject({ data: { nombreOrdonnances: 1 } });
-    expect(db.tables.rappels_ordonnance.map((x) => x.case_code)).toEqual(['AB01', undefined, undefined]);
+    expect((await preparerRappelAction(db.sb, { pharmacieId: 'ph1', rappelId: 'r2', incrementerCompteur: casier(1), prefixe })).status).toBe(409);
+    expect(db.tables.rappels_ordonnance.map((x) => x.case_code)).toEqual([undefined, undefined]);
   });
 
   it('refuse un rappel pas à traiter (409) ou un choix "rien" (409)', async () => {
