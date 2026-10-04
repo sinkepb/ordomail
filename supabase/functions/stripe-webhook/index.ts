@@ -31,9 +31,9 @@ serve(async (req) => {
     // impactée silencieusement si ça se répète. Alerte critique.
     await reportAlert(supabase, {
       source: "stripe-webhook", severity: "critical",
-      message: `Signature invalide — ${e.message}`,
+      message: `Signature invalide — ${(e as Error).message}`,
     });
-    return new Response(`Signature invalide: ${e.message}`, { status:400 });
+    return new Response(`Signature invalide: ${(e as Error).message}`, { status:400 });
   }
   // ⚠️ Ré-audit du 20/08/2026 : `const { data:obj } = event.data` cherchait une
   // clé "data" DANS event.data — Stripe fournit event.data.object, pas
@@ -289,7 +289,7 @@ serve(async (req) => {
       const pharmacieId = session.client_reference_id;
       if (session.mode === "subscription" && pharmacieId) {
         const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
-        const kitItem = lineItems.data.find(li => li.price?.type === "one_time");
+        const kitItem = lineItems.data.find((li: Stripe.LineItem) => li.price?.type === "one_time");
         if (kitItem) {
           const { data: already } = await supabase.from("kit_commandes").select("id").eq("stripe_checkout_session_id", session.id).maybeSingle();
           if (!already) {

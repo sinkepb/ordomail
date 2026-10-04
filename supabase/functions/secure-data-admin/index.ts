@@ -1012,8 +1012,8 @@ Deno.serve(async (req) => {
       try {
         const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
         const balance = await stripe.balance.retrieve();
-        soldeStripeDisponible = balance.available.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
-        soldeStripeAttente = balance.pending.filter(b => b.currency === "eur").reduce((s, b) => s + b.amount, 0) / 100;
+        soldeStripeDisponible = balance.available.filter((b: { currency: string }) => b.currency === "eur").reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
+        soldeStripeAttente = balance.pending.filter((b: { currency: string }) => b.currency === "eur").reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
       } catch { /* balance indisponible (clé test, permissions) — non bloquant */ }
 
       const { data: parametres } = await sb.from("gestion_entries").select("data").eq("category", "parametre").maybeSingle();
