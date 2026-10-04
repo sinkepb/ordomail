@@ -47,11 +47,10 @@ describe('buildRappelMessage', () => {
 });
 
 describe('buildRappelMessageGroupe', () => {
-  it('mentionne le nombre d\'ordonnances, sans détail médecin/spécialité', () => {
-    const msg = buildRappelMessageGroupe('Jean', 'Dupont', 'https://ordomail.fr/?r=x', 'Pharmacie du Centre', 3);
-    expect(msg).toContain('Bonjour M/Mme Jean Dupont');
-    expect(msg).toContain('le renouvellement de 3 de vos ordonnances');
-    expect(msg).toContain('https://ordomail.fr/?r=x');
+  it('commence par le nom de la pharmacie et ne détaille ni médecin ni nombre', () => {
+    const msg = buildRappelMessageGroupe('Benjamin', 'Morin', 'https://ordomail.fr/?r=xtFd4Y8g', 'Pharmacie du Centre');
+    expect(msg).toBe("Pharmacie du Centre : renouvellement d'ordonnance prévu pour Benjamin Morin. Indiquez votre choix : https://ordomail.fr/?r=xtFd4Y8g");
+    expect(msg.length).toBeLessThanOrEqual(160);
   });
 });
 
@@ -215,7 +214,7 @@ describe('runRappelScan', () => {
     expect(result).toEqual({ scanned: 2, sent: 2, failed: 0, appeler: 0 });
     expect(sendSms).toHaveBeenCalledTimes(1); // un seul SMS pour les 2 rappels
     const [, message] = vi.mocked(sendSms).mock.calls[0];
-    expect(message).toContain('le renouvellement de 2 de vos ordonnances');
+    expect(message).toContain("renouvellement d'ordonnance prévu pour");
 
     // Le porteur (r1) reçoit le token ; l'autre (r2) non, mais les deux
     // partagent le même groupe_id et passent "sms_envoye".

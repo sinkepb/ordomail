@@ -10,7 +10,7 @@ import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
-import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
+import { appliquerFiltreStatutEnvoi, buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, mergeCommentairePartiel, regrouperParTelephone } from "../_shared/rappelLogic.ts";
 import { supprimerRappelAction, preparerRappelAction } from "../_shared/rappelHandlers.ts";
 import { computeRappelsStats } from "../_shared/rappelsStatsLogic.ts";
 import { estNumeroFixe } from "../_shared/telephone.ts";
@@ -601,7 +601,7 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
       const { data: rappel } = await sb.from("rappels_ordonnance")
-        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, statut, pharmacies(nom)")
+        .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, date_prochaine_relance, statut, pharmacies(nom)")
         .eq("id", rappelId).maybeSingle();
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
@@ -613,7 +613,18 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       const newToken = generateShortToken();
       const lien = buildRappelLien(appUrl, newToken);
       const pharmacieNom = (rappel as any).pharmacies?.nom || "votre pharmacie";
-      const message = buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
+      const { data: candidatsBruts } = await appliquerFiltreStatutEnvoi(
+        sb.from("rappels_ordonnance")
+          .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, date_prochaine_relance, pharmacies(nom)")
+          .eq("pharmacie_id", pharmacieId),
+      ).neq("id", rappelId);
+      const groupe = regrouperParTelephone([rappel, ...(candidatsBruts || [])]).find((g) => g.some((r) => r.id === rappelId)) || [rappel];
+      const autres = groupe.filter((r) => r.id !== rappelId);
+      const enGroupe = autres.length > 0;
+      const groupeId = enGroupe ? crypto.randomUUID() : null;
+      const message = enGroupe
+        ? buildRappelMessageGroupe(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom)
+        : buildRappelMessage(rappel.patient_prenom, rappel.patient_nom, lien, pharmacieNom, rappel.medecin_prescripteur, rappel.specialite);
 
       let mocked = false;
       let canal: "sms" | "email_test" = "sms";
@@ -652,13 +663,24 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
         mocked = result.mocked;
       }
 
-      await sb.from("rappels_ordonnance").update({
+      const maintenant = new Date().toISOString();
+      const { error: updErr } = await sb.from("rappels_ordonnance").update({
         statut: "sms_envoye",
         token: newToken,
-        date_dernier_sms_envoye: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ...(enGroupe ? { groupe_id: groupeId } : {}),
+        date_dernier_sms_envoye: maintenant,
+        updated_at: maintenant,
       }).eq("id", rappelId);
-      await sb.from("rappels_evenements").insert({ rappel_id: rappelId, type: "sms_envoye", meta: { mocked, manuel: true, canal, ...(emailDestination ? { to: emailDestination } : {}) } });
+      if (updErr) throw new Error(updErr.message);
+      if (enGroupe) {
+        const { error: updAutresErr } = await sb.from("rappels_ordonnance").update({
+          statut: "sms_envoye", groupe_id: groupeId, date_dernier_sms_envoye: maintenant, updated_at: maintenant,
+        }).in("id", autres.map((r) => r.id));
+        if (updAutresErr) throw new Error(updAutresErr.message);
+      }
+      const meta = { mocked, manuel: true, canal, groupe: enGroupe, ...(emailDestination ? { to: emailDestination } : {}) };
+      const { error: insErr } = await sb.from("rappels_evenements").insert([rappel, ...autres].map((r) => ({ rappel_id: r.id, type: "sms_envoye", meta })));
+      if (insErr) throw new Error(insErr.message);
       return new Response(JSON.stringify({ data: { success: true, mocked } }), { headers: CORS });
     }
 

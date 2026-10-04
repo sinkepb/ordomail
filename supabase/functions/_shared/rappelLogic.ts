@@ -115,8 +115,8 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
 // numéro, plutôt qu'un message par ordonnance. Volontairement sans le
 // détail médecin/spécialité de chaque item (longueur du SMS, facturation au
 // segment) — ce détail reste visible sur la page web derrière le lien.
-export function buildRappelMessageGroupe(prenom: string, nom: string, lien: string, pharmacieNom: string, nombreOrdonnances: number): string {
-  return `Bonjour M/Mme ${prenom} ${nom},\n${pharmacieNom} vous informe que le renouvellement de ${nombreOrdonnances} de vos ordonnances est prévu prochainement.\nCliquez ici pour nous dire ce que vous souhaitez faire :\n${lien}`;
+export function buildRappelMessageGroupe(prenom: string, nom: string, lien: string, pharmacieNom: string): string {
+  return `${pharmacieNom} : renouvellement d'ordonnance prévu pour ${prenom} ${nom}. Indiquez votre choix : ${lien}`;
 }
 
 // Regroupe les rappels dus par (pharmacie, numéro de téléphone) avant envoi
@@ -126,12 +126,20 @@ export function buildRappelMessageGroupe(prenom: string, nom: string, lien: stri
 // numéro fixe ("appel") n'est jamais regroupé avec un envoi SMS : il suit
 // son propre chemin (statut a_appeler direct, sans lien), toujours traité
 // individuellement même si un autre rappel du même patient part par SMS.
-export function regrouperParTelephone<T extends { pharmacie_id: string; patient_telephone: string; mode_contact?: string | null }>(rappels: T[]): T[][] {
+// Même pharmacie, même numéro normalisé, même jour d'envoi : un seul SMS par groupe.
+export function cleGroupeEnvoi(r: { pharmacie_id: string; patient_telephone: string; date_prochaine_relance?: string | null }): string {
+  const jour = r.date_prochaine_relance
+    ? new Date(r.date_prochaine_relance).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" })
+    : "";
+  return `${r.pharmacie_id}::${normaliserTelephone(r.patient_telephone)}::${jour}`;
+}
+
+export function regrouperParTelephone<T extends { pharmacie_id: string; patient_telephone: string; mode_contact?: string | null; date_prochaine_relance?: string | null }>(rappels: T[]): T[][] {
   const index = new Map<string, T[]>();
   const groupes: T[][] = [];
   for (const r of rappels) {
     if (r.mode_contact === "appel") { groupes.push([r]); continue; }
-    const cle = `${r.pharmacie_id}::${normaliserTelephone(r.patient_telephone)}`;
+    const cle = cleGroupeEnvoi(r);
     const existant = index.get(cle);
     if (existant) { existant.push(r); continue; }
     const nouveauGroupe: T[] = [r];
@@ -239,7 +247,7 @@ async function traiterGroupeRappels(sb: SupabaseClient, appUrl: string, groupe: 
     const groupeId = crypto.randomUUID();
     const pharmacieNom = (porteur as any).pharmacies?.nom || "votre pharmacie";
     const lien = buildRappelLien(appUrl, newToken);
-    const message = buildRappelMessageGroupe(porteur.patient_prenom, porteur.patient_nom, lien, pharmacieNom, groupe.length);
+    const message = buildRappelMessageGroupe(porteur.patient_prenom, porteur.patient_nom, lien, pharmacieNom);
 
     const result = await sendSms(porteur.patient_telephone, message, pharmacieNom);
 
@@ -301,20 +309,30 @@ async function traiterGroupeRappels(sb: SupabaseClient, appUrl: string, groupe: 
   }
 }
 
-export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
-  const { data: dus, error } = await sb
-    .from("rappels_ordonnance")
-    .select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, sms_echecs_consecutifs, pharmacies(nom)")
+// Filtre unique des rappels envoyables par SMS, partagé par le cron et l'envoi
+// manuel : les deux doivent regrouper exactement les mêmes rappels.
+export function appliquerFiltreStatutEnvoi(requete: any): any {
+  return requete
     .eq("statut", "en_attente")
     .eq("consentement_sms", true)
-    .is("supprime_le", null)
-    .lte("date_prochaine_relance", new Date().toISOString())
+    .is("supprime_le", null);
+}
+
+export function appliquerFiltreEnvoyable(requete: any, maintenant: string): any {
+  return appliquerFiltreStatutEnvoi(requete).lte("date_prochaine_relance", maintenant);
+}
+
+export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise<RappelScanResult> {
+  const { data: dus, error } = await appliquerFiltreEnvoyable(
+    sb.from("rappels_ordonnance").select("id, pharmacie_id, patient_prenom, patient_nom, patient_telephone, medecin_prescripteur, specialite, mode_contact, date_prochaine_relance, sms_echecs_consecutifs, pharmacies(nom)"),
+    new Date().toISOString(),
+  )
     .order("pharmacie_id")
     .order("patient_telephone")
     .limit(SCAN_BATCH_SIZE);
   if (error) throw new Error(error.message);
 
-  const lot = retirerGroupeIncomplet(dus || [], (r) => `${r.pharmacie_id}::${normaliserTelephone(r.patient_telephone)}`, SCAN_BATCH_SIZE);
+  const lot = retirerGroupeIncomplet(dus || [], cleGroupeEnvoi, SCAN_BATCH_SIZE);
   const groupes = regrouperParTelephone(lot);
   const outcomesParGroupe = await mapWithConcurrency(groupes, RAPPEL_SCAN_CONCURRENCY, async (groupe): Promise<Outcome[]> => {
     if (groupe.length === 1) return [await traiterRappelIndividuel(sb, appUrl, groupe[0])];

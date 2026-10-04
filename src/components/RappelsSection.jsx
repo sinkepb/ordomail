@@ -10,6 +10,7 @@ import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, ter
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
 import { STATUT_INFO, CHOIX_LABEL, CRENEAU_LABEL, FILTRES, journalLigne } from "./rappels/rappelsConstants.js";
 import { normalizeTel } from "./rappels/rappelsDateUtils.js";
+import { calculerGroupesAffichage } from "./rappels/groupesRappels.js";
 import { RappelForm } from "./rappels/RappelForm.jsx";
 import { EnvoyerTestModal } from "./rappels/EnvoyerTestModal.jsx";
 import { ValiderModal } from "./rappels/ValiderModal.jsx";
@@ -364,6 +365,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // deux demandent une action du pharmacien, le badge d'en-tête ne doit pas
   // sous-compter en ignorant les patients sans mobile en attente d'appel.
   const countATraiter = rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length;
+  const groupesAffichage = calculerGroupesAffichage(rappels);
 
   return (
     <div>
@@ -475,11 +477,19 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         {filtered.map(r => {
           const info = STATUT_INFO[r.statut] || STATUT_INFO.en_attente;
           const busy = busyId === r.id;
+          const groupe = groupesAffichage.get(r.id);
           return (
-            <div key={r.id} style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div key={r.id} style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden", borderLeft: groupe ? `5px solid ${groupe.couleur}` : undefined }}>
             <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{r.patient_prenom} {r.patient_nom}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {r.patient_prenom} {r.patient_nom}
+                  {groupe && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: groupe.couleur, background: "#f8fafc", border: `1px solid ${groupe.couleur}`, borderRadius: 20, padding: "1px 8px" }}>
+                      Groupe de {groupe.taille}
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 12, color: "#64748b" }}>{r.patient_telephone} · cycle n°{r.cycle_numero}{[r.specialite, r.medecin_prescripteur].filter(Boolean).length > 0 ? ` · ${[r.specialite, r.medecin_prescripteur].filter(Boolean).join(", ")}` : ""}</div>
                 {/* Rappel groupé (03/10/2026, retour pharmacien) — plusieurs
                     ordonnances du même patient envoyées/traitées ensemble
