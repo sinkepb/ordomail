@@ -33,7 +33,8 @@ import { resolveAppOrigin } from "../_shared/checkout.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { sendTransactionalEmail } from "../_shared/email.ts";
 import { generateShortToken } from "../_shared/shortToken.ts";
-import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel, canSupprimerRappel } from "../_shared/rappelLogic.ts";
+import { buildRappelLien, buildRappelMessage, mergeCommentairePartiel } from "../_shared/rappelLogic.ts";
+import { supprimerRappelAction, preparerRappelAction } from "../_shared/rappelHandlers.ts";
 import { computeRappelsStats } from "../_shared/rappelsStatsLogic.ts";
 import { estNumeroFixe } from "../_shared/telephone.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
@@ -954,65 +955,19 @@ Deno.serve(async (req) => {
     // (tout_renouveler/partiel) — "rien" n'a rien à préparer et continue
     // d'aller directement de a_traiter à rappels_traiter, inchangé.
     if (resource === "rappels_preparer") {
-      if (!pharmacieId) {
-        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
-      }
       const { rappelId } = params || {};
-      if (!rappelId) {
-        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
-      }
-      const { data: existing } = await sb.from("rappels_ordonnance").select("id, pharmacie_id, statut, choix_patient, groupe_id").eq("id", rappelId).maybeSingle();
-      if (!existing || existing.pharmacie_id !== pharmacieId) {
-        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
-      }
-      if (existing.statut !== "a_traiter") {
-        return new Response(JSON.stringify({ error: "Ce rappel n'est pas à traiter" }), { status: 409, headers: CORS });
-      }
-      if (existing.choix_patient !== "tout_renouveler" && existing.choix_patient !== "partiel") {
-        return new Response(JSON.stringify({ error: "Seuls les renouvellements (total ou partiel) passent par l'étape préparation" }), { status: 409, headers: CORS });
-      }
-
-      // Rappel groupé (03/10/2026, retour pharmacien) — un seul casier pour
-      // toutes les ordonnances du groupe prêtes à préparer, pas un par
-      // ordonnance : c'est une seule visite/commande pour le patient. Un
-      // membre du groupe pas encore "à traiter" (réponse différente,
-      // traitement décalé) n'est pas concerné, il sera préparé séparément.
-      let idsAPreparer = [rappelId];
-      if (existing.groupe_id) {
-        const { data: membresGroupe } = await sb
-          .from("rappels_ordonnance")
-          .select("id")
-          .eq("groupe_id", existing.groupe_id)
-          .eq("pharmacie_id", pharmacieId)
-          .eq("opt_out", false)
-          .is("supprime_le", null)
-          .eq("statut", "a_traiter")
-          .in("choix_patient", ["tout_renouveler", "partiel"]);
-        if (membresGroupe?.length) idsAPreparer = membresGroupe.map((m) => m.id);
-      }
-
-      // Numéro de casier : incrément atomique et circulaire (0-99) côté DB —
-      // jamais un tirage aléatoire, pour répartir équitablement l'usage des
-      // 100 casiers physiques (voir increment_rappel_case_compteur).
-      const { data: numero, error: compteurError } = await sb.rpc("increment_rappel_case_compteur", { p_pharmacie_id: pharmacieId });
-      if (compteurError || numero == null) {
-        throw new Error(compteurError?.message || "Échec de l'attribution du casier");
-      }
-      // Préfixe 2 lettres (jamais 0/O ni 1/I, même alphabet que register-pharmacie)
-      // — purement pour lisibilité/distinction visuelle, aucune signification.
       const LETTRES_CASE = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-      const prefixe = Array.from({ length: 2 }, () => LETTRES_CASE[Math.floor(Math.random() * LETTRES_CASE.length)]).join("");
-      const caseCode = `${prefixe}${String(numero).padStart(2, "0")}`;
-      const { error: preparerError } = await sb.from("rappels_ordonnance").update({
-        statut: "prepare",
-        case_code: caseCode,
-        date_preparee: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).in("id", idsAPreparer);
-      if (preparerError) throw new Error(preparerError.message);
-      for (const id of idsAPreparer) {
-        await sb.from("rappels_evenements").insert({ rappel_id: id, type: "prepare", meta: { caseCode, ...(idsAPreparer.length > 1 ? { groupe: true } : {}) } });
-      }
+      const r = await preparerRappelAction(sb, {
+        pharmacieId,
+        rappelId,
+        incrementerCompteur: async (pid: string) => {
+          const { data, error } = await sb.rpc("increment_rappel_case_compteur", { p_pharmacie_id: pid });
+          return { numero: data as number | null, error: error?.message ?? null };
+        },
+        prefixe: () => Array.from({ length: 2 }, () => LETTRES_CASE[Math.floor(Math.random() * LETTRES_CASE.length)]).join(""),
+      });
+      return new Response(JSON.stringify(r.body), { status: r.status, headers: CORS });
+    }
       return new Response(JSON.stringify({ data: { success: true, caseCode, nombreOrdonnances: idsAPreparer.length } }), { headers: CORS });
     }
 
@@ -1123,43 +1078,9 @@ Deno.serve(async (req) => {
     // supprimés sans retour possible — la confirmation se fait côté client
     // avant cet appel, jamais ici.
     if (resource === "rappels_supprimer") {
-      if (!pharmacieId) {
-        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
-      }
       const { rappelId } = params || {};
-      if (!rappelId) {
-        return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
-      }
-      const { data: existing } = await sb.from("rappels_ordonnance")
-        .select("id, pharmacie_id, statut, choix_patient, opt_out, consentement_sms_horodatage")
-        .eq("id", rappelId).is("supprime_le", null).maybeSingle();
-      if (!existing || existing.pharmacie_id !== pharmacieId) {
-        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
-      }
-      // Suppression logique (04/10/2026, audit RGPD) : la ligne reste en base
-      // comme preuve (consentement horodaté, opposition), elle sort simplement
-      // de toutes les lectures. La purge de rétention la retire ensuite.
-      const garde = canSupprimerRappel(existing);
-      if (!garde.ok) {
-        return new Response(JSON.stringify({ error: garde.error }), { status: 409, headers: CORS });
-      }
-      const maintenant = new Date().toISOString();
-      const { error } = await sb.from("rappels_ordonnance").update({ supprime_le: maintenant, updated_at: maintenant }).eq("id", rappelId);
-      if (error) throw new Error(error.message);
-      const { error: auditErr } = await sb.from("audit_logs").insert({
-        pharmacie_id: pharmacieId,
-        user_id: vendeurSub || callerUserId || null,
-        user_role: vendeurSub ? "vendeur" : "titulaire",
-        action: "delete_rappel",
-        metadata: {
-          rappel_id: rappelId,
-          statut: existing.statut,
-          consentement_sms_horodatage: existing.consentement_sms_horodatage,
-          supprime_le: maintenant,
-        },
-      });
-      if (auditErr) throw new Error(auditErr.message);
-      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+      const r = await supprimerRappelAction(sb, { pharmacieId, vendeurSub, callerUserId, rappelId });
+      return new Response(JSON.stringify(r.body), { status: r.status, headers: CORS });
     }
 
     // Réactiver un rappel terminé (07/09/2026) — repart sur le même

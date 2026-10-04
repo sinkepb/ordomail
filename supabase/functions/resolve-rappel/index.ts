@@ -20,7 +20,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
-import { membresActifsDuGroupe, peutEncoreRepondre } from "../_shared/rappelLogic.ts";
+import { peutEncoreRepondre } from "../_shared/rappelLogic.ts";
+import { repondreRappelAction } from "../_shared/rappelHandlers.ts";
 
 // "stop" (01/10/2026, audit RGPD) — canal d'opposition : jusqu'ici le patient
 // n'avait aucun moyen de signifier "ne plus me recontacter" (seuls choix
@@ -109,70 +110,8 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "Créneau invalide" }), { status: 400, headers: CORS });
       }
 
-      const { data: rappel } = await sb
-        .from("rappels_ordonnance")
-        .select("id, statut, choix_patient, groupe_id, pharmacie_id, opt_out")
-        .eq("token", token)
-        .is("supprime_le", null)
-        .maybeSingle();
-      if (!rappel) return new Response(JSON.stringify({ error: "Lien inconnu ou expiré" }), { status: 404, headers: CORS });
-      if (!peutEncoreRepondre(rappel)) {
-        return new Response(JSON.stringify({ error: "Ce rappel a déjà reçu une réponse" }), { status: 409, headers: CORS });
-      }
-
-      // Rappel groupé (03/10/2026, retour pharmacien) — un seul lien reçu
-      // (celui du "porteur", voir rappelLogic.ts), mais la réponse doit
-      // s'appliquer à TOUS les membres du groupe : un patient qui répond
-      // "tout renouveler" le veut pour l'ensemble de ses ordonnances dues ce
-      // jour-là, pas seulement celle qui portait le lien. Chaque membre est
-      // revérifié individuellement (peutEncoreRepondre) avant d'être inclus
-      // — un membre déjà traité séparément entre-temps (cas limite) n'est
-      // jamais écrasé.
-      let membres = [rappel];
-      if (rappel.groupe_id) {
-        const { data: tousLesMembres } = await sb
-          .from("rappels_ordonnance")
-          .select("id, statut, choix_patient, groupe_id, pharmacie_id, opt_out")
-          .eq("groupe_id", rappel.groupe_id)
-          .is("supprime_le", null);
-        if (tousLesMembres?.length) membres = membresActifsDuGroupe(rappel, tousLesMembres).filter(peutEncoreRepondre);
-      }
-
-      // Renouvellement partiel (01/10/2026, retour titulaire) — "partiel"
-      // ne dit pas QUELS médicaments renouveler, un simple clic sur le lien
-      // SMS ne suffit pas à le savoir : passe par "à appeler" pour que le
-      // pharmacien rappelle le patient préciser sa demande, plutôt que
-      // d'aller directement à "à traiter" comme pour tout_renouveler/rien
-      // (choix non ambigus, aucun appel nécessaire). Voir
-      // secure-data:rappels_confirmer_appel_partiel pour la suite.
-      // "stop" passe par "à traiter" (01/10/2026, demande titulaire) — pas
-      // directement "terminé" : le pharmacien doit voir explicitement
-      // l'opposition (badge CHOIX_LABEL "⛔ Ne plus être recontacté" sur la
-      // carte) et la clore lui-même via "Fin de traitement", seul bouton actif
-      // pour ce choix (ni "Marquer préparé" ni "Valider" ne s'affichent pour
-      // un choix autre que tout_renouveler/partiel/rien — voir RappelsSection.jsx).
-      const statutSuivant = choix === "partiel" ? "a_appeler" : "a_traiter";
-      const ids = membres.map((m) => m.id);
-      const { error } = await sb.from("rappels_ordonnance").update({
-        statut: statutSuivant,
-        choix_patient: choix,
-        creneau_retrait: choix === "stop" ? null : (creneau || null),
-        opt_out: choix === "stop",
-        date_reponse_patient: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).in("id", ids);
-      if (error) throw new Error(error.message);
-
-      for (const membre of membres) {
-        // "Sauvetage" après escalade (01/10/2026, audit) — le patient répond
-        // enfin lui-même après avoir été basculé en "à appeler" faute de
-        // réponse : évite un appel du pharmacien devenu inutile. Tracé dans
-        // le journal pour qu'il voie que ce cas s'est résolu tout seul.
-        const apresEscalade = membre.statut === "a_appeler";
-        await sb.from("rappels_evenements").insert({ rappel_id: membre.id, type: "reponse_patient", meta: { choix, ...(creneau ? { creneau } : {}), ...(apresEscalade ? { apres_escalade: true } : {}), ...(rappel.groupe_id ? { groupe: true } : {}) } });
-      }
-
-      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
+      const r = await repondreRappelAction(sb, { token, choix, creneau });
+      return new Response(JSON.stringify(r.body), { status: r.status, headers: CORS });
     }
 
     return new Response(JSON.stringify({ error: "Méthode non supportée" }), { status: 405, headers: CORS });
