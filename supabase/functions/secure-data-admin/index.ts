@@ -828,6 +828,15 @@ Deno.serve(async (req) => {
     // anormale AVANT la facture, pas après. rappels_evenements n'a pas de
     // pharmacie_id direct (seulement rappel_id) — jointure faite ici en mémoire
     // plutôt qu'une vue SQL, volume actuel du produit ne le justifie pas encore.
+    // Suivi des cron jobs (05/10/2026) — état et dernières exécutions de chaque
+    // job pg_cron, lues par la fonction admin_cron_runs (voir la migration).
+    if (resource === "admin_cron_runs") {
+      const limite = Math.min(Math.max(Number(params?.limit) || 20, 1), 50);
+      const { data, error } = await sb.rpc("admin_cron_runs", { p_limit: limite });
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "admin_rappels_metrics") {
       const now = Date.now();
       const jourStart = new Date(now); jourStart.setHours(0, 0, 0, 0);
