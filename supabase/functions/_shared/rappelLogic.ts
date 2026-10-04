@@ -309,10 +309,13 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
     .eq("consentement_sms", true)
     .is("supprime_le", null)
     .lte("date_prochaine_relance", new Date().toISOString())
+    .order("pharmacie_id")
+    .order("patient_telephone")
     .limit(SCAN_BATCH_SIZE);
   if (error) throw new Error(error.message);
 
-  const groupes = regrouperParTelephone(dus || []);
+  const lot = retirerGroupeIncomplet(dus || [], (r) => `${r.pharmacie_id}::${normaliserTelephone(r.patient_telephone)}`, SCAN_BATCH_SIZE);
+  const groupes = regrouperParTelephone(lot);
   const outcomesParGroupe = await mapWithConcurrency(groupes, RAPPEL_SCAN_CONCURRENCY, async (groupe): Promise<Outcome[]> => {
     if (groupe.length === 1) return [await traiterRappelIndividuel(sb, appUrl, groupe[0])];
     return traiterGroupeRappels(sb, appUrl, groupe);
@@ -322,7 +325,7 @@ export async function runRappelScan(sb: SupabaseClient, appUrl: string): Promise
   const sent = outcomes.filter((o) => o === "sent").length;
   const failed = outcomes.filter((o) => o === "failed").length;
   const appeler = outcomes.filter((o) => o === "appeler").length;
-  return { scanned: (dus || []).length, sent, failed, appeler };
+  return { scanned: lot.length, sent, failed, appeler };
 }
 
 // Relance puis escalade pour les rappels "sms_envoye" sans réponse
@@ -422,4 +425,16 @@ export function membresActifsDuGroupe<T extends { pharmacie_id: string; opt_out?
 // (04/10/2026) pour être testé unitairement.
 export function peutEncoreRepondre(rappel: { statut: string; choix_patient: string | null }): boolean {
   return rappel.statut === "sms_envoye" || (rappel.statut === "a_appeler" && !rappel.choix_patient);
+}
+
+// Retire le dernier groupe d'un lot plein, s'il pourrait être coupé par la limite
+// (04/10/2026, audit). Ce groupe sera traité en entier au passage suivant, car
+// les rappels déjà envoyés sortent de l'ensemble "en_attente". Un lot entièrement
+// composé d'un seul groupe est conservé tel quel.
+export function retirerGroupeIncomplet<T>(rows: T[], cle: (r: T) => string, limite: number): T[] {
+  if (rows.length < limite) return rows;
+  const derniereCle = cle(rows[rows.length - 1]);
+  let i = rows.length;
+  while (i > 0 && cle(rows[i - 1]) === derniereCle) i--;
+  return i === 0 ? rows : rows.slice(0, i);
 }

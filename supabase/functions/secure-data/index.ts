@@ -1070,6 +1070,8 @@ Deno.serve(async (req) => {
         // Casier libéré (26/09/2026) — le médicament vient d'être retiré,
         // le repère de l'ancien cycle n'a plus lieu d'être affiché.
         case_code: null,
+        // Nouveau cycle : le groupe du cycle précédent ne s'applique plus.
+        groupe_id: null,
         // Nouveau cycle = nouvelle chance de répondre au premier SMS
         // (01/10/2026) — sinon un rappel réactivé hériterait du flag de
         // l'ancien cycle et sauterait directement la relance. Même principe
@@ -1219,6 +1221,8 @@ Deno.serve(async (req) => {
         cycle_numero: existing.cycle_numero + 1,
         date_prochaine_relance: dateProchaineRelance,
         case_code: null,
+        // Nouveau cycle : le groupe du cycle précédent ne s'applique plus.
+        groupe_id: null,
         relance_sms_envoyee: false,
         sms_echecs_consecutifs: 0,
         // Rotation du token (01/10/2026, audit sécurité) — voir le même

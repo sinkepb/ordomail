@@ -1335,7 +1335,7 @@ function PatientPage({ pharmacie, onBack }) {
           const scanDataUrl = scanFile === item.file ? rawDataUrl : await fileToDataUrl(scanFile);
           const base64 = scanDataUrl?.split(",")[1] || "";
           const [blurScore, extracted] = await Promise.all([
-            computeBlurScore(scanFile),
+            computeBlurScore(item.file),
             extractFromFile(base64, scanFile.type, { fallbackName: nom || null }),
           ]);
           const flou = blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD;

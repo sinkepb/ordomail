@@ -5,7 +5,7 @@
 // réel), le client Supabase est un faux minimal reproduisant les chaînes
 // utilisées par rappelLogic.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel, membresActifsDuGroupe, peutEncoreRepondre } from './rappelLogic.ts';
+import { buildRappelLien, buildRappelMessage, buildRappelMessageGroupe, regrouperParTelephone, runRappelScan, runRelanceEtEscaladeScan, canSupprimerRappel, membresActifsDuGroupe, peutEncoreRepondre, retirerGroupeIncomplet } from './rappelLogic.ts';
 
 vi.mock('./sms.ts', () => ({ sendSms: vi.fn() }));
 vi.mock('./shortToken.ts', () => ({ generateShortToken: () => 'TOKEN123' }));
@@ -128,6 +128,7 @@ function makeMockSupabase(dus: any[], opts: { updateError?: string } = {}) {
         eq() { return chain; },
         lte() { return chain; },
         is() { return chain; },
+        order() { return chain; },
         limit() { return chain; },
         update(payload: any) {
           const entry = { table, payload, ids: [] as any[] };
@@ -527,5 +528,21 @@ describe('traiterGroupeRappels : ordre d\'écriture', () => {
     expect(misesAJour).toHaveLength(1);
     expect(misesAJour[0].ids).toEqual(['r1']);
     expect(misesAJour[0].payload.token).toBeTruthy();
+  });
+});
+
+describe('retirerGroupeIncomplet', () => {
+  const cle = (r: { k: string }) => r.k;
+  it('lot non plein : rien ne saute', () => {
+    const rows = [{ k: 'a' }, { k: 'b' }];
+    expect(retirerGroupeIncomplet(rows, cle, 3)).toEqual(rows);
+  });
+  it('lot plein : retire le dernier groupe, potentiellement coupé', () => {
+    const rows = [{ k: 'a' }, { k: 'b' }, { k: 'b' }];
+    expect(retirerGroupeIncomplet(rows, cle, 3)).toEqual([{ k: 'a' }]);
+  });
+  it('lot plein d\'un seul groupe : conservé', () => {
+    const rows = [{ k: 'a' }, { k: 'a' }, { k: 'a' }];
+    expect(retirerGroupeIncomplet(rows, cle, 3)).toEqual(rows);
   });
 });
