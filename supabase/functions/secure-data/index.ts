@@ -968,8 +968,6 @@ Deno.serve(async (req) => {
       });
       return new Response(JSON.stringify(r.body), { status: r.status, headers: CORS });
     }
-      return new Response(JSON.stringify({ data: { success: true, caseCode, nombreOrdonnances: idsAPreparer.length } }), { headers: CORS });
-    }
 
     if (resource === "rappels_traiter") {
       if (!pharmacieId) {
