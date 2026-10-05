@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { compressImageFile } from "../lib/imageCompress.js";
-import { prepareScannedImage, fileToDataUrl, computeBlurScore, BLUR_VARIANCE_THRESHOLD } from "../lib/imageEnhance.js";
+import { prepareScannedImage, fileToDataUrl, computeBlurScore, BLUR_VARIANCE_THRESHOLD, enhanceContrastAndSharpness } from "../lib/imageEnhance.js";
+import { detecterCoins, redresserAvecCoins } from "../lib/documentScan.js";
 import { Input } from "../components/ui.jsx";
+import { CadrageModal } from "../components/CadrageModal.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
 
 const HEALTH_STORIES = [
@@ -1303,6 +1305,41 @@ function PatientPage({ pharmacie, onBack }) {
   const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
 
   // Ajouter un ou plusieurs fichiers
+  const cadrageEnCours = files.find(f => f.cadrage);
+
+  async function analyserItem(item, rawDataUrl, coins) {
+    try {
+      const redresse = coins ? await redresserAvecCoins(item.file, coins) : null;
+      const scanFile = redresse ? await enhanceContrastAndSharpness(redresse) : await prepareScannedImage(item.file);
+      const scanDataUrl = scanFile === item.file ? rawDataUrl : await fileToDataUrl(scanFile);
+      const base64 = scanDataUrl?.split(",")[1] || "";
+      const [blurScore, extracted] = await Promise.all([
+        computeBlurScore(item.file),
+        extractFromFile(base64, scanFile.type, { fallbackName: nom || null }),
+      ]);
+      const flou = blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD;
+      // _confidence === 0 avec _ocrSuccess=false peut aussi signifier "OCR
+      // indisponible" (voir ocr.js), pas forcément une photo illisible —
+      // on ne prévient le patient que si l'OCR a vraiment tourné et a eu
+      // du mal (confidence > 0 mais insuffisante pour réussir).
+      const confianceFaible = extracted && !extracted._ocrSuccess && (extracted._confidence || 0) > 0;
+      const warning = flou ? "Cette photo semble floue."
+        : confianceFaible ? "Le texte de cette photo semble difficile à lire."
+        : null;
+      setFiles(prev => prev.map(x => x.id === item.id
+        ? { ...x, dataUrl: scanDataUrl, scanFile, extracted, checking: false, warning }
+        : x));
+    } catch (err) {
+      console.error("[handleFiles] analyse lisibilité", err?.message || err);
+      setFiles(prev => prev.map(x => x.id === item.id ? { ...x, checking: false } : x));
+    }
+  }
+
+  function validerCadrage(item, coins) {
+    setFiles(prev => prev.map(x => x.id === item.id ? { ...x, cadrage: null } : x));
+    analyserItem(item, item.cadrage.dataUrl, coins);
+  }
+
   function handleFiles(selectedFiles) {
     const arr = Array.from(selectedFiles);
     const newFiles = arr.map(f => ({
@@ -1330,30 +1367,12 @@ function PatientPage({ pharmacie, onBack }) {
         const rawDataUrl = e.target.result;
         setFiles(prev => prev.map(x => x.id === item.id ? { ...x, dataUrl: rawDataUrl } : x));
 
-        try {
-          const scanFile = await prepareScannedImage(item.file);
-          const scanDataUrl = scanFile === item.file ? rawDataUrl : await fileToDataUrl(scanFile);
-          const base64 = scanDataUrl?.split(",")[1] || "";
-          const [blurScore, extracted] = await Promise.all([
-            computeBlurScore(item.file),
-            extractFromFile(base64, scanFile.type, { fallbackName: nom || null }),
-          ]);
-          const flou = blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD;
-          // _confidence === 0 avec _ocrSuccess=false peut aussi signifier "OCR
-          // indisponible" (voir ocr.js), pas forcément une photo illisible —
-          // on ne prévient le patient que si l'OCR a vraiment tourné et a eu
-          // du mal (confidence > 0 mais insuffisante pour réussir).
-          const confianceFaible = extracted && !extracted._ocrSuccess && (extracted._confidence || 0) > 0;
-          const warning = flou ? "Cette photo semble floue."
-            : confianceFaible ? "Le texte de cette photo semble difficile à lire."
-            : null;
-          setFiles(prev => prev.map(x => x.id === item.id
-            ? { ...x, dataUrl: scanDataUrl, scanFile, extracted, checking: false, warning }
-            : x));
-        } catch (err) {
-          console.error("[handleFiles] analyse lisibilité", err?.message || err);
-          setFiles(prev => prev.map(x => x.id === item.id ? { ...x, checking: false } : x));
+        if (!item.file.type.startsWith("image/")) {
+          analyserItem(item, rawDataUrl, null);
+          return;
         }
+        const coins = await detecterCoins(item.file);
+        setFiles(prev => prev.map(x => x.id === item.id ? { ...x, cadrage: { coins, dataUrl: rawDataUrl } } : x));
       };
       r.readAsDataURL(item.file);
     });
@@ -1594,12 +1613,20 @@ function PatientPage({ pharmacie, onBack }) {
 
             {/* Nom — sous "Ajouter votre ordonnance", juste avant l'envoi qui en a besoin */}
             <div style={{ marginTop:10 }}>
-              <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
+              {cadrageEnCours && (
+              <CadrageModal
+                key={cadrageEnCours.id}
+                imageUrl={cadrageEnCours.cadrage.dataUrl}
+                coinsInitiaux={cadrageEnCours.cadrage.coins}
+                onValider={coins => validerCadrage(cadrageEnCours, coins)}
+              />
+            )}
+            <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
             </div>
 
             {/* Bouton envoyer — à l'intérieur du cadre, comme le bouton copier du bloc e-mail :
                 les deux options doivent se lire comme deux cartes autonomes et symétriques. */}
-            <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending}
+            <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending || files.some(f => f.checking)}
               style={{ width:"100%", padding:"15px", border:"none", borderRadius:10, background:!nom.trim()||files.length===0?`${couleur}55`:couleur, color:"#fff", fontWeight:800, fontSize:16, cursor:!nom.trim()||files.length===0?"not-allowed":"pointer", fontFamily:"inherit", boxShadow:nom.trim()&&files.length>0?`0 4px 16px ${couleur}44`:"none", marginTop:4 }}>
               {sending ? "Envoi en cours…" : files.length > 1 ? `Envoyer ${files.length} ordonnances →` : "Envoyer l'ordonnance →"}
             </button>
