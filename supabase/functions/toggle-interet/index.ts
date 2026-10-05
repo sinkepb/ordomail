@@ -77,6 +77,11 @@ serve(async (req) => {
         { status: 404, headers: CORS });
     }
 
+    const { data: offre } = await sb.from("offres_stories").select("id, pharmacie_id").eq("id", offreId).maybeSingle();
+    if (!offre || offre.pharmacie_id !== pharmacieId) {
+      return new Response(JSON.stringify({ error: "Offre introuvable" }), { status: 404, headers: CORS });
+    }
+
     const dateJour = new Date().toISOString().split("T")[0];
 
     // Clé de service → bypass RLS, aucun problème de visibilité SELECT pour

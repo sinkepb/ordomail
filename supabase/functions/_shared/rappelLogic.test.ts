@@ -49,7 +49,7 @@ describe('buildRappelMessage', () => {
 describe('buildRappelMessageGroupe', () => {
   it('commence par le nom de la pharmacie et ne détaille ni médecin ni nombre', () => {
     const msg = buildRappelMessageGroupe('Benjamin', 'Morin', 'https://ordomail.fr/?r=xtFd4Y8g', 'Pharmacie du Centre');
-    expect(msg).toBe("Pharmacie du Centre : renouvellement d'ordonnance prévu pour Benjamin Morin. Indiquez votre choix : https://ordomail.fr/?r=xtFd4Y8g");
+    expect(msg).toBe("Pharmacie du Centre : renouvellement d'ordonnance prévu pour Benjamin Morin. Indiquez votre choix : https://ordomail.fr/?r=xtFd4Y8g.");
     expect(msg.length).toBeLessThanOrEqual(160);
   });
 });

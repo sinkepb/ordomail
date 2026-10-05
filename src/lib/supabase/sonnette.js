@@ -1,6 +1,6 @@
 // ─── Sonnette patient (appel vendeur → patient) ───────────────────────────────
 // Extrait de src/supabase.js (27/07/2026) — voir src/supabase.js.
-import { IS_DEMO, getSupabase } from './client.js';
+import { IS_DEMO, getSupabase, callSecureData } from './client.js';
 import { maskId, maskCode } from '../utils.js';
 
 // Activer/désactiver sonnette (admin backoffice)
@@ -30,30 +30,12 @@ export async function appellerPatient(pharmacieId, codePatient) {
     console.log("[SONNETTE] event dispatché");
     return { ok: true };
   }
-  const sb = getSupabase();
-
-  const insertPromise = sb.from('appels_patient').insert({
-    pharmacie_id: pharmacieId,
-    code_patient: codePatient,
-  });
-
-  const channel = sb.channel(`appels:${pharmacieId}`);
-  const broadcastPromise = new Promise((resolve) => {
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        channel
-          .send({ type: 'broadcast', event: 'appel', payload: { pharmacie_id: pharmacieId, code_patient: codePatient } })
-          .then(() => resolve(true))
-          .catch(() => resolve(false));
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        resolve(false);
-      }
-    });
-  });
-
-  const [{ error }] = await Promise.all([insertPromise, broadcastPromise]);
-  sb.removeChannel(channel);
-  return { ok: !error };
+  try {
+    await callSecureData('appeler_patient', { codePatient });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 }
 
 // Patient → écouter les appels (Realtime Broadcast — voir commentaire ci-dessus)
