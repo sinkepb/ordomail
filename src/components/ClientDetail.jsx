@@ -22,7 +22,7 @@ async function callSecureData(resource, params, adminToken) {
   return body;
 }
 
-function ClientDetail({ client: ph, plans, adminToken, onClose }) {
+function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
   const planInfo = plans[ph.plan] || {};
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
@@ -42,6 +42,7 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
     setDeleting(true); setDeleteError("");
     try {
       await callSecureData("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
+      onSupprime?.();
       onClose();
     } catch (e) {
       setDeleteError(e.message);
