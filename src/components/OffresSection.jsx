@@ -1,5 +1,6 @@
 // Extrait de Dashboard.jsx (phase 4) — composant autonome (props + état local
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
+import { defaultDateDebut, defaultDateFin } from "../lib/dates.js";
 import { useState, useEffect } from "react";
 import { getSupabaseClient, isDemoMode, fetchStoryMetrics, callSecureData, subscribeToOffres } from "../supabase.js";
 import { fileToBase64, formatDuree } from "../lib/utils.js";
@@ -23,17 +24,6 @@ function dataUrlToBase64(dataUrl) {
 // "catalogue") — aujourd'hui → +30 jours, pré-rempli pour ne pas bloquer la
 // publication d'un lot de plusieurs pages derrière une saisie manuelle,
 // modifiable avant de publier si besoin.
-function toDateInputValue(date) {
-  return date.toISOString().slice(0, 10);
-}
-function defaultDateDebut() {
-  return toDateInputValue(new Date());
-}
-function defaultDateFin() {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return toDateInputValue(d);
-}
 
 function aggregateOffre(events, offreId) {
   const key = `offre-${offreId}`;

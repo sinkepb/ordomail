@@ -15,27 +15,11 @@
 // 25/08/2026 — la section Rétention (durée + fréquence + déclenchement manuel
 // + historique) a été sortie dans son propre onglet backoffice (PurgeAdmin.jsx)
 // à la demande de l'utilisateur.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState } from "react";
 import { PaginationControls } from "./PaginationControls.jsx";
 
 const RESULTS_PER_PAGE = 10;
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${adminToken || ""}`,
-    },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 // Déclenche le téléchargement d'un objet JS comme fichier .json (01/10/2026,
 // export RGPD) — pas de librairie, un Blob + lien éphémère suffit.
@@ -63,7 +47,7 @@ function SearchSection({ adminToken }) {
     if (nom.trim().length < 2) { setError("Entrez au moins 2 caractères."); return; }
     setLoading(true); setError(""); setResults(null); setRappelsResults(null); setPage(1);
     try {
-      const { data, retentionDays: rd, rappels } = await callSecureData("admin_search_ordonnances", { nom: nom.trim() }, adminToken);
+      const { data, retentionDays: rd, rappels } = await callSecureDataAdmin("admin_search_ordonnances", { nom: nom.trim() }, adminToken);
       setResults(data || []);
       setRappelsResults(rappels || []);
       setRetentionDays(rd ?? null);
@@ -77,7 +61,7 @@ function SearchSection({ adminToken }) {
     if (!window.confirm("Confirmer la suppression définitive de cette ordonnance ?\n\nÀ ne faire qu'après avoir vérifié l'identité du demandeur par un autre moyen (téléphone, email confirmé).")) return;
     setDeletingId(id);
     try {
-      await callSecureData("admin_delete_ordonnance", { ordoId: id }, adminToken);
+      await callSecureDataAdmin("admin_delete_ordonnance", { ordoId: id }, adminToken);
       setResults(prev => prev.filter(r => r.id !== id));
     } catch(e) {
       setError(e.message);
@@ -92,7 +76,7 @@ function SearchSection({ adminToken }) {
     setExportingId(id);
     try {
       const params = type === "ordonnance" ? { ordoIds: [id] } : { rappelIds: [id] };
-      const { data } = await callSecureData("admin_export_patient_data", params, adminToken);
+      const { data } = await callSecureDataAdmin("admin_export_patient_data", params, adminToken);
       downloadJson(data, `export-rgpd-${type}-${id.slice(0, 8)}.json`);
     } catch(e) {
       setError(e.message);

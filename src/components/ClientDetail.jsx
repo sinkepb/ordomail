@@ -1,5 +1,6 @@
 // Extrait de AdminPage.jsx (phase 4) — composant autonome (props uniquement).
 // Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useEffect, useState } from "react";
 import { snapshotMetriquesJournalieres } from "../supabase.js";
 import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
@@ -9,19 +10,6 @@ import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
 // la liste des pharmacies (admin_pharmacies, coûteuse pour N pharmacies) :
 // un admin n'ouvre qu'une fiche à la fois, donc un fetch dédié ici plutôt
 // qu'un calcul pour toute la liste à chaque chargement de l'onglet Clients.
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
-
 function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
   const planInfo = plans[ph.plan] || {};
   const [usage, setUsage] = useState(null);
@@ -41,7 +29,7 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
     if (!window.confirm(`Dernière confirmation : supprimer DÉFINITIVEMENT le compte "${ph.nom}" et toutes ses données (ordonnances, rappels, postes) ?\n\nCette action est irréversible.`)) return;
     setDeleting(true); setDeleteError("");
     try {
-      await callSecureData("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
+      await callSecureDataAdmin("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
       onSupprime?.();
       onClose();
     } catch (e) {
@@ -54,7 +42,7 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
     let cancelled = false;
     setUsage(null);
     setUsageLoading(true);
-    callSecureData("admin_pharmacie_usage", { pharmacieId: ph.id }, adminToken)
+    callSecureDataAdmin("admin_pharmacie_usage", { pharmacieId: ph.id }, adminToken)
       .then(({ data }) => { if (!cancelled) setUsage(data); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setUsageLoading(false); });

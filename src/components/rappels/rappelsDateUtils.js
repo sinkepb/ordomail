@@ -1,24 +1,15 @@
+import { normalizeTel, estNumeroFixe } from "../../lib/telephone.js";
+import { toDateInputValue } from "../../lib/dates.js";
+export { normalizeTel, estNumeroFixe, toDateInputValue };
 // Téléphone + conversions de dates du module Rappels — extrait de
 // RappelsSection.jsx (02/10/2026, découpage). Même règle de détection
 // fixe/mobile que _shared/telephone.ts côté serveur (qui reste la source de
 // vérité enregistrée en base) : ici uniquement pour préremplir l'UI.
 
-export function normalizeTel(v) {
-  return (v || "").replace(/[\s.-]/g, "");
-}
 export function telValide(v) {
   return /^(0|\+33)[1-9]\d{8}$/.test(normalizeTel(v));
 }
-export function estNumeroFixe(v) {
-  const digits = normalizeTel(v);
-  const local = digits.startsWith("+33") ? "0" + digits.slice(3) : digits;
-  const prefix = local[1];
-  return prefix !== undefined && prefix !== "6" && prefix !== "7";
-}
 // Format YYYY-MM-DD attendu par <input type="date">.
-export function toDateInputValue(date) {
-  return date.toISOString().slice(0, 10);
-}
 export function shiftDate(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);

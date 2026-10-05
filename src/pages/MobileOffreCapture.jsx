@@ -6,6 +6,7 @@
 // Interface mono-tâche volontaire (voir mission) : UNIQUEMENT le viseur photo,
 // un pavé numérique pour le prix, et un gros bouton "Diffuser" — rien d'autre
 // ne doit distraire un préparateur pressé, debout au comptoir.
+import { defaultDateDebut, defaultDateFin } from "../lib/dates.js";
 import { useState, useEffect } from "react";
 import { fileToBase64 } from "../lib/utils.js";
 import { compressImageFile } from "../lib/imageCompress.js";
@@ -30,17 +31,6 @@ const KEYPAD_KEYS = ["1","2","3","4","5","6","7","8","9",",","0","⌫"];
 // +30 jours pour ne pas ajouter d'étape au geste "photo + prix + Diffuser"
 // dans le cas courant ; les deux champs restent modifiables juste avant
 // diffusion pour qui veut une fenêtre différente.
-function toDateInputValue(date) {
-  return date.toISOString().slice(0, 10);
-}
-function defaultDateDebut() {
-  return toDateInputValue(new Date());
-}
-function defaultDateFin() {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return toDateInputValue(d);
-}
 
 function MobileOffreCapture({ token }) {
   const [status, setStatus] = useState("checking"); // checking | ready | forbidden | invalid

@@ -2,18 +2,12 @@
 // 04/09/2026 — voir supabase/migrations/20260904_rappels_ordonnance.sql pour
 // le cycle de statut (en_attente → sms_envoye → a_traiter → en_attente
 // [cycle suivant] → … → termine).
+import { estNumeroFixe } from "../telephone.js";
 import { IS_DEMO, getDB, callSecureData } from './client.js';
 
 // Détection fixe/mobile par préfixe (01/10/2026) — même règle que
 // supabase/functions/_shared/telephone.ts, dupliquée ici car le mode démo
 // (sans appel serveur) doit déterminer lui-même le mode de contact.
-function estNumeroFixe(v) {
-  const digits = (v || '').replace(/[\s.-]/g, '');
-  const local = digits.startsWith('+33') ? '0' + digits.slice(3) : digits;
-  const prefix = local[1];
-  return prefix !== undefined && prefix !== '6' && prefix !== '7';
-}
-
 export async function fetchRappels(pharmacieId, statut = null) {
   if (IS_DEMO) {
     const db = getDB();

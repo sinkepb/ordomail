@@ -8,27 +8,11 @@
 // _shared/smsQuota.ts) via admin_sms_consommation, en plus des tendances
 // réseau d'admin_rappels_metrics (qui exclut déjà les envois de test par
 // email du comptage, meta.canal === "email_test").
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { PaginationControls } from "./PaginationControls.jsx";
 
 const ROWS_PER_PAGE = 10;
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${adminToken || ""}`,
-    },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 const PLAN_LABEL = { starter: "Essentiel", standard: "Fluidité", pro: "Performance" };
 
@@ -76,8 +60,8 @@ function RappelsMetricsAdmin({ adminToken } = {}) {
     setError("");
     try {
       const [{ data }, quotasRes] = await Promise.all([
-        callSecureData("admin_rappels_metrics", {}, adminToken),
-        callSecureData("admin_sms_consommation", {}, adminToken),
+        callSecureDataAdmin("admin_rappels_metrics", {}, adminToken),
+        callSecureDataAdmin("admin_sms_consommation", {}, adminToken),
       ]);
       setData(data);
       setQuotas(quotasRes.data || []);

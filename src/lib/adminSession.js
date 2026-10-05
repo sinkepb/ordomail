@@ -1,3 +1,4 @@
+import { base64UrlDecode } from "./base64.js";
 // OrdoMail — jeton de session admin backoffice, partagé entre App.jsx (pour
 // savoir sur quelle route revenir après un refresh) et AdminPage.jsx (pour
 // restaurer sa propre session). Auparavant dupliqué dans AdminPage.jsx
@@ -7,11 +8,6 @@
 // session Supabase (pharmacie), qui ne vérifiait pas l'existence d'une
 // session admin avant de s'exécuter.
 export const ADMIN_TOKEN_KEY = "ordomail_admin_token";
-
-function base64UrlDecode(str) {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + ((4 - (str.length % 4)) % 4), "=");
-  return atob(padded);
-}
 
 // Vérifie uniquement l'expiration côté client, pour l'UX (éviter d'afficher
 // des panneaux cassés avec un jeton déjà expiré) — la vérification qui

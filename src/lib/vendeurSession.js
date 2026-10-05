@@ -1,3 +1,4 @@
+import { base64UrlDecode } from "./base64.js";
 // ─── Persistance du jeton vendeur (16/09/2026) ─────────────────────────────
 // Jusqu'ici, le jeton vendeur (connexion par code pharmacie + PIN, voir
 // verify-pin/index.ts) n'était gardé qu'en mémoire (client.js) : un simple
@@ -11,11 +12,6 @@
 // sans appel réseau supplémentaire — juste un décodage local, la vérification
 // qui compte reste côté serveur (resolveCaller/verifyToken dans secure-data).
 export const VENDEUR_TOKEN_KEY = "ordomail_vendeur_token";
-
-function base64UrlDecode(str) {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + ((4 - (str.length % 4)) % 4), "=");
-  return atob(padded);
-}
 
 /** Lit et décode le jeton vendeur persisté, en vérifiant son expiration côté client (UX). */
 export function readStoredVendeurToken() {

@@ -11,23 +11,11 @@
 // à valider par un expert-comptable ou un avocat avant tout usage officiel.
 // Voir secure-data-admin/index.ts (ressources admin_gestion_*) pour le détail
 // des calculs et de ce qui est volontairement laissé en saisie manuelle.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { PaginationControls } from "./PaginationControls.jsx";
 
 const ROWS_PER_PAGE = 10;
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 function downloadTextFile(filename, content, mime = "text/csv;charset=utf-8") {
   const blob = new Blob([content], { type: mime });
@@ -80,7 +68,7 @@ function GestionAdmin({ adminToken }) {
   async function loadDashboard() {
     setError("");
     try {
-      const { data } = await callSecureData("admin_gestion_dashboard", {}, adminToken);
+      const { data } = await callSecureDataAdmin("admin_gestion_dashboard", {}, adminToken);
       setDashboard(data);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -172,7 +160,7 @@ function FacturationSection({ adminToken }) {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    callSecureData("admin_gestion_export_factures", {}, adminToken)
+    callSecureDataAdmin("admin_gestion_export_factures", {}, adminToken)
       .then(r => setFactures(r.data || []))
       .catch(e => setError(e.message));
   }, [adminToken]);
@@ -262,7 +250,7 @@ function RegistresSection({ adminToken }) {
   async function load() {
     setError("");
     try {
-      const { data } = await callSecureData("admin_gestion_registre_list", { categorie }, adminToken);
+      const { data } = await callSecureDataAdmin("admin_gestion_registre_list", { categorie }, adminToken);
       setEntries(data || []);
     } catch (e) { setError(e.message); }
   }
@@ -271,13 +259,13 @@ function RegistresSection({ adminToken }) {
   async function save() {
     if (!Object.values(form).some(v => v)) return;
     try {
-      await callSecureData("admin_gestion_registre_save", { categorie, entree: form }, adminToken);
+      await callSecureDataAdmin("admin_gestion_registre_save", { categorie, entree: form }, adminToken);
       setForm({});
       load();
     } catch (e) { setError(e.message); }
   }
   async function remove(id) {
-    try { await callSecureData("admin_gestion_registre_delete", { id }, adminToken); load(); }
+    try { await callSecureDataAdmin("admin_gestion_registre_delete", { id }, adminToken); load(); }
     catch (e) { setError(e.message); }
   }
 
@@ -325,13 +313,13 @@ function ConformiteSection({ adminToken }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    callSecureData("admin_gestion_checklist_get", {}, adminToken).then(r => setState(r.data || {})).catch(e => setError(e.message));
+    callSecureDataAdmin("admin_gestion_checklist_get", {}, adminToken).then(r => setState(r.data || {})).catch(e => setError(e.message));
   }, [adminToken]);
 
   async function toggle(item) {
     const next = !state[item.id]?.done;
     setState(s => ({ ...s, [item.id]: { ...(s[item.id] || {}), done: next } }));
-    try { await callSecureData("admin_gestion_checklist_set", { itemId: item.id, done: next, note: state[item.id]?.note }, adminToken); }
+    try { await callSecureDataAdmin("admin_gestion_checklist_set", { itemId: item.id, done: next, note: state[item.id]?.note }, adminToken); }
     catch (e) { setError(e.message); }
   }
 
@@ -380,7 +368,7 @@ function ParametresSection({ adminToken, dashboard, onSaved }) {
     setSaving(true); setError("");
     try {
       for (const [k] of FIELDS) {
-        await callSecureData("admin_gestion_set_parametre", { cle: k, valeur: values[k] || "" }, adminToken);
+        await callSecureDataAdmin("admin_gestion_set_parametre", { cle: k, valeur: values[k] || "" }, adminToken);
       }
       onSaved?.();
     } catch (e) { setError(e.message); }

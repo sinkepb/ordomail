@@ -4,6 +4,7 @@
 // déjà alimentée par purgeLogic.ts — pas de table dédiée).
 // Anciennement une section de RgpdPanel.jsx, sortie en onglet à part entière
 // à la demande de l'utilisateur.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { PaginationControls } from "./PaginationControls.jsx";
 
@@ -16,19 +17,6 @@ const FREQ_LABELS = {
   daily:    "Une fois par jour (3h du matin)",
   weekly:   "Une fois par semaine (dimanche 3h)",
 };
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 function PurgeAdmin({ adminToken } = {}) {
   const [days, setDays]               = useState("");
@@ -53,8 +41,8 @@ function PurgeAdmin({ adminToken } = {}) {
     setLoading(true);
     try {
       const [{ data: retention }, { data: schedule }] = await Promise.all([
-        callSecureData("admin_retention_get", {}, adminToken),
-        callSecureData("admin_purge_schedule_get", {}, adminToken),
+        callSecureDataAdmin("admin_retention_get", {}, adminToken),
+        callSecureDataAdmin("admin_purge_schedule_get", {}, adminToken),
       ]);
       setCurrentRetention(retention);
       setDays(retention?.ordonnances_retention_days ? String(retention.ordonnances_retention_days) : "");
@@ -71,7 +59,7 @@ function PurgeAdmin({ adminToken } = {}) {
     setHistoryLoading(true);
     setHistoryPage(1);
     try {
-      const { data } = await callSecureData("admin_alerts", { includeResolved: true, limit: 50 }, adminToken);
+      const { data } = await callSecureDataAdmin("admin_alerts", { includeResolved: true, limit: 50 }, adminToken);
       setHistory((data || []).filter(a => a.source === "purge-ordonnances"));
     } catch { /* historique non-bloquant */ }
     setHistoryLoading(false);
@@ -88,7 +76,7 @@ function PurgeAdmin({ adminToken } = {}) {
         setSaving(false);
         return;
       }
-      await callSecureData("admin_retention_set", { days: value, updatedBy: "backoffice" }, adminToken);
+      await callSecureDataAdmin("admin_retention_set", { days: value, updatedBy: "backoffice" }, adminToken);
       setMsg({ ok: true, text: value ? `Rétention fixée à ${value} jours.` : "Purge automatique désactivée." });
       await load();
     } catch (e) {
@@ -106,7 +94,7 @@ function PurgeAdmin({ adminToken } = {}) {
         setSavingRappels(false);
         return;
       }
-      await callSecureData("admin_retention_set", { rappelsDays: value, updatedBy: "backoffice" }, adminToken);
+      await callSecureDataAdmin("admin_retention_set", { rappelsDays: value, updatedBy: "backoffice" }, adminToken);
       setMsg({ ok: true, text: value ? `Rétention des rappels fixée à ${value} jours.` : "Purge automatique des rappels désactivée." });
       await load();
     } catch (e) {
@@ -118,7 +106,7 @@ function PurgeAdmin({ adminToken } = {}) {
   async function saveFreq() {
     setSavingFreq(true); setMsg(null);
     try {
-      await callSecureData("admin_purge_schedule_set", { presetKey: freqKey }, adminToken);
+      await callSecureDataAdmin("admin_purge_schedule_set", { presetKey: freqKey }, adminToken);
       setMsg({ ok: true, text: `Fréquence mise à jour : ${FREQ_LABELS[freqKey]}.` });
       await load();
     } catch (e) {
@@ -134,7 +122,7 @@ function PurgeAdmin({ adminToken } = {}) {
     if (!window.confirm(label)) return;
     setRunning(true); setMsg(null);
     try {
-      const { data, rappels } = await callSecureData("admin_purge_run", {}, adminToken);
+      const { data, rappels } = await callSecureDataAdmin("admin_purge_run", {}, adminToken);
       const ordoMsg = data.skipped
         ? `Ordonnances : rien à purger (${data.reason}).`
         : `✅ ${data.deleted} ordonnance(s) supprimée(s) (rétention ${data.retentionDays} jours).`;
