@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { initMonitoring } from './lib/monitoring.js'
 import { loadPlanLimits } from './lib/plans.js'
+// Polices auto-hébergées (05/10/2026, conformité RGPD) — voir styles/fonts.css.
+import './styles/fonts.css'
 
 initMonitoring() // no-op tant que VITE_SENTRY_DSN n'est pas défini
 

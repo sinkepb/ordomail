@@ -71,6 +71,28 @@ function MentionsContent() {
           autorisée est interdite.
         </p>
       </Section>
+      <Section title="Signalement de contenus illicites">
+        <p>
+          Conformément à l'article 6-I-5 de la loi n°2004-575 du 21 juin 2004 pour la confiance
+          dans l'économie numérique (LCEN), toute personne peut notifier à SISEO un contenu
+          qu'elle estime illicite (atteinte au droit d'auteur, contenu diffamatoire, etc.) et qui
+          serait accessible depuis l'application OrdoMail, à l'adresse{" "}
+          <a href="mailto:legal@ordomail.fr">legal@ordomail.fr</a>.
+        </p>
+        <p>Pour être recevable, la notification doit comporter :</p>
+        <ul style={{ paddingLeft: 20, margin: "8px 0" }}>
+          <li>l'identité et les coordonnées du notifiant ;</li>
+          <li>la description précise du contenu visé et sa localisation (URL ou écran concerné) ;</li>
+          <li>le motif pour lequel ce contenu doit être retiré, avec les textes applicables ;</li>
+          <li>une copie de la correspondance adressée à l'auteur ou à l'éditeur du contenu, si elle existe.</li>
+        </ul>
+        <p>
+          OrdoMail n'héberge pas de contenu public librement accessible : les ordonnances,
+          rappels et offres créés par une pharmacie ne sont visibles que par elle-même et par ses
+          propres patients. Cette procédure reste disponible pour tout contenu qui serait
+          néanmoins signalé.
+        </p>
+      </Section>
       <Section title="Contact">
         <p>Pour toute question : contact@ordomail.fr</p>
       </Section>
