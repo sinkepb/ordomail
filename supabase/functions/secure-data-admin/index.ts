@@ -875,6 +875,20 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }
 
+    if (resource === "admin_rappels_dates") {
+      const pharmacieId = params?.pharmacieId;
+      if (!pharmacieId || typeof pharmacieId !== "string") {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("rappels_ordonnance")
+        .select("created_at")
+        .eq("pharmacie_id", pharmacieId)
+        .order("created_at", { ascending: false })
+        .limit(3000);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
     if (resource === "admin_rappels_metrics") {
       const now = Date.now();
       const jourStart = new Date(now); jourStart.setHours(0, 0, 0, 0);
