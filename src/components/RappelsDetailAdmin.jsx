@@ -1,8 +1,12 @@
 // Détail des rappels par pharmacie — backoffice. Données : secure-data-admin
 // (admin_pharmacies pour la liste, admin_rappels_detail pour le détail).
 import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { STATUT_INFO } from "./rappels/rappelsConstants.js";
+import { grouperParPeriode } from "../lib/activiteBuckets.js";
+import { BarChart } from "./BarChart.jsx";
+
+const GRANULARITES = [["jour", "Jour"], ["mois", "Mois"], ["annee", "Année"]];
 
 function formatDate(iso) {
   return iso ? new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—";
@@ -16,6 +20,8 @@ export function RappelsDetailAdmin({ adminToken }) {
   const [pharmacies, setPharmacies] = useState([]);
   const [pharmacieId, setPharmacieId] = useState("");
   const [rappels, setRappels] = useState([]);
+  const [ordonnancesDates, setOrdonnancesDates] = useState([]);
+  const [granularite, setGranularite] = useState("jour");
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState("");
 
@@ -26,14 +32,29 @@ export function RappelsDetailAdmin({ adminToken }) {
   }, [adminToken]);
 
   useEffect(() => {
-    if (!pharmacieId) { setRappels([]); return; }
+    if (!pharmacieId) { setRappels([]); setOrdonnancesDates([]); return; }
     setChargement(true);
     setErreur("");
-    callSecureDataAdmin("admin_rappels_detail", { pharmacieId }, adminToken)
-      .then(({ data }) => setRappels(data || []))
+    Promise.all([
+      callSecureDataAdmin("admin_rappels_detail", { pharmacieId }, adminToken),
+      callSecureDataAdmin("admin_ordonnances_dates", { pharmacieId }, adminToken),
+    ])
+      .then(([rappelsRes, ordosRes]) => {
+        setRappels(rappelsRes.data || []);
+        setOrdonnancesDates(ordosRes.data || []);
+      })
       .catch((e) => setErreur(e.message))
       .finally(() => setChargement(false));
   }, [pharmacieId, adminToken]);
+
+  const seriesOrdonnances = useMemo(
+    () => grouperParPeriode(ordonnancesDates.map((o) => o.received_at), granularite),
+    [ordonnancesDates, granularite],
+  );
+  const seriesRappels = useMemo(
+    () => grouperParPeriode(rappels.map((r) => r.created_at), granularite),
+    [rappels, granularite],
+  );
 
   const cellule = { padding: "6px 8px", borderTop: "1px solid #f1f5f9", verticalAlign: "top" };
   const entete = { padding: "6px 8px", textAlign: "left", color: "#94a3b8", fontWeight: 600, fontSize: 11 };
@@ -48,6 +69,31 @@ export function RappelsDetailAdmin({ adminToken }) {
 
       {erreur && <div style={{ color: "#dc2626", fontSize: 13 }}>{erreur}</div>}
       {chargement && <div style={{ color: "#94a3b8", fontSize: 13 }}>Chargement…</div>}
+
+      {pharmacieId && !chargement && !erreur && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            {GRANULARITES.map(([k, label]) => (
+              <button key={k} onClick={() => setGranularite(k)}
+                style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                  background: granularite === k ? "#1a3a6e" : "#fff", color: granularite === k ? "#fff" : "#334155" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: 14, flex: 1, minWidth: 280 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>📋 Ordonnances créées</div>
+              <BarChart data={seriesOrdonnances} color="#1a3a6e" />
+            </div>
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: 14, flex: 1, minWidth: 280 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>🔔 Rappels créés</div>
+              <BarChart data={seriesRappels} color="#7c3aed" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {pharmacieId && !chargement && rappels.length === 0 && !erreur && (
         <div style={{ color: "#94a3b8", fontSize: 13 }}>Aucun rappel pour cette pharmacie.</div>
       )}
