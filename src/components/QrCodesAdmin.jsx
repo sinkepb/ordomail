@@ -4,6 +4,7 @@
 // le contexte complet. Conventions identiques à PricingEditor.jsx/
 // StoriesContentAdmin.jsx (callSecureData local, styles inline, palette
 // sombre #0f172a/#1e293b/#334155).
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect, useRef } from "react";
 import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
@@ -53,18 +54,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   const [posterDownloading, setPosterDownloading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
 
-  async function callSecureData(resource, params) {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-      body: JSON.stringify({ resource, params }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-    return body;
-  }
+  const callSecureData = (resource, params) => callSecureDataAdmin(resource, params, adminToken);
 
   async function loadList() {
     setListLoading(true);

@@ -1,28 +1,20 @@
 // Extrait de AdminPage.jsx (phase 4) — composant autonome (props uniquement).
 // Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
-import { useEffect, useState } from "react";
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
+import { useEffect, useMemo, useState } from "react";
 import { snapshotMetriquesJournalieres } from "../supabase.js";
 import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
+import { grouperParPeriode } from "../lib/activiteBuckets.js";
+import { BarChart } from "./BarChart.jsx";
+
+const GRANULARITES = [["jour", "Jour"], ["mois", "Mois"], ["annee", "Année"]];
 
 // Statistiques d'usage (scans QR, connexions, dépôts du jour) chargées à la
 // demande (22/09/2026, demande titulaire) — volontairement PAS incluses dans
 // la liste des pharmacies (admin_pharmacies, coûteuse pour N pharmacies) :
 // un admin n'ouvre qu'une fiche à la fois, donc un fetch dédié ici plutôt
 // qu'un calcul pour toute la liste à chaque chargement de l'onglet Clients.
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
-
-function ClientDetail({ client: ph, plans, adminToken, onClose }) {
+function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
   const planInfo = plans[ph.plan] || {};
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
@@ -36,12 +28,18 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  // Activité (05/10/2026) — ordonnances et rappels créés, par jour/mois/année.
+  const [ordonnancesDates, setOrdonnancesDates] = useState([]);
+  const [rappelsDates, setRappelsDates] = useState([]);
+  const [granularite, setGranularite] = useState("jour");
+
   async function supprimerCompte() {
     if (confirmNom !== ph.nom) return;
     if (!window.confirm(`Dernière confirmation : supprimer DÉFINITIVEMENT le compte "${ph.nom}" et toutes ses données (ordonnances, rappels, postes) ?\n\nCette action est irréversible.`)) return;
     setDeleting(true); setDeleteError("");
     try {
-      await callSecureData("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
+      await callSecureDataAdmin("admin_delete_pharmacie", { pharmacieId: ph.id, confirmNom }, adminToken);
+      onSupprime?.();
       onClose();
     } catch (e) {
       setDeleteError(e.message);
@@ -53,12 +51,37 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
     let cancelled = false;
     setUsage(null);
     setUsageLoading(true);
-    callSecureData("admin_pharmacie_usage", { pharmacieId: ph.id }, adminToken)
+    callSecureDataAdmin("admin_pharmacie_usage", { pharmacieId: ph.id }, adminToken)
       .then(({ data }) => { if (!cancelled) setUsage(data); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setUsageLoading(false); });
     return () => { cancelled = true; };
   }, [ph.id, adminToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      callSecureDataAdmin("admin_ordonnances_dates", { pharmacieId: ph.id }, adminToken),
+      callSecureDataAdmin("admin_rappels_dates", { pharmacieId: ph.id }, adminToken),
+    ])
+      .then(([ordosRes, rappelsRes]) => {
+        if (cancelled) return;
+        setOrdonnancesDates(ordosRes.data || []);
+        setRappelsDates(rappelsRes.data || []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ph.id, adminToken]);
+
+  const seriesOrdonnances = useMemo(
+    () => grouperParPeriode(ordonnancesDates.map((o) => o.received_at), granularite),
+    [ordonnancesDates, granularite],
+  );
+  const seriesRappels = useMemo(
+    () => grouperParPeriode(rappelsDates.map((r) => r.created_at), granularite),
+    [rappelsDates, granularite],
+  );
+
   const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
   const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
   const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
@@ -92,6 +115,34 @@ function ClientDetail({ client: ph, plans, adminToken, onClose }) {
 
       {/* Graphique historique 30 jours */}
       <HistoriqueSparkline pharmacieId={ph.id}/>
+
+      {/* Activité : ordonnances et rappels créés, par jour/mois/année (05/10/2026) */}
+      <div style={{ padding: "16px 24px 0" }}>
+        <div style={{ background: "#0f172a", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase" }}>📈 Activité</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {GRANULARITES.map(([k, label]) => (
+                <button key={k} onClick={() => setGranularite(k)}
+                  style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid #334155", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 700,
+                    background: granularite === k ? "#1a3a6e" : "transparent", color: granularite === k ? "#fff" : "#94a3b8" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>📋 Ordonnances créées</div>
+              <BarChart data={seriesOrdonnances} color="#60a5fa" />
+            </div>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>🔔 Rappels créés</div>
+              <BarChart data={seriesRappels} color="#a78bfa" />
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="admin-detail-grid" style={{padding:"0 24px 24px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
 

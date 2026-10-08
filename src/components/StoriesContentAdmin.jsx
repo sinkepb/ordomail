@@ -6,28 +6,12 @@
 // architecture que le vendeur, voir phase 1), donc RLS ne pouvait pas distinguer
 // un admin authentifié d'un visiteur anonyme muni de la clé anon publique.
 // Routé via secure-data (jeton admin) comme le reste du backoffice.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { fileToBase64 } from "../lib/utils.js";
 import { PaginationControls } from "./PaginationControls.jsx";
 
 const ITEMS_PER_PAGE = 10;
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${adminToken || ""}`,
-    },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 function StoriesContentAdmin({ adminToken } = {}) {
   const [items, setItems]       = useState([]);
@@ -51,7 +35,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
     setError("");
     try {
       const fileBase64 = await fileToBase64(file);
-      const { url } = await callSecureData("admin_stories_upload_image", { fileName: file.name, fileType: file.type, fileBase64 }, adminToken);
+      const { url } = await callSecureDataAdmin("admin_stories_upload_image", { fileName: file.name, fileType: file.type, fileBase64 }, adminToken);
       setForm(f => ({ ...f, image_url: url }));
     } catch (e) {
       setError("Échec de l'envoi de l'image : " + e.message);
@@ -72,7 +56,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
     setError("");
     setPage(1);
     try {
-      const { data } = await callSecureData("admin_stories", {}, adminToken);
+      const { data } = await callSecureDataAdmin("admin_stories", {}, adminToken);
       if (data) setItems(data);
     } catch(e) {
       setError(e.message);
@@ -115,10 +99,10 @@ function StoriesContentAdmin({ adminToken } = {}) {
     };
     try {
       if (editing) {
-        await callSecureData("admin_stories_write", { action: "update", id: editing, payload }, adminToken);
+        await callSecureDataAdmin("admin_stories_write", { action: "update", id: editing, payload }, adminToken);
         setItems(prev => prev.map(x => x.id === editing ? { ...x, ...payload } : x));
       } else {
-        const { data } = await callSecureData("admin_stories_write", { action: "create", payload }, adminToken);
+        const { data } = await callSecureDataAdmin("admin_stories_write", { action: "create", payload }, adminToken);
         if (data) setItems(prev => [data, ...prev]);
       }
       setShowForm(false); setEditing(null);
@@ -131,7 +115,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
   async function deleteItem(id) {
     if (!window.confirm("Supprimer ce contenu ?")) return;
     try {
-      await callSecureData("admin_stories_write", { action: "delete", id }, adminToken);
+      await callSecureDataAdmin("admin_stories_write", { action: "delete", id }, adminToken);
       setItems(prev => prev.filter(x => x.id !== id));
     } catch(e) {
       setError(e.message);
@@ -140,7 +124,7 @@ function StoriesContentAdmin({ adminToken } = {}) {
 
   async function toggleActif(id, actif) {
     try {
-      await callSecureData("admin_stories_write", { action: "update", id, payload: { actif: !actif } }, adminToken);
+      await callSecureDataAdmin("admin_stories_write", { action: "update", id, payload: { actif: !actif } }, adminToken);
       setItems(prev => prev.map(x => x.id === id ? { ...x, actif: !actif } : x));
     } catch(e) {
       setError(e.message);

@@ -4,6 +4,7 @@
 // pricing_plans (Supabase) est la source de vérité durable pour cet éditeur — avant le
 // 24/07/2026, "Sauvegarder" ne faisait que muter PLAN_LIMITS en mémoire : un rechargement
 // de page perdait tout changement, alors que l'écran affichait "✅ Sauvegardé".
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { PLAN_LIMITS, PLAN_ORDER, KIT_RULES } from "../lib/plans.js";
 
@@ -17,18 +18,7 @@ function PricingEditor({ adminToken } = {}) {
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
-  async function callSecureData(resource, params) {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-      method: "POST",
-      headers: { "Content-Type":"application/json", "apikey":supabaseKey, "Authorization":`Bearer ${adminToken||""}` },
-      body: JSON.stringify({ resource, params }),
-    });
-    const body = await res.json().catch(()=>({}));
-    if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-    return body;
-  }
+  const callSecureData = (resource, params) => callSecureDataAdmin(resource, params, adminToken);
 
   useEffect(() => {
     (async () => {

@@ -24,13 +24,8 @@ function ensureStickerFonts() {
   if (typeof document === "undefined") return Promise.resolve();
   if (!fontsReady) {
     fontsReady = (async () => {
-      if (!document.getElementById("sticker-fonts-link")) {
-        const link = document.createElement("link");
-        link.id = "sticker-fonts-link";
-        link.rel = "stylesheet";
-        link.href = "https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap";
-        document.head.appendChild(link);
-      }
+      // Jost est déclarée globalement dans src/styles/fonts.css (auto-hébergée,
+      // 05/10/2026) — plus besoin d'injecter une feuille Google Fonts ici.
       try {
         await Promise.all([
           document.fonts.load("600 100px Jost"),

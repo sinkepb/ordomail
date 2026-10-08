@@ -2,6 +2,19 @@
 import { PLAN_LIMITS } from "./plans.js";
 import { escapeHtml } from "./utils.js";
 
+// Polices de l'affiche, auto-hébergées (05/10/2026, conformité RGPD) — ce HTML
+// est ouvert dans une fenêtre séparée (blob: URL, voir openPosterPDFFromHTML)
+// ou dans un iframe srcDoc : les chemins absolus /fonts/... y résolvent vers
+// la même origine que l'onglet d'où il a été ouvert, sans appel à
+// fonts.googleapis.com. Mêmes fichiers que src/styles/fonts.css.
+const POSTER_FONT_FACE_CSS = `
+<style>
+@font-face { font-family:'Bricolage Grotesque'; font-style:normal; font-display:swap; font-weight:200 800; font-stretch:75% 100%; src:url('/fonts/bricolage-grotesque-latin.woff2') format('woff2-variations'); unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:'Bricolage Grotesque'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2-variations'); unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family:'Manrope'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/manrope-latin.woff2') format('woff2-variations'); unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:'Manrope'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/manrope-latin-ext.woff2') format('woff2-variations'); unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+</style>`;
+
 function generateInvoiceHTML({ invoice, pharmacie, plan }) {
   const planInfo = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
   // @conformite-tarifs — invoice.amount est le montant TTC réellement facturé
@@ -354,9 +367,7 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
 <head>
 <meta charset="UTF-8">
 <title>Affiche ${format} — Scannez pour envoyer votre ordonnance</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+${POSTER_FONT_FACE_CSS}
 <style>
   /* Sans print-color-adjust: exact, Chrome/Safari suppriment par défaut les
      couleurs de fond, dégradés et box-shadow à l'impression (économie d'encre) —
@@ -483,9 +494,7 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
 <head>
 <meta charset="UTF-8">
 <title>Affiche ${format} paysage — Scannez pour envoyer votre ordonnance</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+${POSTER_FONT_FACE_CSS}
 <style>
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { margin: 0; padding: 0; }
@@ -623,15 +632,11 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
   // construire le contenu du shadow root AVANT d'attendre fonts.ready, pour
   // que le texte qu'il contient déclenche bien le chargement paresseux des
   // polices avant qu'on ne l'attende.
+  // Les polices sont désormais déclarées globalement dès le chargement de
+  // l'application (src/styles/fonts.css, importé par main.jsx) : plus besoin
+  // d'injecter dynamiquement une feuille Google Fonts dans le document
+  // principal avant de construire le contenu du shadow root ci-dessous.
   const parsed = new DOMParser().parseFromString(html, "text/html");
-  const fontLinkHref = parsed.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]')?.getAttribute("href");
-  if (fontLinkHref && !document.head.querySelector(`link[rel="stylesheet"][href="${fontLinkHref}"]`)) {
-    const fontLink = document.createElement("link");
-    fontLink.rel = "stylesheet";
-    fontLink.href = fontLinkHref;
-    document.head.appendChild(fontLink);
-    await new Promise((resolve) => { fontLink.onload = resolve; fontLink.onerror = resolve; });
-  }
 
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;left:-99999px;top:0;";

@@ -274,6 +274,16 @@ function BillingModule({ initialView, planId, billing, onBack, resumePharmacieId
                   </div>
                 </div>
               ); })()}
+              {/* Renouvellement automatique — conditions affichées juste avant
+                  le bouton de paiement (Code de la consommation, art. L215-1
+                  et L224-61 : prix exact, périodicité et modalités de
+                  résiliation doivent être clairement visibles avant le
+                  paiement, 05/10/2026). */}
+              <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"12px 14px",marginBottom:16,fontSize:12.5,color:"#475569",lineHeight:1.6}}>
+                Après les 30 jours d'essai gratuit, l'abonnement {plan.label} est facturé {price} € {checkoutBilling==="annual"?"par an":"par mois"},
+                puis reconduit automatiquement {checkoutBilling==="annual"?"chaque année":"chaque mois"} à ce tarif, sauf résiliation.
+                Résiliable à tout moment, sans engagement, depuis votre espace pharmacie (Compte → Abonnement).
+              </div>
               {createError && (
                 <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 12px",marginBottom:12,fontSize:13,color:"#dc2626"}}>⚠️ {createError}</div>
               )}

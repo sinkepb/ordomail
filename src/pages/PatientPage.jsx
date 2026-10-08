@@ -4,174 +4,14 @@ import { useState, useEffect, useRef } from "react";
 import { getSupabaseAnon, isDemoMode, ecouterAppels, addOrdonnance, subscribeToOffres } from "../supabase.js";
 import { extractFromFile } from "../lib/ocr.js";
 import { compressImageFile } from "../lib/imageCompress.js";
-import { prepareScannedImage, fileToDataUrl, computeBlurScore, BLUR_VARIANCE_THRESHOLD } from "../lib/imageEnhance.js";
+import { prepareScannedImage, fileToDataUrl } from "../lib/imageEnhance.js";
 import { Input } from "../components/ui.jsx";
+import { CadrageModal } from "../components/CadrageModal.jsx";
 import { maskId, maskCode } from "../lib/utils.js";
-
-const HEALTH_STORIES = [
-  {
-    id: 1,
-    emoji: "✅",
-    bg: ["#1a6e3a", "#15803d"],
-    title: "Ordonnance reçue !",
-    text: "Votre pharmacien a bien reçu votre ordonnance. Veuillez rester dans la file et attendre votre tour.",
-    type: "info",
-  },
-  {
-    id: 2,
-    emoji: "💊",
-    bg: ["#1a3a6e", "#1e40af"],
-    title: "Le saviez-vous ?",
-    text: "1 patient sur 3 arrête son traitement trop tôt. Même si vous vous sentez mieux, terminez toujours votre prescription.",
-    type: "info",
-  },
-  {
-    id: 3,
-    emoji: "🧠",
-    bg: ["#4c1d95", "#6d28d9"],
-    title: "Quiz santé",
-    text: null,
-    type: "quiz",
-    question: "Que faire avec les médicaments non utilisés ?",
-    answers: [
-      { text: "Les jeter à la poubelle", correct: false, emoji: "🗑️" },
-      { text: "Les rapporter en pharmacie", correct: true, emoji: "✅" },
-      { text: "Les garder pour plus tard", correct: false, emoji: "📦" },
-    ],
-    explanation: "Les pharmacies collectent gratuitement vos médicaments non utilisés via le programme Cyclamed.",
-  },
-  {
-    id: 4,
-    emoji: "💬",
-    bg: ["#92400e", "#b45309"],
-    title: "À demander au pharmacien",
-    text: "Puis-je prendre ce médicament avec mon traitement habituel ? Y a-t-il un générique disponible ?",
-    type: "info",
-  },
-  {
-    id: 5,
-    emoji: "🎁",
-    bg: ["#065f46", "#047857"],
-    title: "Le saviez-vous ?",
-    text: "Votre pharmacie propose souvent la vaccination sans RDV, des bilans de médication gratuits et la livraison à domicile.",
-    type: "info",
-  },
-  {
-    id: 6, emoji: "🔔",
-    bg: ["#1a3a6e", "#0f2347"],
-    title: "Restez ici !",
-    text: "Gardez cette page ouverte. Votre pharmacien vous appellera et votre téléphone vibrera quand ce sera votre tour.",
-    type: "info",
-  },
-];
-
-// Génère le code email (même algo que sessionCode)
-// Code à 3 chiffres + 1 lettre (insérée à une position aléatoire) utilisé dans
-// l'adresse email dynamique (pharmacie-24K7@in.ordomail.fr) — doit être généré
-// côté client car il est intégré à l'adresse AVANT tout appel serveur.
-// ⚠️ Avant le 24/07/2026, ce code était dérivé de l'heure système (minutes/secondes),
-// donc prévisible par quiconque lisait le code source — remplacé par un tirage
-// cryptographique. La lettre insérée (25/07/2026) élargit l'espace de valeurs
-// (900 → 23 400 combinaisons) sans changer le principe : le format reste une
-// contrainte partagée avec le parsing regex côté send-email/receive-email
-// (voir ces fichiers si ce format doit encore évoluer).
-// Hissée au niveau module (28/07/2026) : PatientStories en a aussi besoin pour
-// afficher les instructions email dans la feuille "Ajouter une ordonnance" sans
-// jamais régénérer le code du patient déjà en cours.
-function generateCode() {
-  const arr = new Uint32Array(3);
-  crypto.getRandomValues(arr);
-  const digits = String(100 + (arr[0] % 900)).padStart(3, "0");
-  const letter = String.fromCharCode(65 + (arr[1] % 26)); // A-Z
-  const pos = arr[2] % 4; // position d'insertion parmi les 4 caractères finaux
-  return digits.slice(0, pos) + letter + digits.slice(pos);
-}
-
-// Construit l'adresse email avec le code patient intégré
-// Format : base@domain → base-247@domain
-// Ex : ph1@in.ordomail.fr → ph1-247@in.ordomail.fr
-function buildEmailAvecCode(baseEmail, code) {
-  const [local, domain] = baseEmail.split("@");
-  return `${local}-${code}@${domain}`;
-}
-
-// Image zoomable — pincer pour zoomer, glisser pour déplacer une fois zoomé,
-// double-tap pour basculer zoom (05/09/2026, page de catalogue groupement).
-// stopPropagation dès qu'un geste concerne l'image (2 doigts, ou 1 doigt une
-// fois zoomé) pour ne pas déclencher le swipe/tap de navigation entre stories
-// du conteneur parent (handleTouchStart/handleTouchEnd de PatientStories) —
-// un tap simple à l'échelle 1 continue lui de remonter normalement, pour
-// garder "toucher pour continuer" fonctionnel sur l'image comme ailleurs.
-function ZoomableImage({ src }) {
-  const [scale, setScale] = useState(1);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const [interacting, setInteracting] = useState(false); // désactive la transition CSS pendant le geste
-  const pinchRef = useRef(null); // {startDist, startScale} | null
-  const panRef = useRef(null);   // {startX, startY, startTranslate} | null
-  const lastTapRef = useRef(0);
-
-  function dist(touches) {
-    const [a, b] = touches;
-    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-  }
-
-  function handleTouchStart(e) {
-    if (e.touches.length === 2) {
-      e.stopPropagation();
-      pinchRef.current = { startDist: dist(e.touches), startScale: scale };
-      setInteracting(true);
-      return;
-    }
-    if (e.touches.length === 1) {
-      if (scale > 1) {
-        e.stopPropagation();
-        panRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startTranslate: translate };
-        setInteracting(true);
-      }
-      const now = Date.now();
-      if (now - lastTapRef.current < 300) {
-        e.stopPropagation();
-        if (scale > 1) { setScale(1); setTranslate({ x: 0, y: 0 }); }
-        else setScale(2.5);
-      }
-      lastTapRef.current = now;
-    }
-  }
-  function handleTouchMove(e) {
-    if (e.touches.length === 2 && pinchRef.current) {
-      e.stopPropagation();
-      const next = Math.min(4, Math.max(1, pinchRef.current.startScale * (dist(e.touches) / pinchRef.current.startDist)));
-      setScale(next);
-    } else if (e.touches.length === 1 && panRef.current) {
-      e.stopPropagation();
-      const dx = e.touches[0].clientX - panRef.current.startX;
-      const dy = e.touches[0].clientY - panRef.current.startY;
-      setTranslate({ x: panRef.current.startTranslate.x + dx, y: panRef.current.startTranslate.y + dy });
-    }
-  }
-  function handleTouchEnd(e) {
-    if (pinchRef.current) {
-      e.stopPropagation();
-      pinchRef.current = null;
-      if (scale < 1.05) { setScale(1); setTranslate({ x: 0, y: 0 }); }
-    }
-    if (panRef.current) { e.stopPropagation(); panRef.current = null; }
-    setInteracting(false);
-  }
-
-  return (
-    <div style={{ width: "100%", maxHeight: "68vh", overflow: "hidden", borderRadius: 14, touchAction: "none" }}
-      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-      <img src={src} alt="" draggable={false} onDragStart={e => e.preventDefault()}
-        style={{
-          width: "100%", display: "block", borderRadius: 14,
-          transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
-          transformOrigin: "center center",
-          transition: interacting ? "none" : "transform 0.2s ease-out",
-        }}/>
-    </div>
-  );
-}
+import { HEALTH_STORIES } from "../components/patient/healthStories.js";
+import { generateCode, buildEmailAvecCode } from "../components/patient/codePatient.js";
+import { ZoomableImage } from "../components/patient/ZoomableImage.jsx";
+import { usePhotoAnalysis } from "../hooks/usePhotoAnalysis.js";
 
 function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = false }) {
   const [current, setCurrent] = useState(0);
@@ -1303,61 +1143,7 @@ function PatientPage({ pharmacie, onBack }) {
   const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
 
   // Ajouter un ou plusieurs fichiers
-  function handleFiles(selectedFiles) {
-    const arr = Array.from(selectedFiles);
-    const newFiles = arr.map(f => ({
-      id: `${Date.now()}-${Math.random()}`,
-      file: f,
-      name: f.name,
-      type: f.type,
-      dataUrl: null,
-      preview: null,
-      // Lisibilité (02/10/2026, retour pharmacien) — analysée dès l'ajout de
-      // la photo, pas seulement à l'envoi : le patient peut reprendre une
-      // photo avant de soumettre. scanFile/extracted mis en cache ici sont
-      // réutilisés tels quels par sendOne (handleSubmit) pour ne jamais
-      // relancer le recadrage/OCR une seconde fois.
-      checking: true,
-      warning: null,
-      scanFile: null,
-      extracted: null,
-    }));
-    setFiles(prev => [...prev, ...newFiles]);
-
-    newFiles.forEach(item => {
-      const r = new FileReader();
-      r.onload = async e => {
-        const rawDataUrl = e.target.result;
-        setFiles(prev => prev.map(x => x.id === item.id ? { ...x, dataUrl: rawDataUrl } : x));
-
-        try {
-          const scanFile = await prepareScannedImage(item.file);
-          const scanDataUrl = scanFile === item.file ? rawDataUrl : await fileToDataUrl(scanFile);
-          const base64 = scanDataUrl?.split(",")[1] || "";
-          const [blurScore, extracted] = await Promise.all([
-            computeBlurScore(item.file),
-            extractFromFile(base64, scanFile.type, { fallbackName: nom || null }),
-          ]);
-          const flou = blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD;
-          // _confidence === 0 avec _ocrSuccess=false peut aussi signifier "OCR
-          // indisponible" (voir ocr.js), pas forcément une photo illisible —
-          // on ne prévient le patient que si l'OCR a vraiment tourné et a eu
-          // du mal (confidence > 0 mais insuffisante pour réussir).
-          const confianceFaible = extracted && !extracted._ocrSuccess && (extracted._confidence || 0) > 0;
-          const warning = flou ? "Cette photo semble floue."
-            : confianceFaible ? "Le texte de cette photo semble difficile à lire."
-            : null;
-          setFiles(prev => prev.map(x => x.id === item.id
-            ? { ...x, dataUrl: scanDataUrl, scanFile, extracted, checking: false, warning }
-            : x));
-        } catch (err) {
-          console.error("[handleFiles] analyse lisibilité", err?.message || err);
-          setFiles(prev => prev.map(x => x.id === item.id ? { ...x, checking: false } : x));
-        }
-      };
-      r.readAsDataURL(item.file);
-    });
-  }
+  const { cadrageEnCours, handleFiles, validerCadrage } = usePhotoAnalysis({ files, setFiles, nom });
 
   function removeFile(idx) {
     setFiles(prev => prev.filter((_, i) => i !== idx));
@@ -1594,12 +1380,20 @@ function PatientPage({ pharmacie, onBack }) {
 
             {/* Nom — sous "Ajouter votre ordonnance", juste avant l'envoi qui en a besoin */}
             <div style={{ marginTop:10 }}>
-              <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
+              {cadrageEnCours && (
+              <CadrageModal
+                key={cadrageEnCours.id}
+                imageUrl={cadrageEnCours.cadrage.dataUrl}
+                coinsInitiaux={cadrageEnCours.cadrage.coins}
+                onValider={coins => validerCadrage(cadrageEnCours, coins)}
+              />
+            )}
+            <Input label="Votre nom complet" value={nom} onChange={setNom} placeholder="Ex : MARTIN Pierre" icon="👤" required />
             </div>
 
             {/* Bouton envoyer — à l'intérieur du cadre, comme le bouton copier du bloc e-mail :
                 les deux options doivent se lire comme deux cartes autonomes et symétriques. */}
-            <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending}
+            <button onClick={handleSubmit} disabled={!nom.trim() || files.length===0 || sending || files.some(f => f.checking)}
               style={{ width:"100%", padding:"15px", border:"none", borderRadius:10, background:!nom.trim()||files.length===0?`${couleur}55`:couleur, color:"#fff", fontWeight:800, fontSize:16, cursor:!nom.trim()||files.length===0?"not-allowed":"pointer", fontFamily:"inherit", boxShadow:nom.trim()&&files.length>0?`0 4px 16px ${couleur}44`:"none", marginTop:4 }}>
               {sending ? "Envoi en cours…" : files.length > 1 ? `Envoyer ${files.length} ordonnances →` : "Envoyer l'ordonnance →"}
             </button>

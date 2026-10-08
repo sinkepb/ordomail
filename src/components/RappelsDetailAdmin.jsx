@@ -1,20 +1,8 @@
 // Détail des rappels par pharmacie — backoffice. Données : secure-data-admin
 // (admin_pharmacies pour la liste, admin_rappels_detail pour le détail).
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { STATUT_INFO } from "./rappels/rappelsConstants.js";
-
-async function callSecureDataAdmin(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: supabaseKey, Authorization: `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `${resource} : erreur ${res.status}`);
-  return body.data;
-}
 
 function formatDate(iso) {
   return iso ? new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—";
@@ -33,7 +21,7 @@ export function RappelsDetailAdmin({ adminToken }) {
 
   useEffect(() => {
     callSecureDataAdmin("admin_pharmacies", {}, adminToken)
-      .then((data) => setPharmacies(data || []))
+      .then(({ data }) => setPharmacies(data || []))
       .catch((e) => setErreur(e.message));
   }, [adminToken]);
 
@@ -42,7 +30,7 @@ export function RappelsDetailAdmin({ adminToken }) {
     setChargement(true);
     setErreur("");
     callSecureDataAdmin("admin_rappels_detail", { pharmacieId }, adminToken)
-      .then((data) => setRappels(data || []))
+      .then(({ data }) => setRappels(data || []))
       .catch((e) => setErreur(e.message))
       .finally(() => setChargement(false));
   }, [pharmacieId, adminToken]);

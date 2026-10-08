@@ -116,7 +116,7 @@ export function buildRappelMessage(prenom: string, nom: string, lien: string, ph
 // détail médecin/spécialité de chaque item (longueur du SMS, facturation au
 // segment) — ce détail reste visible sur la page web derrière le lien.
 export function buildRappelMessageGroupe(prenom: string, nom: string, lien: string, pharmacieNom: string): string {
-  return `${pharmacieNom} : renouvellement d'ordonnance prévu pour ${prenom} ${nom}. Indiquez votre choix : ${lien}`;
+  return `${pharmacieNom} : renouvellement d'ordonnance prévu pour ${prenom} ${nom}. Indiquez votre choix : ${lien}.`;
 }
 
 // Regroupe les rappels dus par (pharmacie, numéro de téléphone) avant envoi

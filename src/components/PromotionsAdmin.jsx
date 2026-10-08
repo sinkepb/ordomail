@@ -3,6 +3,7 @@
 // peut créer/activer/désactiver d'autres promotions plus tard sans
 // déploiement). Même conventions que PricingEditor.jsx/QrCodesAdmin.jsx
 // (callSecureData local, styles inline, palette sombre).
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect } from "react";
 import { PLAN_ORDER, PLAN_LIMITS } from "../lib/plans.js";
 import { PaginationControls } from "./PaginationControls.jsx";
@@ -24,18 +25,7 @@ function PromotionsAdmin({ adminToken } = {}) {
   const [page, setPage] = useState(1);
   const [redemptionsPage, setRedemptionsPage] = useState(1);
 
-  async function callSecureData(resource, params) {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": supabaseKey, "Authorization": `Bearer ${adminToken || ""}` },
-      body: JSON.stringify({ resource, params }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-    return body;
-  }
+  const callSecureData = (resource, params) => callSecureDataAdmin(resource, params, adminToken);
 
   async function load() {
     setLoading(true); setErr(""); setPage(1);

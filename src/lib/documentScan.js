@@ -160,65 +160,114 @@ function findCornersByEdges(cv, src) {
   return corners;
 }
 
-/** Tente de recadrer et redresser le document photographié dans `file`.
- * Retourne un nouveau File en cas de succès, ou `null` si aucun contour
- * fiable n'a pu être trouvé (ne lève jamais). */
-export async function autoCropDocument(file) {
-  if (!file || !SCANNABLE_TYPES.has(file.type)) return null;
+async function ouvrirSource(cv, file) {
+  const bitmap = await createImageBitmap(file);
+  const workScale = Math.min(1, MAX_OUTPUT_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const workW = Math.max(1, Math.round(bitmap.width * workScale));
+  const workH = Math.max(1, Math.round(bitmap.height * workScale));
+  const canvas = document.createElement("canvas");
+  canvas.width = workW; canvas.height = workH;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, workW, workH);
+  bitmap.close?.();
+  return { src: cv.imread(canvas), workW, workH };
+}
 
-  let cv;
+function redresser(cv, src, [tl, tr, br, bl]) {
+  const outWRaw = Math.max(dist(tl, tr), dist(bl, br));
+  const outHRaw = Math.max(dist(tl, bl), dist(tr, br));
+  if (outWRaw < 10 || outHRaw < 10) return null; // quadrilatère dégénéré
+
+  const scale = Math.min(1, MAX_OUTPUT_DIMENSION / Math.max(outWRaw, outHRaw));
+  const outW = Math.max(1, Math.round(outWRaw * scale));
+  const outH = Math.max(1, Math.round(outHRaw * scale));
+
+  const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+  const dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outW, 0, outW, outH, 0, outH]);
+  const M = cv.getPerspectiveTransform(srcTri, dstTri);
+  const dst = new cv.Mat();
   try {
-    cv = await loadCv();
-  } catch (e) {
-    console.error("[autoCropDocument] échec du chargement d'OpenCV.js", e?.message || e);
-    return null;
-  }
-
-  let src;
-  try {
-    const bitmap = await createImageBitmap(file);
-    // Travailler sur une résolution bornée : la détection de contour n'a
-    // besoin ni de la pleine résolution d'une photo de téléphone (12+ Mpx),
-    // ni ne doit coûter plusieurs secondes de calcul sur un appareil modeste.
-    const workScale = Math.min(1, MAX_OUTPUT_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const workW = Math.max(1, Math.round(bitmap.width * workScale));
-    const workH = Math.max(1, Math.round(bitmap.height * workScale));
-    const canvas = document.createElement("canvas");
-    canvas.width = workW; canvas.height = workH;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(bitmap, 0, 0, workW, workH);
-    bitmap.close?.();
-
-    src = cv.imread(canvas);
-
-    const corners = findCornersByWhiteness(cv, src) || findCornersByEdges(cv, src);
-    if (!corners) return null;
-    const [tl, tr, br, bl] = corners;
-
-    const outWRaw = Math.max(dist(tl, tr), dist(bl, br));
-    const outHRaw = Math.max(dist(tl, bl), dist(tr, br));
-    if (outWRaw < 10 || outHRaw < 10) return null; // quadrilatère dégénéré
-
-    const scale = Math.min(1, MAX_OUTPUT_DIMENSION / Math.max(outWRaw, outHRaw));
-    const outW = Math.max(1, Math.round(outWRaw * scale));
-    const outH = Math.max(1, Math.round(outHRaw * scale));
-
-    const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
-    const dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outW, 0, outW, outH, 0, outH]);
-    const M = cv.getPerspectiveTransform(srcTri, dstTri);
-    const dst = new cv.Mat();
     cv.warpPerspective(src, dst, M, new cv.Size(outW, outH));
-
     const outCanvas = document.createElement("canvas");
     outCanvas.width = outW; outCanvas.height = outH;
     cv.imshow(outCanvas, dst);
-
+    return outCanvas;
+  } finally {
     srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
+  }
+}
 
-    const blob = await new Promise(resolve => outCanvas.toBlob(resolve, "image/jpeg", 0.92));
-    if (!blob) return null;
-    const newName = file.name.replace(/\.\w+$/, "") + "-redresse.jpg";
-    return new File([blob], newName, { type: "image/jpeg", lastModified: Date.now() });
+async function canvasVersFichier(canvas, nomFichier) {
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  if (!blob) return null;
+  const newName = nomFichier.replace(/\.\w+$/, "") + "-redresse.jpg";
+  return new File([blob], newName, { type: "image/jpeg", lastModified: Date.now() });
+}
+
+// Contour proposé, en coordonnées normalisées [0..1] (haut-gauche, haut-droit,
+// bas-droit, bas-gauche), ou null si aucun quadrilatère fiable n'est trouvé.
+export async function detecterCoins(file) {
+  if (!file || !SCANNABLE_TYPES.has(file.type)) return null;
+  let cv;
+  try { cv = await loadCv(); } catch (e) {
+    console.error("[detecterCoins] échec du chargement d'OpenCV.js", e?.message || e);
+    return null;
+  }
+  let src;
+  try {
+    const source = await ouvrirSource(cv, file);
+    src = source.src;
+    const corners = findCornersByWhiteness(cv, src) || findCornersByEdges(cv, src);
+    if (!corners) return null;
+    return corners.map(p => ({ x: p.x / source.workW, y: p.y / source.workH }));
+  } catch (e) {
+    console.error("[detecterCoins]", e?.message || e);
+    return null;
+  } finally {
+    src?.delete();
+  }
+}
+
+// Redresse le fichier selon des coins normalisés choisis par le patient.
+export async function redresserAvecCoins(file, coins) {
+  if (!file || !SCANNABLE_TYPES.has(file.type) || !coins || coins.length !== 4) return null;
+  let cv;
+  try { cv = await loadCv(); } catch (e) {
+    console.error("[redresserAvecCoins] échec du chargement d'OpenCV.js", e?.message || e);
+    return null;
+  }
+  let src;
+  try {
+    const source = await ouvrirSource(cv, file);
+    src = source.src;
+    const px = coins.map(p => ({ x: p.x * source.workW, y: p.y * source.workH }));
+    const canvas = redresser(cv, src, px);
+    return canvas ? canvasVersFichier(canvas, file.name) : null;
+  } catch (e) {
+    console.error("[redresserAvecCoins]", e?.message || e);
+    return null;
+  } finally {
+    src?.delete();
+  }
+}
+
+// Tente de recadrer et redresser le document photographié dans `file`.
+// Retourne un nouveau File en cas de succès, ou `null` si aucun contour
+// fiable n'a pu être trouvé (ne lève jamais).
+export async function autoCropDocument(file) {
+  if (!file || !SCANNABLE_TYPES.has(file.type)) return null;
+  let cv;
+  try { cv = await loadCv(); } catch (e) {
+    console.error("[autoCropDocument] échec du chargement d'OpenCV.js", e?.message || e);
+    return null;
+  }
+  let src;
+  try {
+    const source = await ouvrirSource(cv, file);
+    src = source.src;
+    const corners = findCornersByWhiteness(cv, src) || findCornersByEdges(cv, src);
+    if (!corners) return null;
+    const canvas = redresser(cv, src, corners);
+    return canvas ? canvasVersFichier(canvas, file.name) : null;
   } catch (e) {
     console.error("[autoCropDocument]", e?.message || e);
     return null;

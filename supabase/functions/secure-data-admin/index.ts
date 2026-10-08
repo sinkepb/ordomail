@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
       const { data: pharmacies, error: phErr } = await sb
         .from("pharmacies")
-        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, compte_test, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
+        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, compte_test, pin_mode, pin_unique_hash, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
         .order("created_at", { ascending: false });
       if (phErr) throw new Error(phErr.message);
 
@@ -101,16 +101,26 @@ Deno.serve(async (req) => {
         const canalQrPct     = totalCanaux ? Math.round(qrCount / totalCanaux * 100) : 0;
         const canalEmailPct  = totalCanaux ? Math.round(emailCount / totalCanaux * 100) : 0;
         const postes         = ph.pharmacie_postes || [];
-        const pinsConfigures = postes.filter((p: any) => p.pin_hash).length;
+        // Mode PIN unique (20260906_pin_unique.sql) — le PIN n'est pas stocké
+        // par poste mais sur la pharmacie (pin_unique_hash) ; ignorer ce mode
+        // ici faisait croire à "aucun PIN configuré" pour ces pharmacies,
+        // alors qu'un PIN valide y est bien défini et utilisé.
+        const pinUniqueConfigure = ph.pin_mode === "unique" && !!ph.pin_unique_hash;
+        const pinsConfigures = ph.pin_mode === "unique"
+          ? (pinUniqueConfigure ? 1 : 0)
+          : postes.filter((p: any) => p.pin_hash).length;
 
         const score = Math.min(100, Math.round(
           (mois || 0) * 0.4 + (semaine || 0) * 2 + canalQrPct * 0.2 +
-          postes.filter((p: any) => p.actif && p.pin_hash).length * 5
+          (ph.pin_mode === "unique"
+            ? (pinUniqueConfigure ? postes.filter((p: any) => p.actif).length * 5 : 0)
+            : postes.filter((p: any) => p.actif && p.pin_hash).length * 5)
         ));
 
-        // On ne renvoie jamais pharmacie_postes brut (contient pin_hash) — seulement les agrégats.
-        // pharmacie_users réduit au nom du titulaire (role admin) — pas le tableau brut.
-        const { pharmacie_postes, pharmacie_users, ...phSafe } = ph;
+        // On ne renvoie jamais pharmacie_postes ni pin_unique_hash bruts —
+        // seulement les agrégats. pharmacie_users réduit au nom du titulaire
+        // (role admin), pas le tableau brut.
+        const { pharmacie_postes, pharmacie_users, pin_unique_hash, ...phSafe } = ph;
         const titulaire = (pharmacie_users || []).find((u: any) => u.role === "admin")?.nom || null;
         return {
           ...phSafe,
@@ -847,6 +857,34 @@ Deno.serve(async (req) => {
         .eq("pharmacie_id", pharmacieId)
         .order("created_at", { ascending: false })
         .limit(500);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_ordonnances_dates") {
+      const pharmacieId = params?.pharmacieId;
+      if (!pharmacieId || typeof pharmacieId !== "string") {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("ordonnances")
+        .select("received_at")
+        .eq("pharmacie_id", pharmacieId)
+        .order("received_at", { ascending: false })
+        .limit(3000);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ data }), { headers: CORS });
+    }
+
+    if (resource === "admin_rappels_dates") {
+      const pharmacieId = params?.pharmacieId;
+      if (!pharmacieId || typeof pharmacieId !== "string") {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const { data, error } = await sb.from("rappels_ordonnance")
+        .select("created_at")
+        .eq("pharmacie_id", pharmacieId)
+        .order("created_at", { ascending: false })
+        .limit(3000);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ data }), { headers: CORS });
     }

@@ -1,23 +1,11 @@
 // Panneau de suivi des cron jobs — backoffice (05/10/2026). Affiche, pour chaque
 // job pg_cron, son état, sa dernière exécution et les échecs récents. Données :
 // secure-data-admin:admin_cron_runs (lecture de cron.job / cron.job_run_details).
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect, useCallback } from "react";
 import { resumerJob } from "../lib/cronSummary.js";
 
 const POLL_MS = 60000;
-
-async function callSecureDataAdmin(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: supabaseKey, Authorization: `Bearer ${adminToken || ""}` },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `${resource} : erreur ${res.status}`);
-  return body.data;
-}
 
 const STATUT = {
   ok: { label: "OK", color: "#15803d", bg: "#f0fdf4" },
@@ -38,7 +26,7 @@ export function CronMonitorPanel({ adminToken }) {
 
   const charger = useCallback(async () => {
     try {
-      const data = await callSecureDataAdmin("admin_cron_runs", { limit: 20 }, adminToken);
+      const { data } = await callSecureDataAdmin("admin_cron_runs", { limit: 20 }, adminToken);
       setJobs(data || []);
       setErreur("");
     } catch (e) {

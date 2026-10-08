@@ -9,27 +9,11 @@
 // Auth réelle, RLS ne pourrait pas distinguer un admin d'un simple porteur de
 // la clé anon publique. On rafraîchit donc par sondage court (20s) tant que ce
 // panneau est ouvert — quasi temps réel côté opérateur, sans exposer la table.
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect, useRef } from "react";
 import { PaginationControls } from "./PaginationControls.jsx";
 
 const ALERTS_PER_PAGE = 10;
-
-async function callSecureData(resource, params, adminToken) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/secure-data-admin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${adminToken || ""}`,
-    },
-    body: JSON.stringify({ resource, params }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `secure-data-admin ${resource} : erreur ${res.status}`);
-  return body;
-}
 
 const SEVERITY = {
   critical: { label: "Critique", color: "#dc2626", bg: "#fef2f2", border: "#fecaca", icon: "🚨" },
@@ -51,7 +35,7 @@ function MonitoringPanel({ adminToken } = {}) {
   async function load() {
     setError("");
     try {
-      const { data } = await callSecureData("admin_alerts", { includeResolved }, adminToken);
+      const { data } = await callSecureDataAdmin("admin_alerts", { includeResolved }, adminToken);
       setAlerts(data || []);
     } catch(e) {
       setError(e.message);
@@ -75,7 +59,7 @@ function MonitoringPanel({ adminToken } = {}) {
   async function resolveAlert(id) {
     setResolvingId(id);
     try {
-      await callSecureData("admin_alerts_resolve", { alertId: id }, adminToken);
+      await callSecureDataAdmin("admin_alerts_resolve", { alertId: id }, adminToken);
       setAlerts(prev => includeResolved
         ? prev.map(a => a.id === id ? { ...a, resolved: true, resolved_at: new Date().toISOString() } : a)
         : prev.filter(a => a.id !== id));

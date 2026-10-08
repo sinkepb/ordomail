@@ -26,6 +26,7 @@ import { handle_compte } from "./compte.ts";
 import { handle_ordonnances } from "./ordonnances.ts";
 import { handle_offres } from "./offres.ts";
 import { handle_rappels } from "./rappels.ts";
+import { handle_sonnette } from "./sonnette.ts";
 import type { ContexteSecureData } from "./contexte.ts";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
 
     // ── Router par ressource (découpé par domaine, 04/10/2026 — voir ./*.ts) ──
     const ctx: ContexteSecureData = { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, resource, params, CORS };
-    for (const domaine of [handle_compte, handle_ordonnances, handle_offres, handle_rappels]) {
+    for (const domaine of [handle_compte, handle_ordonnances, handle_offres, handle_rappels, handle_sonnette]) {
       const reponse = await domaine(ctx);
       if (reponse) return reponse;
     }
