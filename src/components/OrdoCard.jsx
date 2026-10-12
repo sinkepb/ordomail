@@ -1,18 +1,22 @@
 // @version 16/07/2026 15:50 — fix-allImprime-scope
 // @ordomail-deploy 15/07/2026 02:22
 import { useState, useEffect, useRef } from "react";
-import { getSignedUrl } from "../supabase.js";
+import { fetchOrdonnanceFichier } from "../supabase.js";
 import { timeAgo, getOrdoAccent, truncateFilename } from "../lib/utils.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
 
 
 
-function AttachmentThumb({ att, style }) {
+function AttachmentThumb({ att, ordoId, style }) {
   const [src, setSrc] = useState(att?.dataUrl || null);
   useEffect(() => {
-    if (src || !att?.path) return;
-    getSignedUrl(att.path, 3600).then(url => { if (url) setSrc(url); });
-  }, [att?.path]);
+    if (src || !att?.path || !ordoId) return;
+    // URL signée résolue côté serveur (fetchOrdonnanceFichier), jamais via
+    // getSignedUrl() ici : cassé pour un poste vendeur (pas de session
+    // Supabase Auth, donc pas de auth.uid() pour la policy storage.objects —
+    // voir le même commentaire dans lib/supabase/ordonnances.js).
+    fetchOrdonnanceFichier(ordoId).then(r => { if (r?.signedUrl) setSrc(r.signedUrl); });
+  }, [att?.path, ordoId]);
   if (!src) return <div style={{...style, background:"#f0f0f0", display:"flex", alignItems:"center", justifyContent:"center", color:"#aaa", fontSize:12}}>⏳</div>;
   return <img src={src} alt="" style={style}/>;
 }
@@ -40,7 +44,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
     if (!att || downloading) return;
     setDownloading(true);
     try {
-      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      const url = att.dataUrl || (att.path ? (await fetchOrdonnanceFichier(ordo.id))?.signedUrl : null);
       if (!url) return;
       const res = await fetch(url);
       const blob = await res.blob();
@@ -165,7 +169,7 @@ function OrdoCard({ id, ordo, onPrint, onView, onTraiter, onUpload, onReopen, on
             pour consulter le fichier, voir OrdonnanceViewerModal). */}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "image" && (
           <div style={{ marginBottom: 11 }} onClick={() => onView?.(ordo)}>
-            <AttachmentThumb att={ordo.attachments[0]} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee", cursor: onView ? "pointer" : "default" }} />
+            <AttachmentThumb att={ordo.attachments[0]} ordoId={ordo.id} style={{ width: "100%", height: 68, objectFit: "cover", borderRadius: 6, border: "1px solid #eee", cursor: onView ? "pointer" : "default" }}/>
           </div>
         )}
         {(ordo.attachments[0]?.dataUrl || ordo.attachments[0]?.path) && ordo.attachments[0].type === "pdf" && (
@@ -318,7 +322,7 @@ function OrdoRow({ id, ordo, onPrint, onView, onTraiter, onReopen, onDownloaded,
     if (!att || downloading) return;
     setDownloading(true);
     try {
-      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      const url = att.dataUrl || (att.path ? (await fetchOrdonnanceFichier(ordo.id))?.signedUrl : null);
       if (!url) return;
       const res = await fetch(url);
       const blob = await res.blob();
@@ -479,7 +483,7 @@ function OrdoGroup({ id, group, onPrint, onView, onTraiterGroupe, onReopen, onDo
     if (!att || downloadingId) return;
     setDownloadingId(ord.id);
     try {
-      const url = att.dataUrl || (att.path ? await getSignedUrl(att.path, 3600) : null);
+      const url = att.dataUrl || (att.path ? (await fetchOrdonnanceFichier(ord.id))?.signedUrl : null);
       if (!url) return;
       const res = await fetch(url);
       const blob = await res.blob();

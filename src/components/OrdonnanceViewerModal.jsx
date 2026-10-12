@@ -21,6 +21,7 @@ function OrdonnanceViewerModal({ att, onClose }) {
   const [images, setImages] = useState(null); // tableau de data URLs, ou null pendant le chargement
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +75,29 @@ function OrdonnanceViewerModal({ att, onClose }) {
     setDownloading(false);
   }
 
+  // Impression inline via le portail #ordomail-print-area (voir Dashboard.jsx,
+  // CSS @media print associée) — mêmes images déjà converties que l'aperçu
+  // ci-dessus, pas de rechargement. Même mécanisme que PrintModal.jsx (cas
+  // image/PDF confondus ici, puisque le PDF est déjà en image(s) au moment où
+  // ce bouton est utilisable).
+  async function handlePrint() {
+    if (!images?.length || printing) return;
+    const printArea = document.getElementById("ordomail-print-area");
+    if (!printArea) { window.print(); return; }
+    setPrinting(true);
+    printArea.innerHTML = images.map((src, i) => `<div style="text-align:center;padding:8px;${i < images.length - 1 ? "page-break-after:always;" : ""}">
+      <img class="ordo-print-img" src="${src}" style="max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;display:block;margin:0 auto" />
+    </div>`).join("");
+    const imgEls = Array.from(printArea.querySelectorAll(".ordo-print-img"));
+    await Promise.all(imgEls.map(imgEl => new Promise(resolve => {
+      if (imgEl.complete) resolve();
+      else { imgEl.onload = resolve; imgEl.onerror = resolve; }
+      setTimeout(resolve, 3000); // timeout de sécurité
+    })));
+    window.print();
+    setTimeout(() => { printArea.innerHTML = ""; setPrinting(false); }, 500);
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20, overflowY: "auto" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ maxWidth: "90vw", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
@@ -87,6 +111,12 @@ function OrdonnanceViewerModal({ att, onClose }) {
           <img key={i} src={src} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 6, background: "#fff" }} />
         ))}
         <div style={{ display: "flex", gap: 10 }}>
+          {images && images.length > 0 && (
+            <button type="button" onClick={handlePrint} disabled={printing}
+              style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #fff", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: printing ? "default" : "pointer", opacity: printing ? 0.6 : 1, fontFamily: "inherit" }}>
+              {printing ? "…" : "🖨️ Imprimer"}
+            </button>
+          )}
           {att?.dataUrl && (
             <button type="button" onClick={handleDownload} disabled={downloading}
               style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #fff", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: downloading ? "default" : "pointer", opacity: downloading ? 0.6 : 1, fontFamily: "inherit" }}>

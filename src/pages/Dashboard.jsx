@@ -29,7 +29,6 @@ import {
   addAuditLog,
   isDemoMode,
   getSupabaseClient,
-  getSignedUrl,
   fetchInteretsDuJour,
   appellerPatient,
   createRappel,
@@ -210,7 +209,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       try {
         let dataUrl = att.dataUrl;
         if (!dataUrl && att.path) {
-          const signedUrl = await getSignedUrl(att.path, 300);
+          // Résolu côté serveur (fetchOrdonnanceFichier), jamais via
+          // getSignedUrl() ici : cassé pour un poste vendeur (pas de session
+          // Supabase Auth, voir le commentaire plus haut sur handleViewOrdo).
+          const signedUrl = (await fetchOrdonnanceFichier(ordo.id))?.signedUrl;
           if (!signedUrl) continue;
           const resp = await fetch(signedUrl);
           const blob = await resp.blob();
@@ -818,7 +820,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                             {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
                               <button onClick={async ()=>{
                                   const a = ord.attachments[0];
-                                  const url = a.dataUrl || (a.path ? await getSignedUrl(a.path, 3600) : null);
+                                  const url = a.dataUrl || (a.path ? (await fetchOrdonnanceFichier(ord.id))?.signedUrl : null);
                                   if (!url) return;
                                   const res = await fetch(url);
                                   const blob = await res.blob();
