@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getSignedUrl } from "../supabase.js";
+import { fetchOrdonnanceFichier } from "../supabase.js";
 import { generateOrdoPDF } from "../lib/print.jsx";
 import { pdfFirstPageIfSinglePage, pdfAllPagesAsImages } from "../lib/ocr.js";
 import { escapeHtml, truncateFilename } from "../lib/utils.js";
@@ -118,9 +118,12 @@ function PrintConfirmModal({ ordo, couleur, onConfirm, onCancel }) {
     if (!printArea) { window.print(); setTimeout(() => setStep("confirm"), 500); return; }
 
     const att = ordo.attachments?.[0];
-    // En prod : charger la signed URL si dataUrl absent mais path disponible
+    // En prod : charger la signed URL si dataUrl absent mais path disponible.
+    // Résolue côté serveur (fetchOrdonnanceFichier), jamais via getSignedUrl()
+    // ici : cassé pour un poste vendeur (pas de session Supabase Auth, donc
+    // pas de auth.uid() pour la policy storage.objects).
     if (att && !att.dataUrl && att.path) {
-      att.dataUrl = await getSignedUrl(att.path, 300); // 5 minutes
+      att.dataUrl = (await fetchOrdonnanceFichier(ordo.id))?.signedUrl;
     }
     const hasFile = att?.dataUrl;
 

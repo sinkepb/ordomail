@@ -29,7 +29,6 @@ import {
   addAuditLog,
   isDemoMode,
   getSupabaseClient,
-  getSignedUrl,
   fetchInteretsDuJour,
   appellerPatient,
   createRappel,
@@ -210,7 +209,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
       try {
         let dataUrl = att.dataUrl;
         if (!dataUrl && att.path) {
-          const signedUrl = await getSignedUrl(att.path, 300);
+          // Résolu côté serveur (fetchOrdonnanceFichier), jamais via
+          // getSignedUrl() ici : cassé pour un poste vendeur (pas de session
+          // Supabase Auth, voir le commentaire plus haut sur handleViewOrdo).
+          const signedUrl = (await fetchOrdonnanceFichier(ordo.id))?.signedUrl;
           if (!signedUrl) continue;
           const resp = await fetch(signedUrl);
           const blob = await resp.blob();
@@ -361,8 +363,27 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
   })();
 
   const couleur = pharmacie?.couleur || "#1a3a6e";
-  // Calendrier : jours avec ordonnances (recomputed)
-  const joursAvecOrdos = new Set((ordonnances||[]).map(o => toDateKey(o.receivedAt)));
+  // Calendrier : jours avec ordonnances, et leur statut (05/10/2026) — vert si
+  // toutes les ordonnances du jour sont traitées (statut "imprime"), rouge si
+  // au moins une est encore "nouveau" un jour passé, jaune si c'est le jour
+  // même (pour le distinguer visuellement d'un retard accumulé sur un jour
+  // révolu, même critère "au moins une non traitée").
+  const ordosParJour = new Map();
+  for (const o of (ordonnances||[])) {
+    const key = toDateKey(o.receivedAt);
+    if (!ordosParJour.has(key)) ordosParJour.set(key, []);
+    ordosParJour.get(key).push(o);
+  }
+  const joursAvecOrdos = new Set(ordosParJour.keys());
+  const today0 = toDateKey(new Date());
+  const COULEUR_JOUR = { vert: "#16a34a", rouge: "#dc2626", jaune: "#eab308" };
+  function statutJour(day) {
+    const ordosJour = ordosParJour.get(day);
+    if (!ordosJour) return null;
+    const toutesTraitees = ordosJour.every(o => o.status !== "nouveau");
+    if (toutesTraitees) return "vert";
+    return day === today0 ? "jaune" : "rouge";
+  }
 
   // Générer tous les jours du mois affiché
   const getDaysInMonth = (year, month) => {
@@ -596,10 +617,10 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                           position:"relative",
                         }}>
                         {day.split("-")[2].replace(/^0/,"")}
-                        {/* Point indicateur si ordonnances */}
+                        {/* Point indicateur si ordonnances, coloré selon le statut du jour */}
                         {hasOrdos && !isSelected && (
                           <span style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%)",
-                            width:4,height:4,borderRadius:"50%",background:isToday?"#1a3a6e":couleur,display:"block"}}/>
+                            width:4,height:4,borderRadius:"50%",background:COULEUR_JOUR[statutJour(day)],display:"block"}}/>
                         )}
                       </button>
                     );
@@ -818,7 +839,7 @@ function PharmacieDashboard({ pharmacieId, onBadges, userRole = "admin", userId 
                             {(ord.attachments?.[0]?.dataUrl || ord.attachments?.[0]?.path) && (
                               <button onClick={async ()=>{
                                   const a = ord.attachments[0];
-                                  const url = a.dataUrl || (a.path ? await getSignedUrl(a.path, 3600) : null);
+                                  const url = a.dataUrl || (a.path ? (await fetchOrdonnanceFichier(ord.id))?.signedUrl : null);
                                   if (!url) return;
                                   const res = await fetch(url);
                                   const blob = await res.blob();
