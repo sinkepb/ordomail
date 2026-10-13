@@ -55,7 +55,10 @@ export async function signToken(
 ): Promise<string> {
   const header = { alg: "HS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
-  const body = { ...payload, iat: now, exp: now + expiresInSeconds };
+  // jti (13/10/2026, audit sécurité) — identifiant unique du jeton, qui
+  // permet de le révoquer individuellement côté serveur (voir
+  // _shared/tokenRevocation.ts) sans attendre son expiration naturelle.
+  const body = { ...payload, iat: now, exp: now + expiresInSeconds, jti: crypto.randomUUID() };
 
   const encHeader = base64url(new TextEncoder().encode(JSON.stringify(header)));
   const encBody   = base64url(new TextEncoder().encode(JSON.stringify(body)));

@@ -17,7 +17,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
-import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
+import { runPurge, runRappelsPurge, purgeRevokedTokens } from "../_shared/purgeLogic.ts";
 import { verifyCronSecret } from "../_shared/webhook-secret.ts";
 
 serve(async (req) => {
@@ -61,7 +61,13 @@ serve(async (req) => {
     } else {
       console.log(`[purge-rappels] Terminé — ${rappelsResult.deleted} rappel(s) terminé(s) supprimé(s) (rétention ${rappelsResult.retentionDays}j)`);
     }
-    return new Response(JSON.stringify({ success: true, ...result, rappels: rappelsResult }), { headers: CORS });
+    // Jetons révoqués expirés (13/10/2026, audit sécurité) — purge muette,
+    // sans alerte ni réglage : ce n'est que du ménage, jamais une décision
+    // de rétention métier.
+    const revokedDeleted = await purgeRevokedTokens(sb);
+    if (revokedDeleted > 0) console.log(`[purge-tokens] ${revokedDeleted} jeton(s) révoqué(s) expiré(s) supprimé(s).`);
+
+    return new Response(JSON.stringify({ success: true, ...result, rappels: rappelsResult, revokedTokensDeleted: revokedDeleted }), { headers: CORS });
   } catch (e) {
     console.error("[purge] EXCEPTION:", (e as Error).message);
     await reportAlert(sb, {

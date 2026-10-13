@@ -14,9 +14,18 @@ import { isTiff, convertTiffToPng } from "../_shared/tiffConvert.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rateLimit.ts";
 
 const MAX_SUBMISSIONS_PER_WINDOW = 20;
 const WINDOW_MINUTES = 10;
+// Limite par IP (13/10/2026, audit sécurité) — la limite par pharmacie
+// ci-dessus protège la file d'attente d'une pharmacie donnée, mais
+// n'empêche pas une seule IP de la saturer en boucle sur plusieurs fenêtres
+// successives : submit-ordonnance était le seul endpoint public de dépôt de
+// données de santé sans ce filet (tous les autres endpoints publics
+// anonymes en ont un, voir reserver-offre/toggle-interet/resolve-qr-code).
+const MAX_SUBMISSIONS_PER_IP_WINDOW = 20;
+const IP_WINDOW_MINUTES = 10;
 
 serve(async (req) => {
   const CORS = corsHeaders(req, { "Access-Control-Allow-Headers": "content-type, authorization" });
@@ -45,8 +54,13 @@ serve(async (req) => {
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
+    // Octets lus une seule fois ici, réutilisés plus loin pour l'upload — à
+    // la fois pour vérifier la signature réelle du fichier (indépendamment de
+    // l'extension/Content-Type déclarés par le client) et pour ne jamais
+    // relire le flux une seconde fois.
+    const fileBytes = file && file.size > 0 ? new Uint8Array(await file.arrayBuffer()) : null;
     if (file && file.size > 0) {
-      const fileCheck = validateFile(file);
+      const fileCheck = validateFile(file, fileBytes!);
       if (!fileCheck.ok) {
         return new Response(JSON.stringify({ error: fileCheck.error }),
           { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -58,6 +72,14 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // Limite par IP — avant toute requête DB coûteuse, pour qu'une IP qui
+    // spamme ne consomme même pas le lookup de pharmacie.
+    const ipOk = await checkRateLimit(sb, "submit-ordonnance", getClientIp(req), MAX_SUBMISSIONS_PER_IP_WINDOW, IP_WINDOW_MINUTES);
+    if (!ipOk) {
+      return new Response(JSON.stringify({ error: "Trop d'envois — réessayez dans quelques minutes" }),
+        { status: 429, headers: { ...CORS, "Content-Type": "application/json" } });
+    }
 
     // 1. Vérifier que la pharmacie existe ET que le jeton public correspond
     const { data: ph } = await sb.from("pharmacies")
@@ -107,7 +129,7 @@ serve(async (req) => {
 
     // 4. Uploader le fichier si présent
     if (file && file.size > 0) {
-      let uploadBuf: Uint8Array | ArrayBuffer = await file.arrayBuffer();
+      let uploadBuf: Uint8Array | ArrayBuffer = fileBytes!;
       let uploadFileType = file.type;
       let uploadFileName = file.name;
 

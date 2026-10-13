@@ -107,7 +107,7 @@ export async function handle_offres(ctx: ContexteSecureData): Promise<Response |
       } catch (_e) {
         return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
       }
-      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length }, bytes);
       if (!check.ok) {
         return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
       }

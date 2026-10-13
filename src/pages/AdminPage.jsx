@@ -17,6 +17,7 @@ import { RappelsDetailAdmin } from "../components/RappelsDetailAdmin.jsx";
 import { PaginationControls } from "../components/PaginationControls.jsx";
 import { ClientsMap } from "../components/ClientsMap.jsx";
 import { ADMIN_TOKEN_KEY, readStoredAdminToken } from "../lib/adminSession.js";
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 
 // Extrait la ville d'une adresse au format api-adresse.data.gouv.fr
 // ("12 rue de la Paix, 75001 Paris" → "Paris") — aucune colonne "ville"
@@ -144,7 +145,14 @@ function BackofficeAdmin({ onBack }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,0.07)",border:"1px solid #334155",color:"#94a3b8",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>← Site</button>
-          <button onClick={()=>{ sessionStorage.removeItem(ADMIN_TOKEN_KEY); setAuthed(false); setAdminToken(null); }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
+          <button onClick={()=>{
+            // Révocation serveur (13/10/2026, audit sécurité) — best-effort :
+            // on efface le jeton local dans tous les cas, mais on tente de le
+            // révoquer côté serveur pour qu'il ne reste pas utilisable par
+            // quelqu'un qui l'aurait intercepté avant l'expiration (4h).
+            callSecureDataAdmin("admin_logout", {}, adminToken).catch(()=>{});
+            sessionStorage.removeItem(ADMIN_TOKEN_KEY); setAuthed(false); setAdminToken(null);
+          }} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #1e293b",color:"#475569",padding:"5px 12px",borderRadius:7,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Déconnexion</button>
         </div>
       </header>
       <AdminDashboardLive adminToken={adminToken}/>

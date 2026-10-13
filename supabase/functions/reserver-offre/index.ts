@@ -41,6 +41,15 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
     }
 
+    // Limite par pharmacie (13/10/2026, audit sécurité) — voir le même
+    // commentaire dans toggle-interet/index.ts : plafonne le nombre total
+    // d'essais de code patient contre une pharmacie, indépendamment du
+    // nombre d'IP utilisées par une attaque distribuée.
+    const allowedPharmacie = await checkRateLimit(sb, "reserver-offre:pharmacie", pharmacieId, 300, 5);
+    if (!allowedPharmacie) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }), { status: 429, headers: CORS });
+    }
+
     const { data: offre } = await sb.from("offres_stories").select("id, pharmacie_id, prix, epuise, actif").eq("id", offreId).maybeSingle();
     if (!offre || offre.pharmacie_id !== pharmacieId) {
       return new Response(JSON.stringify({ error: "Offre introuvable" }), { status: 404, headers: CORS });

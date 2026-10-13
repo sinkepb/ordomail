@@ -51,4 +51,18 @@ describe("signToken / verifyToken", () => {
     // @ts-expect-error test volontaire d'un appel sans argument
     expect((await verifyToken(undefined, SECRET)).valid).toBe(false);
   });
+
+  // 13/10/2026, audit sécurité — jti ajouté pour permettre la révocation
+  // serveur (voir tokenRevocation.ts/resolveCaller.ts).
+  it("chaque jeton émis porte un jti unique", async () => {
+    const t1 = await signToken({ role: "vendeur" }, SECRET, 3600);
+    const t2 = await signToken({ role: "vendeur" }, SECRET, 3600);
+    const r1 = await verifyToken(t1, SECRET);
+    const r2 = await verifyToken(t2, SECRET);
+    expect(r1.valid).toBe(true);
+    if (r1.valid && r2.valid) {
+      expect(typeof r1.payload.jti).toBe("string");
+      expect(r1.payload.jti).not.toBe(r2.payload.jti);
+    }
+  });
 });

@@ -26,6 +26,7 @@ import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 import { reportAlert } from "../_shared/alert.ts";
 import { CLES_FONCTIONNALITES } from "../_shared/featureRegistry.ts";
+import { revokeToken } from "../_shared/tokenRevocation.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -58,10 +59,18 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    const { isAdmin } = await resolveCaller(bearer, jwtSecret, sb);
+    const { isAdmin, jti: callerJti, exp: callerExp } = await resolveCaller(bearer, jwtSecret, sb);
     if (!isAdmin) {
       return new Response(JSON.stringify({ error: "Réservé aux administrateurs OrdoMail" }),
         { status: 403, headers: CORS });
+    }
+
+    // Révocation serveur à la déconnexion (13/10/2026, audit sécurité) — avant
+    // ce correctif, le bouton "Déconnexion" n'effaçait le jeton que côté
+    // navigateur (sessionStorage) ; il restait valide jusqu'à expiration (4h).
+    if (resource === "admin_logout") {
+      await revokeToken(sb, callerJti, callerExp);
+      return new Response(JSON.stringify({ data: { success: true } }), { headers: CORS });
     }
 
     // ── Router par ressource ─────────────────────────────────────────────────
@@ -407,7 +416,7 @@ Deno.serve(async (req) => {
       } catch (_e) {
         return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
       }
-      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length }, bytes);
       if (!check.ok) {
         return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
       }
@@ -424,6 +433,18 @@ Deno.serve(async (req) => {
       if (!targetPharmacieId || !plan) {
         return new Response(JSON.stringify({ error: "pharmacieId et plan requis" }),
           { status: 400, headers: CORS });
+      }
+      // Liste blanche (13/10/2026, audit sécurité) — contre la table plutôt
+      // qu'une liste figée dans le code : les plans sont éditables depuis le
+      // backoffice (onglet Tarifs, voir pricing_plans), une liste figée ici
+      // se serait désynchronisée au premier plan ajouté/retiré. Avant ce
+      // correctif, n'importe quelle chaîne était acceptée et écrite telle
+      // quelle sur la pharmacie, avec un effet de bord en cascade sur
+      // planHasFeature/getPlanLimit (plan introuvable → valeurs par défaut
+      // silencieuses) plutôt qu'une erreur explicite.
+      const { data: planValide } = await sb.from("pricing_plans").select("id").eq("id", plan).maybeSingle();
+      if (!planValide) {
+        return new Response(JSON.stringify({ error: `Plan inconnu : ${plan}` }), { status: 400, headers: CORS });
       }
       const { error } = await sb.from("pharmacies").update({ plan }).eq("id", targetPharmacieId);
       if (error) throw new Error(error.message);

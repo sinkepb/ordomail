@@ -68,6 +68,22 @@ serve(async (req) => {
         { status: 429, headers: CORS });
     }
 
+    // Limite par pharmacie (13/10/2026, audit sécurité) — le code patient à 4
+    // caractères (≈104 000 combinaisons) reste énumérable par une attaque
+    // distribuée sur plusieurs IP, que la limite ci-dessus ne voit pas (elle
+    // ne compte que par IP). On ne peut pas allonger ce code sans casser son
+    // usage réel : il est tapé à la main par l'équipe au comptoir pour
+    // retrouver un patient (voir Dashboard.jsx, recherche "Nom ou code").
+    // Cette limite plafonne plutôt le nombre total d'essais possibles contre
+    // UNE pharmacie, quel que soit le nombre d'IP utilisées — largement
+    // au-dessus de tout usage réel, mais rend une énumération complète
+    // totalement impraticable.
+    const allowedPharmacie = await checkRateLimit(sb, "toggle-interet:pharmacie", pharmacieId, 300, 5);
+    if (!allowedPharmacie) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes — réessayez dans quelques minutes" }),
+        { status: 429, headers: CORS });
+    }
+
     // Vérifier que la pharmacie existe (garde-fou léger — pas de qr_token exigé
     // ici : cet appel n'a lieu qu'après un dépôt d'ordonnance réussi, où le
     // qr_token a déjà été vérifié par submit-ordonnance).

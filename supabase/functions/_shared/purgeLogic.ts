@@ -71,6 +71,21 @@ export async function runPurge(sb: any, triggeredBy: string): Promise<PurgeResul
   return { skipped: false, deleted: totalDeleted, retentionDays: days, errors };
 }
 
+// Purge des jetons révoqués expirés (13/10/2026, audit sécurité) — une fois le
+// jeton expiré de toute façon (signature/exp refuserait l'accès sans même
+// consulter cette table), la ligne ne sert plus à rien. Pas de réglage de
+// rétention ici : "expiré" suffit, contrairement aux ordonnances/rappels où
+// la durée de conservation est une décision métier/RGPD.
+export async function purgeRevokedTokens(sb: any): Promise<number> {
+  const { data, error } = await sb
+    .from("revoked_tokens")
+    .delete()
+    .lt("expires_at", new Date().toISOString())
+    .select("jti");
+  if (error) throw new Error(error.message);
+  return data?.length || 0;
+}
+
 // Purge des rappels de renouvellement (01/10/2026, audit RGPD) — fonction
 // séparée de runPurge() ci-dessus plutôt que fusionnée dedans : runPurge()
 // est déjà consommé tel quel par PurgeAdmin.jsx (data.deleted/retentionDays),

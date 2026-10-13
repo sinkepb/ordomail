@@ -13,6 +13,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyToken } from "./jwt.ts";
+import { isTokenRevoked } from "./tokenRevocation.ts";
 
 // vendeurSub (06/09/2026, PIN unique) : le "sub" brut du jeton vendeur — id du
 // poste (pharmacie_postes) en mode multi-PIN, id de la ligne vendeur_sessions
@@ -22,7 +23,12 @@ import { verifyToken } from "./jwt.ts";
 // userId (24/09/2026, voir secure-data:audit_log_create) : l'id Supabase Auth
 // du titulaire quand l'appelant est authentifié par session Auth — null pour
 // un poste vendeur (utiliser vendeurSub) ou un admin backoffice.
-export type Caller = { pharmacieId: string | null; isAdmin: boolean; vendeurSub: string | null; userId: string | null };
+// jti/exp (13/10/2026, audit sécurité) — portés par tout jeton vendeur/admin
+// valide (jamais par une session Supabase Auth titulaire), pour que l'appelant
+// de resolveCaller puisse révoquer CE jeton précis à la déconnexion (voir
+// _shared/tokenRevocation.ts, secure-data:compte.ts:vendeur_release_session,
+// secure-data-admin:admin_logout).
+export type Caller = { pharmacieId: string | null; isAdmin: boolean; vendeurSub: string | null; userId: string | null; jti: string | null; exp: number | null };
 
 /** Identifie l'appelant à partir de l'en-tête Authorization. Ne lève jamais —
  * renvoie { pharmacieId: null, isAdmin: false } si rien n'est reconnu ; c'est
@@ -33,11 +39,18 @@ export async function resolveCaller(
   sb: SupabaseClient,
 ): Promise<Caller> {
   const internal = bearer ? await verifyToken(bearer, jwtSecret) : { valid: false as const, error: "" };
-  if (internal.valid && internal.payload.role === "vendeur") {
-    return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false, vendeurSub: String(internal.payload.sub || "") || null, userId: null };
-  }
-  if (internal.valid && internal.payload.role === "admin") {
-    return { pharmacieId: null, isAdmin: true, vendeurSub: null, userId: null };
+  if (internal.valid && (internal.payload.role === "vendeur" || internal.payload.role === "admin")) {
+    const jti = typeof internal.payload.jti === "string" ? internal.payload.jti : null;
+    const exp = typeof internal.payload.exp === "number" ? internal.payload.exp : null;
+    // Révoqué (déconnexion explicite) : traiter comme un jeton invalide, même
+    // si signature et expiration restent par ailleurs valides.
+    if (await isTokenRevoked(sb, jti)) {
+      return { pharmacieId: null, isAdmin: false, vendeurSub: null, userId: null, jti: null, exp: null };
+    }
+    if (internal.payload.role === "vendeur") {
+      return { pharmacieId: String(internal.payload.pharmacie_id), isAdmin: false, vendeurSub: String(internal.payload.sub || "") || null, userId: null, jti, exp };
+    }
+    return { pharmacieId: null, isAdmin: true, vendeurSub: null, userId: null, jti, exp };
   }
   if (bearer) {
     // Ni jeton vendeur ni jeton admin — tenter une session Supabase Auth (titulaire)
@@ -48,8 +61,8 @@ export async function resolveCaller(
         .select("pharmacie_id")
         .eq("id", userData.user.id)
         .maybeSingle();
-      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false, vendeurSub: null, userId: userData.user.id };
+      if (link) return { pharmacieId: link.pharmacie_id, isAdmin: false, vendeurSub: null, userId: userData.user.id, jti: null, exp: null };
     }
   }
-  return { pharmacieId: null, isAdmin: false, vendeurSub: null, userId: null };
+  return { pharmacieId: null, isAdmin: false, vendeurSub: null, userId: null, jti: null, exp: null };
 }

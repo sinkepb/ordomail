@@ -130,7 +130,7 @@ export async function handle_ordonnances(ctx: ContexteSecureData): Promise<Respo
       } catch (_e) {
         return new Response(JSON.stringify({ error: "Fichier illisible (base64 invalide)" }), { status: 400, headers: CORS });
       }
-      const checkFile = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      const checkFile = validateFile({ name: fileName, type: fileType, size: bytes.length }, bytes);
       if (!checkFile.ok) {
         return new Response(JSON.stringify({ error: checkFile.error }), { status: 400, headers: CORS });
       }
@@ -224,7 +224,7 @@ export async function handle_ordonnances(ctx: ContexteSecureData): Promise<Respo
           { status: 400, headers: CORS });
       }
 
-      const check = validateFile({ name: fileName, type: fileType, size: bytes.length });
+      const check = validateFile({ name: fileName, type: fileType, size: bytes.length }, bytes);
       if (!check.ok) {
         return new Response(JSON.stringify({ error: check.error }), { status: 400, headers: CORS });
       }

@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
     const jwtSecret   = Deno.env.get("ORDOMAIL_JWT_SECRET")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    const { pharmacieId, vendeurSub, userId: callerUserId } = await resolveCaller(bearer, jwtSecret, sb);
+    const { pharmacieId, vendeurSub, userId: callerUserId, jti: callerJti, exp: callerExp } = await resolveCaller(bearer, jwtSecret, sb);
 
     if (!pharmacieId) {
       return new Response(JSON.stringify({ error: "Authentification requise" }),
@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     }
 
     // ── Router par ressource (découpé par domaine, 04/10/2026 — voir ./*.ts) ──
-    const ctx: ContexteSecureData = { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, resource, params, CORS };
+    const ctx: ContexteSecureData = { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, callerJti, callerExp, resource, params, CORS };
     for (const domaine of [handle_compte, handle_ordonnances, handle_offres, handle_rappels, handle_sonnette]) {
       const reponse = await domaine(ctx);
       if (reponse) return reponse;

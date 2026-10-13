@@ -9,6 +9,8 @@ export interface ContexteSecureData {
   pharmacieId: string | null;
   vendeurSub: string | null;
   callerUserId: string | null;
+  callerJti: string | null;
+  callerExp: number | null;
   resource: string;
   params: any;
   CORS: Record<string, string>;

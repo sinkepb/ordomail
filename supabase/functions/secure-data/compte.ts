@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller } from "../_shared/resolveCaller.ts";
+import { revokeToken } from "../_shared/tokenRevocation.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { validateFile } from "../_shared/upload-validation.ts";
 import { isTiff, convertTiffToPng } from "../_shared/tiffConvert.ts";
@@ -20,7 +21,7 @@ import { safeErrorMessage } from "../_shared/errors.ts";
 import type { ContexteSecureData } from "./contexte.ts";
 
 export async function handle_compte(ctx: ContexteSecureData): Promise<Response | null> {
-  const { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, resource, params, CORS } = ctx;
+  const { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, callerJti, callerExp, resource, params, CORS } = ctx;
     // PIN unique (06/09/2026) — heartbeat + libération de session. Appelés
     // pour TOUT vendeur connecté, pas seulement en mode PIN unique : sans
     // ligne vendeur_sessions correspondante (mode multi-PIN, sub = id de
@@ -39,6 +40,11 @@ export async function handle_compte(ctx: ContexteSecureData): Promise<Response |
       if (vendeurSub) {
         await sb.from("vendeur_sessions").delete().eq("id", vendeurSub).eq("pharmacie_id", pharmacieId);
       }
+      // Révocation serveur (13/10/2026, audit sécurité) — jusqu'ici, ce
+      // chemin ne faisait que libérer la place de connexion simultanée en
+      // mode PIN unique ; le jeton vendeur restait valide jusqu'à son
+      // expiration (8h) même après "Déconnexion". Voir _shared/tokenRevocation.ts.
+      await revokeToken(sb, callerJti, callerExp);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
     }
 
