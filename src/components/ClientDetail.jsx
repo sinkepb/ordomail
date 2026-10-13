@@ -6,6 +6,7 @@ import { snapshotMetriquesJournalieres } from "../supabase.js";
 import { HistoriqueSparkline } from "./HistoriqueSparkline.jsx";
 import { grouperParPeriode } from "../lib/activiteBuckets.js";
 import { BarChart } from "./BarChart.jsx";
+import { FONCTIONNALITES, fonctionnaliteActive } from "../lib/featureRegistry.js";
 
 const GRANULARITES = [["jour", "Jour"], ["mois", "Mois"], ["annee", "Année"]];
 
@@ -27,6 +28,28 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
   const [confirmNom, setConfirmNom] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+
+  // Fonctionnalités réglables par pharmacie (06/10/2026) — voir
+  // lib/featureRegistry.js. État local reflété depuis la pharmacie ouverte,
+  // mis à jour seulement après confirmation du serveur (jamais optimiste
+  // avant : une fonctionnalité mal activée peut changer le comportement vu
+  // par le patient, donc pas d'affichage d'un état qui ne serait pas encore
+  // réellement enregistré).
+  const [overrides, setOverrides] = useState(ph.feature_overrides || {});
+  const [enregistrement, setEnregistrement] = useState(null); // clé en cours d'écriture, ou null
+  const [erreurFonctionnalite, setErreurFonctionnalite] = useState("");
+
+  async function basculerFonctionnalite(cle, valeur) {
+    setEnregistrement(cle);
+    setErreurFonctionnalite("");
+    try {
+      const { data } = await callSecureDataAdmin("admin_set_feature_pharmacie", { pharmacieId: ph.id, cle, valeur }, adminToken);
+      setOverrides(data?.feature_overrides || {});
+    } catch (e) {
+      setErreurFonctionnalite(e.message);
+    }
+    setEnregistrement(null);
+  }
 
   // Activité (05/10/2026) — ordonnances et rappels créés, par jour/mois/année.
   const [ordonnancesDates, setOrdonnancesDates] = useState([]);
@@ -141,6 +164,36 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
               <BarChart data={seriesRappels} color="#a78bfa" />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Fonctionnalités réglables par pharmacie (06/10/2026) — un interrupteur
+          par entrée du catalogue (lib/featureRegistry.js), sans écran dédié à
+          écrire pour chaque nouvelle fonctionnalité de ce type. */}
+      <div style={{ padding: "16px 24px 0" }}>
+        <div style={{ background: "#0f172a", borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>🧩 Fonctionnalités</div>
+          {erreurFonctionnalite && <div style={{ fontSize: 12, color: "#f87171", marginBottom: 10 }}>{erreurFonctionnalite}</div>}
+          {FONCTIONNALITES.map((f) => {
+            const active = fonctionnaliteActive({ feature_overrides: overrides }, f.cle);
+            const enCours = enregistrement === f.cle;
+            return (
+              <div key={f.cle} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid #1e293b" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{f.label}</div>
+                  <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>{f.description}</div>
+                </div>
+                <button type="button" disabled={enCours} onClick={() => basculerFonctionnalite(f.cle, !active)}
+                  style={{
+                    flexShrink: 0, width: 44, height: 24, borderRadius: 12, border: "none", position: "relative",
+                    background: active ? "#16a34a" : "#334155", cursor: enCours ? "default" : "pointer", opacity: enCours ? 0.6 : 1,
+                  }}
+                  aria-pressed={active} aria-label={f.label}>
+                  <span style={{ position: "absolute", top: 2, left: active ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 

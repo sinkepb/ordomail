@@ -27,6 +27,39 @@
 // risquer un recadrage qui ampute une partie de l'ordonnance — le fichier
 // continue alors sa route inchangé dans imageEnhance.js.
 const SCANNABLE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const APERCU_MAX_DIMENSION = 1400;
+
+// Aperçu allégé pour l'écran de cadrage manuel (06/10/2026, retour terrain —
+// deux envois en double d'un même patient le même jour, dus à un écran de
+// cadrage resté vide : la photo d'origine d'un téléphone récent (plusieurs
+// Mo, 3000+ px de large) passée telle quelle en src d'une <img> peut mettre
+// plusieurs secondes à se décoder sur un appareil d'entrée de gamme, voire ne
+// jamais s'afficher). Aucune dépendance à OpenCV : prêt indépendamment de
+// detecterCoins, et peut donc arriver avant lui. Usage strictement limité à
+// l'affichage de ce seul écran — jamais pour l'OCR ni pour le fichier final
+// envoyé (voir redresserAvecCoins, toujours appelé sur le fichier d'origine).
+export async function genererApercuCadrage(file, maxDim = APERCU_MAX_DIMENSION) {
+  if (!file || !SCANNABLE_TYPES.has(file.type)) return null;
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch (e) {
+    console.error("[genererApercuCadrage]", e?.message || e);
+    return null;
+  } finally {
+    bitmap?.close?.();
+  }
+}
 
 // Le quadrilatère détecté doit couvrir au moins ce ratio de l'image pour
 // être retenu — en dessous, trop probable que ce soit un contour parasite

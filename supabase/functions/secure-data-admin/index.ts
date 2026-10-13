@@ -25,6 +25,7 @@ import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { CLES_FONCTIONNALITES } from "../_shared/featureRegistry.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -70,7 +71,7 @@ Deno.serve(async (req) => {
       // client renvoyait les PIN de vente en clair à quiconque savait appeler l'API anon).
       const { data: pharmacies, error: phErr } = await sb
         .from("pharmacies")
-        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, compte_test, pin_mode, pin_unique_hash, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
+        .select("id, nom, email, adresse, plan, plan_status, created_at, stripe_customer_id, stripe_subscription_id, trial_ends_at, compte_test, pin_mode, pin_unique_hash, feature_overrides, pharmacie_postes(id, actif, pin_hash), pharmacie_users(nom, role)")
         .order("created_at", { ascending: false });
       if (phErr) throw new Error(phErr.message);
 
@@ -141,6 +142,30 @@ Deno.serve(async (req) => {
       }));
 
       return new Response(JSON.stringify({ data: enriched }), { headers: CORS });
+    }
+
+    // Fonctionnalités réglables par pharmacie (06/10/2026) — voir
+    // _shared/featureRegistry.ts. `cle` est toujours vérifiée contre le
+    // catalogue : jamais de clé arbitraire écrite dans feature_overrides.
+    if (resource === "admin_set_feature_pharmacie") {
+      const { pharmacieId, cle, valeur } = params || {};
+      if (!pharmacieId || typeof pharmacieId !== "string") {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      if (!CLES_FONCTIONNALITES.includes(cle)) {
+        return new Response(JSON.stringify({ error: "Fonctionnalité inconnue" }), { status: 400, headers: CORS });
+      }
+      if (typeof valeur !== "boolean") {
+        return new Response(JSON.stringify({ error: "valeur doit être un booléen" }), { status: 400, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies").select("feature_overrides").eq("id", pharmacieId).maybeSingle();
+      if (!ph) {
+        return new Response(JSON.stringify({ error: "Pharmacie introuvable" }), { status: 404, headers: CORS });
+      }
+      const prochain = { ...(ph.feature_overrides || {}), [cle]: valeur };
+      const { error: updErr } = await sb.from("pharmacies").update({ feature_overrides: prochain }).eq("id", pharmacieId);
+      if (updErr) throw new Error(updErr.message);
+      return new Response(JSON.stringify({ data: { feature_overrides: prochain } }), { headers: CORS });
     }
 
     // Statistiques d'usage jour/semaine/mois d'UNE pharmacie (22/09/2026) —

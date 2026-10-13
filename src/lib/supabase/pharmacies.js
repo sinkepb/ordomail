@@ -46,12 +46,12 @@ export async function fetchPharmaciePublic(pharmacieId) {
     const db = getDB();
     const ph = db.pharmacies.find(p => p.id === pharmacieId);
     if (!ph) return null;
-    return { id: ph.id, nom: ph.nom, couleur: ph.couleur, emailReception: ph.emailReception, sonnette_active: ph.sonnette_active, plan: ph.plan };
+    return { id: ph.id, nom: ph.nom, couleur: ph.couleur, emailReception: ph.emailReception, sonnette_active: ph.sonnette_active, plan: ph.plan, feature_overrides: ph.feature_overrides || {} };
   }
   const sb = getSupabase();
   const { data, error } = await sb
     .from('pharmacies')
-    .select('id, nom, couleur, email_reception, sonnette_active, plan')
+    .select('id, nom, couleur, email_reception, sonnette_active, plan, feature_overrides')
     .eq('id', pharmacieId)
     .maybeSingle();
   if (error || !data) return null;

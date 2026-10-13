@@ -1,11 +1,11 @@
 import { prepareScannedImage, fileToDataUrl, computeBlurScore, BLUR_VARIANCE_THRESHOLD, enhanceContrastAndSharpness } from "../lib/imageEnhance.js";
-import { detecterCoins, redresserAvecCoins } from "../lib/documentScan.js";
+import { detecterCoins, redresserAvecCoins, genererApercuCadrage } from "../lib/documentScan.js";
 import { extractFromFile } from "../lib/ocr.js";
 
 // Analyse des photos d'ordonnance du parcours patient : recadrage (automatique
 // puis validé par le patient), amélioration, lisibilité et OCR. Extrait de
 // PatientPage.jsx sans changement de comportement.
-export function usePhotoAnalysis({ files, setFiles, nom }) {
+export function usePhotoAnalysis({ files, setFiles, nom, cadrageActif = true }) {
   const cadrageEnCours = files.find(f => f.cadrage);
 
   async function analyserItem(item, rawDataUrl, coins) {
@@ -68,12 +68,23 @@ export function usePhotoAnalysis({ files, setFiles, nom }) {
         const rawDataUrl = e.target.result;
         setFiles(prev => prev.map(x => x.id === item.id ? { ...x, dataUrl: rawDataUrl } : x));
 
-        if (!item.file.type.startsWith("image/")) {
+        // Fonctionnalité réglable par pharmacie (06/10/2026, voir
+        // lib/featureRegistry.js) — désactivée : même comportement qu'avant
+        // son introduction, recadrage automatique seul, sans écran de
+        // réglage (prepareScannedImage, appelé par analyserItem quand
+        // coins est null).
+        if (!item.file.type.startsWith("image/") || !cadrageActif) {
           analyserItem(item, rawDataUrl, null);
           return;
         }
-        const coins = await detecterCoins(item.file);
-        setFiles(prev => prev.map(x => x.id === item.id ? { ...x, cadrage: { coins, dataUrl: rawDataUrl } } : x));
+        // Aperçu généré en parallèle de la détection (indépendant d'OpenCV,
+        // donc pas d'attente supplémentaire) — c'est lui que l'écran de
+        // cadrage affiche, jamais la photo d'origine en pleine résolution.
+        const [coins, apercu] = await Promise.all([
+          detecterCoins(item.file),
+          genererApercuCadrage(item.file),
+        ]);
+        setFiles(prev => prev.map(x => x.id === item.id ? { ...x, cadrage: { coins, dataUrl: rawDataUrl, apercu: apercu || rawDataUrl } } : x));
       };
       r.readAsDataURL(item.file);
     });

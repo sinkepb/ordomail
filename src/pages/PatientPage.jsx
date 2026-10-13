@@ -12,6 +12,7 @@ import { HEALTH_STORIES } from "../components/patient/healthStories.js";
 import { generateCode, buildEmailAvecCode } from "../components/patient/codePatient.js";
 import { ZoomableImage } from "../components/patient/ZoomableImage.jsx";
 import { usePhotoAnalysis } from "../hooks/usePhotoAnalysis.js";
+import { fonctionnaliteActive } from "../lib/featureRegistry.js";
 
 function PatientStories({ pharmacie, nom, onRestart, codePatient, emailMode = false }) {
   const [current, setCurrent] = useState(0);
@@ -1143,7 +1144,8 @@ function PatientPage({ pharmacie, onBack }) {
   const emailReception        = pharmacie?.email_reception || pharmacie?.emailReception || `${pharmacie?.id}@in.ordomail.fr`;
 
   // Ajouter un ou plusieurs fichiers
-  const { cadrageEnCours, handleFiles, validerCadrage } = usePhotoAnalysis({ files, setFiles, nom });
+  const cadrageActif = fonctionnaliteActive(pharmacie, "cadrage_manuel");
+  const { cadrageEnCours, handleFiles, validerCadrage } = usePhotoAnalysis({ files, setFiles, nom, cadrageActif });
 
   function removeFile(idx) {
     setFiles(prev => prev.filter((_, i) => i !== idx));
@@ -1383,7 +1385,7 @@ function PatientPage({ pharmacie, onBack }) {
               {cadrageEnCours && (
               <CadrageModal
                 key={cadrageEnCours.id}
-                imageUrl={cadrageEnCours.cadrage.dataUrl}
+                imageUrl={cadrageEnCours.cadrage.apercu}
                 coinsInitiaux={cadrageEnCours.cadrage.coins}
                 onValider={coins => validerCadrage(cadrageEnCours, coins)}
               />
