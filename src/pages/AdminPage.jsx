@@ -445,6 +445,7 @@ function AdminDashboardLive({ adminToken } = {}) {
             <ContratEditor
               pharmacie={selected}
               plans={PLANS}
+              adminToken={adminToken}
               onSave={async (id,plan)=>{
                 setSaving(true);
                 try {

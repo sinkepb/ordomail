@@ -2,14 +2,38 @@
 // uniquement). Découpage des gros fichiers, voir DEPLOIEMENT_PHASE2.md/PHASE4.md.
 import { useState } from "react";
 import { updateSonnetteActive } from "../supabase.js";
+import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
+import { FONCTIONNALITES, fonctionnaliteActive } from "../lib/featureRegistry.js";
 
-function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg }) {
+function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClearMsg, adminToken }) {
   const [plan,        setPlan]        = useState(pharmacie.plan || "starter");
   const [postesActifs, setPostesActifs] = useState(pharmacie.postesActifs || 1);
   // Repéré par le linter (phase 2) : ce bouton mutait directement la prop `pharmacie`
   // (sans effet sur le rendu) puis appelait un onRefresh inexistant dans les props de
   // ce composant — ReferenceError garantie au clic. État local à la place.
   const [sonnetteActive, setSonnetteActive] = useState(pharmacie.sonnette_active !== false);
+
+  // Fonctionnalités réglables par pharmacie (06/10/2026) — voir
+  // lib/featureRegistry.js. État local reflété depuis la pharmacie ouverte,
+  // mis à jour seulement après confirmation du serveur (jamais optimiste
+  // avant : une fonctionnalité mal activée peut changer le comportement vu
+  // par le patient, donc pas d'affichage d'un état qui ne serait pas encore
+  // réellement enregistré).
+  const [overrides, setOverrides] = useState(pharmacie.feature_overrides || {});
+  const [enregistrement, setEnregistrement] = useState(null); // clé en cours d'écriture, ou null
+  const [erreurFonctionnalite, setErreurFonctionnalite] = useState("");
+
+  async function basculerFonctionnalite(cle, valeur) {
+    setEnregistrement(cle);
+    setErreurFonctionnalite("");
+    try {
+      const { data } = await callSecureDataAdmin("admin_set_feature_pharmacie", { pharmacieId: pharmacie.id, cle, valeur }, adminToken);
+      setOverrides(data?.feature_overrides || {});
+    } catch (e) {
+      setErreurFonctionnalite(e.message);
+    }
+    setEnregistrement(null);
+  }
 
   const currentPlan = plans[plan];
   const maxPostes   = currentPlan?.maxPostes || 1;
@@ -120,6 +144,32 @@ function ContratEditor({ pharmacie, plans, onSave, onClose, saving, msg, onClear
             color:sonnetteActive?"#86efac":"#fca5a5"}}>
           {sonnetteActive?"✅ Activée":"❌ Désactivée"}
         </button>
+      </div>
+
+      {/* Fonctionnalités réglables par pharmacie — un interrupteur par entrée
+          du catalogue (lib/featureRegistry.js), sans écran dédié à écrire
+          pour chaque nouvelle fonctionnalité de ce type. */}
+      <div style={{marginTop:16,padding:"14px 16px",background:"#1e293b",borderRadius:12,border:"1px solid #334155"}}>
+        <div style={{fontWeight:700,fontSize:13,color:"#fff",marginBottom:erreurFonctionnalite?6:12}}>🧩 Fonctionnalités</div>
+        {erreurFonctionnalite && <div style={{fontSize:12,color:"#f87171",marginBottom:10}}>{erreurFonctionnalite}</div>}
+        {FONCTIONNALITES.map((f, i) => {
+          const active = fonctionnaliteActive({ feature_overrides: overrides }, f.cle);
+          const enCours = enregistrement === f.cle;
+          return (
+            <div key={f.cle} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderTop:i>0?"1px solid #334155":"none"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{f.label}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{f.description}</div>
+              </div>
+              <button type="button" disabled={enCours} onClick={()=>basculerFonctionnalite(f.cle, !active)}
+                style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:enCours?"default":"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,opacity:enCours?0.6:1,
+                  background:active?"#14532d":"#450a0a",
+                  color:active?"#86efac":"#fca5a5"}}>
+                {active?"✅ Activée":"❌ Désactivée"}
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <button onClick={()=>onSave(pharmacie.id, plan, postesActifs)} disabled={saving}
