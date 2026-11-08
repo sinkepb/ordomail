@@ -13,6 +13,8 @@ import { savePostes, updateTitulaire, changePlan, isDemoMode, getSupabaseClient 
 // Dimensions du PDF exporté en mm [largeur, hauteur], puis taille en px de
 // l'aperçu (celle de la page générée par print.jsx, avant réduction à l'écran).
 const POSTER_FORMATS = ["A4", "A3", "A6"];
+// Modèles de message (08/11/2026) : même affiche et même QR, texte différent.
+const POSTER_VARIANTS = [["standard", "Gagnez du temps"], ["rappel", "Ordonnance à renouveler"]];
 const POSTER_SIZES_MM = {
   A4: { portrait: [210, 297], paysage: [297, 210] },
   A3: { portrait: [297, 420], paysage: [420, 297] },
@@ -54,8 +56,9 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
   // et la migration de backfill du 14/09/2026).
   const [posterFormat, setPosterFormat] = useState("A4");
   const [posterOrientation, setPosterOrientation] = useState("portrait");
-  // HTML des affiches, indexé "{format}-{orientation}" (ex. "A6-portrait") —
-  // un état par variante ne passait plus à l'échelle avec un 3e format.
+  const [posterVariant, setPosterVariant] = useState("standard");
+  // HTML des affiches, indexé "{modèle}-{format}-{orientation}" (ex.
+  // "rappel-A6-portrait") — un état par variante ne passait plus à l'échelle.
   const [posters, setPosters] = useState({});
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterDownloading, setPosterDownloading] = useState(false);
@@ -65,23 +68,23 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
     if (section !== "qrcode" || !pharmacie.qr_token || Object.keys(posters).length) return;
     setPosterLoading(true); setPosterErr("");
     const params = { url: `${window.location.origin}/?patient=${pharmacie.id}&t=${pharmacie.qr_token}`, pharmacieName: pharmacie.nom };
-    Promise.all(POSTER_FORMATS.flatMap(f => [
-      generatePosterHTML({ ...params, format: f }).then(html => [`${f}-portrait`, html]),
-      generatePosterLandscapeHTML({ ...params, format: f }).then(html => [`${f}-paysage`, html]),
-    ])).then(entries => setPosters(Object.fromEntries(entries)))
+    Promise.all(POSTER_VARIANTS.flatMap(([v]) => POSTER_FORMATS.flatMap(f => [
+      generatePosterHTML({ ...params, format: f, variant: v }).then(html => [`${v}-${f}-portrait`, html]),
+      generatePosterLandscapeHTML({ ...params, format: f, variant: v }).then(html => [`${v}-${f}-paysage`, html]),
+    ]))).then(entries => setPosters(Object.fromEntries(entries)))
       .catch(e => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
   async function handleDownloadPoster() {
-    const html = posters[`${posterFormat}-${posterOrientation}`];
+    const html = posters[`${posterVariant}-${posterFormat}-${posterOrientation}`];
     if (!html) return;
     setPosterErr("");
     setPosterDownloading(true);
     const [widthMm, heightMm] = POSTER_SIZES_MM[posterFormat][posterOrientation];
     try {
       await downloadPosterPDF(html, {
-        filename: `affiche-qr-${sanitizePdfFilenamePart(pharmacie.nom)}-${posterFormat}-${posterOrientation}.pdf`,
+        filename: `affiche-qr${posterVariant === "rappel" ? "-rappel" : ""}-${sanitizePdfFilenamePart(pharmacie.nom)}-${posterFormat}-${posterOrientation}.pdf`,
         widthMm, heightMm,
       });
     } catch (e) {
@@ -387,6 +390,14 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
             ) : (
               <>
                 <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {POSTER_VARIANTS.map(([k,l])=>(
+                    <button key={k} onClick={()=>setPosterVariant(k)}
+                      style={{flex:1,padding:"7px 8px",border:`1.5px solid ${posterVariant===k?"#0B7A54":"#e0e7ff"}`,borderRadius:8,background:posterVariant===k?"#ecfdf5":"#fff",color:posterVariant===k?"#0B7A54":"#64748b",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
                   {POSTER_FORMATS.map(f=>(
                     <button key={f} onClick={()=>setPosterFormat(f)}
                       style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterFormat===f?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterFormat===f?"#1a3a6e":"#fff",color:posterFormat===f?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -404,7 +415,7 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
                 </div>
                 {(() => {
                   const isPortrait = posterOrientation === "portrait";
-                  const html = posters[`${posterFormat}-${posterOrientation}`];
+                  const html = posters[`${posterVariant}-${posterFormat}-${posterOrientation}`];
                   const dims = POSTER_PREVIEW_PX[posterFormat][posterOrientation];
                   const scale = (isPortrait ? 222 : 314) / dims.w;
                   return (

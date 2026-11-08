@@ -347,7 +347,13 @@ async function openQrSheetPDF(qrCodes, batchLabel) {
 // de redessiner chaque valeur en px à une nouvelle échelle. A3 = A4 × √2 dans
 // les deux dimensions par définition (série ISO 216), donc le rendu est
 // identique à l'A4, juste plus grand — aucun risque de débordement à revérifier.
-async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
+// variant "standard" (défaut) ou "rappel" (08/11/2026, demande titulaire) : même
+// affiche, même QR (envoi d'ordonnance), seul le message change — « Votre
+// ordonnance se renouvelle ? Envoyez-la et demandez à être rappelé(e). » à la
+// place de « Gagnez du temps / Envoyez votre ordonnance ». Les 3 étapes ne
+// changent pas. Le texte étant plus long, le QR est légèrement réduit dans ce
+// modèle pour que tout continue de tenir sur une seule page.
+async function generatePosterHTML({ url, pharmacieName, format = "A4", variant = "standard" }) {
   const mod = await import("qrcode");
   const QR = mod.default || mod;
   const qrSvg = await QR.toString(url, {
@@ -368,6 +374,23 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
   const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
   const pageW = isA3 ? 1122 : isA6 ? 396.5 : 793;
   const pageH = isA3 ? 1588 : isA6 ? 561.5 : 1123;
+  const isRappel = variant === "rappel";
+  const qrBox = isRappel ? 456 : 540;
+  const qrInner = isRappel ? 392 : 465;
+  const headHtml = isRappel ? `
+  <div style="position:relative;text-align:center;margin-top:22px;display:flex;flex-direction:column;align-items:center;gap:6px;white-space:nowrap;">
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:66px;line-height:0.98;letter-spacing:-0.02em;color:#12241C;">VOTRE ORDONNANCE</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:80px;line-height:0.98;letter-spacing:-0.03em;color:#16C079;">SE RENOUVELLE ?</span>
+  </div>
+
+  <p style="position:relative;text-align:center;margin:14px 0 0;max-width:600px;font-family:'Bricolage Grotesque';font-weight:700;font-size:36px;line-height:1.15;letter-spacing:-0.01em;color:#2E4B3F;">Envoyez-la et demandez à être rappelé(e).</p>` : `
+  <div style="position:relative;text-align:center;margin-top:22px;display:flex;align-items:baseline;justify-content:center;gap:12px;white-space:nowrap;">
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:98px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+  </div>
+
+  <p style="position:relative;text-align:center;margin:12px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-0.01em;color:#2E4B3F;white-space:nowrap;">ENVOYEZ VOTRE ORDONNANCE</p>`;
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -423,13 +446,7 @@ ${POSTER_FONT_FACE_CSS}
     <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
   </div>
 
-  <div style="position:relative;text-align:center;margin-top:22px;display:flex;align-items:baseline;justify-content:center;gap:12px;white-space:nowrap;">
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:72px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
-    <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:98px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
-  </div>
-
-  <p style="position:relative;text-align:center;margin:12px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-0.01em;color:#2E4B3F;white-space:nowrap;">ENVOYEZ VOTRE ORDONNANCE</p>
+${headHtml}
 
   <div style="position:relative;display:flex;flex-direction:column;align-items:center;margin-top:14px;">
     <div style="display:flex;align-items:center;gap:14px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:14px 28px 14px 18px;box-shadow:0 8px 22px rgba(11,122,84,0.12);">
@@ -439,12 +456,12 @@ ${POSTER_FONT_FACE_CSS}
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" stroke="#16C079" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="margin-top:8px;"><path d="M12 3v19"></path><path d="M4 16l8 9 8-9"></path></svg>
   </div>
 
-  <div style="position:relative;width:540px;height:540px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:8px">
+  <div style="position:relative;width:${qrBox}px;height:${qrBox}px;background:#ffffff;border-radius:30px;box-shadow:0 20px 46px rgba(11,122,84,0.20);display:flex;align-items:center;justify-content:center;margin-top:8px">
     <div style="position:absolute;top:18px;left:18px;width:39px;height:39px;border-top:6px solid #16C079;border-left:6px solid #16C079;border-top-left-radius:14px;"></div>
     <div style="position:absolute;top:18px;right:18px;width:39px;height:39px;border-top:6px solid #16C079;border-right:6px solid #16C079;border-top-right-radius:14px;"></div>
     <div style="position:absolute;bottom:18px;left:18px;width:39px;height:39px;border-bottom:6px solid #16C079;border-left:6px solid #16C079;border-bottom-left-radius:14px;"></div>
     <div style="position:absolute;bottom:18px;right:18px;width:39px;height:39px;border-bottom:6px solid #16C079;border-right:6px solid #16C079;border-bottom-right-radius:14px;"></div>
-    <div style="width:465px;height:465px;">${qrSvg}</div>
+    <div style="width:${qrInner}px;height:${qrInner}px;">${qrSvg}</div>
   </div>
 
   <div style="position:relative;display:flex;flex-direction:column;gap:10px;margin-top:14px;width:100%;padding:0 36px;">
@@ -481,7 +498,9 @@ ${POSTER_FONT_FACE_CSS}
 // generatePosterHTML : le contenu (297x210mm) est redessiné à l'identique,
 // juste agrandi ×√2 dans une page A3 landscape (420x297mm), via .page/.sheet
 // comme la version portrait.
-async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }) {
+// variant "rappel" : voir generatePosterHTML (même message, mis en page pour la
+// colonne de texte de gauche).
+async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4", variant = "standard" }) {
   const mod = await import("qrcode");
   const QR = mod.default || mod;
   const qrSvg = await QR.toString(url, {
@@ -498,6 +517,21 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
   const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
   const pageW = isA3 ? 420 : isA6 ? 148.5 : 297;
   const pageH = isA3 ? 297 : isA6 ? 105 : 210;
+  const isRappel = variant === "rappel";
+  const headHtml = isRappel ? `
+    <div style="margin-top:30px;display:flex;flex-direction:column;gap:4px;white-space:nowrap;">
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:40px;line-height:0.98;letter-spacing:-0.02em;color:#12241C;">VOTRE ORDONNANCE</span>
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:48px;line-height:0.98;letter-spacing:-0.03em;color:#16C079;">SE RENOUVELLE ?</span>
+    </div>
+
+    <p style="margin:16px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:25px;line-height:1.2;color:#2E4B3F;max-width:400px;">Envoyez-la et demandez à être rappelé(e).</p>` : `
+    <div style="margin-top:30px;display:flex;align-items:baseline;gap:13px;white-space:nowrap;">
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
+      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:62px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
+    </div>
+
+    <p style="margin:16px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:27px;line-height:1.25;color:#2E4B3F;max-width:420px;">ENVOYEZ VOTRE ORDONNANCE</p>`;
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -550,13 +584,7 @@ ${POSTER_FONT_FACE_CSS}
       <span style="font-family:'Manrope';font-weight:800;letter-spacing:0.2em;font-size:13px;color:#0B7A54;text-transform:uppercase;">${brand}</span>
     </div>
 
-    <div style="margin-top:30px;display:flex;align-items:baseline;gap:13px;white-space:nowrap;">
-      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.02em;color:#12241C;">GAGNEZ</span>
-      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:46px;line-height:0.95;letter-spacing:-0.03em;color:#090909;">DU</span>
-      <span style="font-family:'Bricolage Grotesque';font-weight:800;font-size:62px;line-height:0.95;letter-spacing:-0.03em;color:#16C079;">TEMPS</span>
-    </div>
-
-    <p style="margin:16px 0 0;font-family:'Bricolage Grotesque';font-weight:700;font-size:27px;line-height:1.25;color:#2E4B3F;max-width:420px;">ENVOYEZ VOTRE ORDONNANCE</p>
+${headHtml}
 
     <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:2px solid rgba(11,122,84,0.14);border-radius:999px;padding:9px 20px 9px 13px;box-shadow:0 8px 22px rgba(11,122,84,0.12);margin-top:26px;align-self:flex-start;">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7A54" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.6"></circle></svg>
