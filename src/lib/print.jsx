@@ -358,9 +358,16 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4" }) {
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
   const isA3 = format === "A3";
-  const scale = isA3 ? Math.SQRT2 : 1;
-  const pageW = isA3 ? 1122 : 793;
-  const pageH = isA3 ? 1588 : 1123;
+  // A6 (08/11/2026, demande titulaire — affichette de comptoir) : A6 = A4 / 2
+  // dans les deux sens (ISO 216), donc même principe que l'A3 mais à l'échelle
+  // ×0,5 — le contenu 793×1123px n'est pas redessiné. La page fait 793/2 ×
+  // 1123/2 px (≈ 105×148,5 mm) ; .sheet garde sa taille de mise en page d'origine
+  // et se centre dans .page (overflow:hidden) avant d'être réduit autour de son
+  // centre, donc le résultat remplit exactement la page.
+  const isA6 = format === "A6";
+  const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
+  const pageW = isA3 ? 1122 : isA6 ? 396.5 : 793;
+  const pageH = isA3 ? 1588 : isA6 ? 561.5 : 1123;
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -485,9 +492,12 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4" }
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
   const isA3 = format === "A3";
-  const scale = isA3 ? Math.SQRT2 : 1;
-  const pageW = isA3 ? 420 : 297;
-  const pageH = isA3 ? 297 : 210;
+  // A6 paysage (08/11/2026) : 148,5×105 mm = l'A4 paysage ×0,5, voir le commentaire
+  // équivalent dans generatePosterHTML.
+  const isA6 = format === "A6";
+  const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
+  const pageW = isA3 ? 420 : isA6 ? 148.5 : 297;
+  const pageH = isA3 ? 297 : isA6 ? 105 : 210;
 
   return `<!DOCTYPE html>
 <html lang="fr">
