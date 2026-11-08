@@ -4,6 +4,7 @@
 // [cycle suivant] → … → termine).
 import { estNumeroFixe } from "../telephone.js";
 import { IS_DEMO, getDB, callSecureData } from './client.js';
+import { createOrdonnanceManuelle, deleteOrdonnance } from './ordonnances.js';
 
 // Détection fixe/mobile par préfixe (01/10/2026) — même règle que
 // supabase/functions/_shared/telephone.ts, dupliquée ici car le mode démo
@@ -71,14 +72,69 @@ export async function createRappel(pharmacieId, { nom, prenom, telephone, dateRa
 // secure-data:rappels_ordonnance_fichier. Renvoie null si le rappel n'a pas
 // d'ordonnance liée (créé avant cette fonctionnalité, ou ordonnance depuis
 // supprimée).
-export async function fetchRappelOrdonnance(rappelId) {
+// ordonnanceId (08/11/2026) : un rappel peut avoir plusieurs ordonnances
+// jointes — sans lui, le serveur renvoie la première (ancien comportement).
+export async function fetchRappelOrdonnance(rappelId, ordonnanceId = null) {
   if (IS_DEMO) return null;
   try {
-    return await callSecureData('rappels_ordonnance_fichier', { rappelId });
+    return await callSecureData('rappels_ordonnance_fichier', { rappelId, ordonnanceId });
   } catch (e) {
     console.error('[fetchRappelOrdonnance]', e.message);
     return null;
   }
+}
+
+// Ordonnances jointes d'un rappel, normalisées en [{ id, name, type }]
+// (08/11/2026). `fichiers` vient de secure-data:rappels_list ; s'il est absent
+// (liste servie par une ancienne version, ou événement temps réel qui n'a que
+// la ligne brute), on retombe sur l'ancien champ ordonnance_id — sans nom de
+// fichier connu, d'où le libellé générique.
+export function ordonnancesDuRappel(rappel) {
+  if (Array.isArray(rappel?.fichiers)) return rappel.fichiers;
+  return rappel?.ordonnance_id ? [{ id: rappel.ordonnance_id, name: 'ordonnance', type: 'image' }] : [];
+}
+
+// Ajoute une ordonnance (photo/PDF/TIFF depuis l'ordinateur) à un rappel
+// existant (08/11/2026). Deux temps côté serveur, volontairement : création de
+// l'ordonnance + upload (ordonnances_create : validation du fichier, TIFF→PNG,
+// même garde-fous que partout ailleurs), puis rattachement au rappel
+// (rappels_ordonnance_lier). Si le rattachement échoue, l'ordonnance fraîchement
+// créée n'a plus aucune raison d'exister : on la supprime plutôt que de la
+// laisser orpheline dans la file Ordonnances.
+export async function ajouterOrdonnanceRappel(pharmacieId, rappelId, file) {
+  if (IS_DEMO) {
+    const db = getDB();
+    const ph = db.pharmacies.find(p => p.id === pharmacieId);
+    const r = ph?.rappels?.find(x => x.id === rappelId);
+    if (!r) throw new Error('Rappel introuvable');
+    const fichier = { id: `ordo-manuel-${Date.now()}`, name: file.name, type: file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image' };
+    r.fichiers = [...(r.fichiers || []), fichier];
+    return fichier;
+  }
+  const created = await createOrdonnanceManuelle(pharmacieId, file);
+  if (!created?.id) throw new Error("Échec de l'ajout de l'ordonnance.");
+  try {
+    const res = await callSecureData('rappels_ordonnance_lier', { rappelId, ordonnanceId: created.id });
+    return res.fichier;
+  } catch (e) {
+    await deleteOrdonnance(created.id, pharmacieId).catch(() => {});
+    throw e;
+  }
+}
+
+// Retire une ordonnance d'un rappel (08/11/2026). Renvoie { ordonnanceSupprimee }
+// — vrai si l'ordonnance ajoutée manuellement pour ce rappel a aussi été
+// supprimée (jamais pour une ordonnance venue d'un patient, voir
+// secure-data:rappels_ordonnance_retirer).
+export async function retirerOrdonnanceRappel(pharmacieId, rappelId, ordonnanceId) {
+  if (IS_DEMO) {
+    const db = getDB();
+    const ph = db.pharmacies.find(p => p.id === pharmacieId);
+    const r = ph?.rappels?.find(x => x.id === rappelId);
+    if (r) r.fichiers = (r.fichiers || ordonnancesDuRappel(r)).filter(f => f.id !== ordonnanceId);
+    return { success: true, ordonnanceSupprimee: false };
+  }
+  return await callSecureData('rappels_ordonnance_retirer', { rappelId, ordonnanceId });
 }
 
 export async function traiterRappel(rappelId, dateRappel = null) {

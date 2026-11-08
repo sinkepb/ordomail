@@ -11,9 +11,15 @@
 // fois à la création, pas un champ de formulaire ordinaire.
 import { useState } from "react";
 import { SPECIALITES } from "./rappelsConstants.js";
+import { OrdonnancesJointes } from "./OrdonnancesJointes.jsx";
 import { normalizeTel, telValide, estNumeroFixe, todayDateInputValue, defaultDateRenouvellement, renouvellementVersEnvoi, envoiVersRenouvellement } from "./rappelsDateUtils.js";
 
-export function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", initialMedecin = "", editingRappel = null }) {
+// Ordonnances jointes (08/11/2026) — en mode édition uniquement, si le parent
+// fournit onAddOrdonnances : `ordonnances` = [{ id, name, type }] à jour (le
+// parent les tient dans son état, elles changent pendant que le formulaire est
+// ouvert), les trois callbacks agissent immédiatement côté serveur.
+export function RappelForm({ onCancel, onCreated, creating, setCreating, initialNom = "", initialPrenom = "", initialMedecin = "", editingRappel = null,
+  ordonnances = [], onAddOrdonnances = null, onRemoveOrdonnance = null, onViewOrdonnance = null, ordoBusy = false, ordoError = "" }) {
   const isEdit = !!editingRappel;
   const [nom, setNom] = useState(editingRappel?.patient_nom || initialNom);
   const [prenom, setPrenom] = useState(editingRappel?.patient_prenom || initialPrenom);
@@ -81,7 +87,7 @@ export function RappelForm({ onCancel, onCreated, creating, setCreating, initial
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onCancel}>
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+        style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, maxHeight: "92vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>{isEdit ? "✏️ Modifier le rappel" : "🔔 Nouveau rappel"}</div>
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Nom du patient</label>
@@ -133,6 +139,16 @@ export function RappelForm({ onCancel, onCreated, creating, setCreating, initial
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Commentaire (optionnel)</label>
         <textarea value={commentaire} onChange={e => setCommentaire(e.target.value)} rows={2} placeholder="Ex : traitement chronique, renouvellement tous les 3 mois"
           style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", marginBottom: 12, fontFamily: "inherit", fontSize: 14, boxSizing: "border-box", resize: "vertical" }} />
+
+        {isEdit && onAddOrdonnances && (
+          <>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>Ordonnances jointes</label>
+            <div style={{ marginBottom: 16 }}>
+              <OrdonnancesJointes fichiers={ordonnances} busy={ordoBusy} error={ordoError}
+                onView={onViewOrdonnance} onAdd={onAddOrdonnances} onRemove={onRemoveOrdonnance} />
+            </div>
+          </>
+        )}
 
         {!isEdit && (
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16, cursor: "pointer" }}>
