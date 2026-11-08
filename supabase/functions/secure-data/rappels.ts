@@ -19,6 +19,24 @@ import { escapeHtml } from "../_shared/html.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 import type { ContexteSecureData } from "./contexte.ts";
 
+// Plafond d'ordonnances jointes à un même rappel (08/11/2026) — évite qu'un
+// poste (ou un script avec un jeton volé) rattache un nombre illimité de
+// fichiers à un seul rappel ; très au-dessus de l'usage réel (une ordonnance
+// papier = 1 à 3 pages).
+const MAX_ORDONNANCES_PAR_RAPPEL = 10;
+
+// Maintient rappels_ordonnance.ordonnance_id = la plus ancienne ordonnance
+// encore liée (ou NULL s'il n'en reste aucune). Cette colonne n'est plus la
+// source de vérité (voir 20261108_rappels_ordonnances_liens.sql) mais reste
+// lue par des consommateurs existants (métrique "avec ordonnance" admin).
+async function resyncPremiereOrdonnance(sb: any, rappelId: string) {
+  const { data: liens } = await sb.from("rappels_ordonnances_liens")
+    .select("ordonnance_id").eq("rappel_id", rappelId).order("created_at", { ascending: true }).limit(1);
+  await sb.from("rappels_ordonnance")
+    .update({ ordonnance_id: liens?.[0]?.ordonnance_id ?? null, updated_at: new Date().toISOString() })
+    .eq("id", rappelId);
+}
+
 export async function handle_rappels(ctx: ContexteSecureData): Promise<Response | null> {
   const { req, sb, supabaseUrl, serviceKey, jwtSecret, pharmacieId, vendeurSub, callerUserId, resource, params, CORS } = ctx;
     // ── Rappels de renouvellement d'ordonnance (04/09/2026) ─────────────────
@@ -105,6 +123,11 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       }).select().single();
       if (error) throw new Error(error.message);
       await sb.from("rappels_evenements").insert({ rappel_id: data.id, type: "cree" });
+      // Lien de l'ordonnance d'origine dans la table de liaison (08/11/2026) —
+      // source de vérité des ordonnances jointes, voir rappels_ordonnance_lier.
+      if (verifiedOrdonnanceId) {
+        await sb.from("rappels_ordonnances_liens").insert({ rappel_id: data.id, ordonnance_id: verifiedOrdonnanceId });
+      }
       // Notification backoffice (22/09/2026, demande titulaire) — visibilité
       // sur l'activité réseau en direct. severity:"info" pour ne jamais
       // déclencher le webhook sortant de reportAlert (réservé aux vraies
@@ -223,7 +246,11 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
       }
-      const { rappelId } = params || {};
+      // ordonnanceId optionnel (08/11/2026) — un rappel peut avoir plusieurs
+      // ordonnances jointes : sans lui, on garde l'ancien comportement (la
+      // première liée). Avec lui, l'ordonnance DOIT être liée à CE rappel
+      // (jamais un accès à une ordonnance arbitraire de la pharmacie).
+      const { rappelId, ordonnanceId } = params || {};
       if (!rappelId) {
         return new Response(JSON.stringify({ error: "rappelId requis" }), { status: 400, headers: CORS });
       }
@@ -231,12 +258,22 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       if (!rappel || rappel.pharmacie_id !== pharmacieId) {
         return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
       }
-      if (!rappel.ordonnance_id) {
+      let ordoIdCible: string | null = null;
+      if (ordonnanceId) {
+        const { data: lien } = await sb.from("rappels_ordonnances_liens")
+          .select("ordonnance_id").eq("rappel_id", rappelId).eq("ordonnance_id", ordonnanceId).maybeSingle();
+        ordoIdCible = lien?.ordonnance_id ?? null;
+      } else {
+        const { data: liens } = await sb.from("rappels_ordonnances_liens")
+          .select("ordonnance_id").eq("rappel_id", rappelId).order("created_at", { ascending: true }).limit(1);
+        ordoIdCible = liens?.[0]?.ordonnance_id ?? rappel.ordonnance_id ?? null;
+      }
+      if (!ordoIdCible) {
         return new Response(JSON.stringify({ data: null }), { headers: CORS });
       }
       const { data: ordo } = await sb.from("ordonnances")
         .select("fichier_url, fichier_nom, fichier_type")
-        .eq("id", rappel.ordonnance_id).eq("pharmacie_id", pharmacieId).maybeSingle();
+        .eq("id", ordoIdCible).eq("pharmacie_id", pharmacieId).maybeSingle();
       if (!ordo?.fichier_url) {
         return new Response(JSON.stringify({ data: null }), { headers: CORS });
       }
@@ -255,6 +292,93 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       }), { headers: CORS });
     }
 
+    // Ajouter une ordonnance à un rappel existant (08/11/2026, demande
+    // titulaire : "Modifier le rappel" ne permettait pas de changer les
+    // ordonnances jointes). Le fichier lui-même est créé AVANT par
+    // ordonnances_create (upload + validation + conversion TIFF, voir
+    // ordonnances.ts) — ici on ne fait que rattacher une ordonnance déjà
+    // existante, après avoir vérifié que le rappel ET l'ordonnance
+    // appartiennent à la pharmacie de l'appelant (jamais l'un sans l'autre :
+    // sinon un rappel pourrait exposer l'ordonnance d'une autre pharmacie).
+    if (resource === "rappels_ordonnance_lier") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, ordonnanceId } = params || {};
+      if (!rappelId || !ordonnanceId) {
+        return new Response(JSON.stringify({ error: "rappelId et ordonnanceId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const { data: ordo } = await sb.from("ordonnances")
+        .select("id, fichier_nom, fichier_type, fichier_url").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+      if (!ordo) {
+        return new Response(JSON.stringify({ error: "Ordonnance introuvable" }), { status: 404, headers: CORS });
+      }
+      const { count } = await sb.from("rappels_ordonnances_liens").select("ordonnance_id", { count: "exact", head: true }).eq("rappel_id", rappelId);
+      if ((count ?? 0) >= MAX_ORDONNANCES_PAR_RAPPEL) {
+        return new Response(JSON.stringify({ error: `Un rappel ne peut pas avoir plus de ${MAX_ORDONNANCES_PAR_RAPPEL} ordonnances jointes.` }), { status: 409, headers: CORS });
+      }
+      // upsert : rattacher deux fois la même ordonnance est sans effet, pas une erreur.
+      const { error: lienErr } = await sb.from("rappels_ordonnances_liens")
+        .upsert({ rappel_id: rappelId, ordonnance_id: ordonnanceId }, { onConflict: "rappel_id,ordonnance_id", ignoreDuplicates: true });
+      if (lienErr) throw new Error(lienErr.message);
+      await resyncPremiereOrdonnance(sb, rappelId);
+      // Pas d'événement journal ici : rappels_evenements.type est contraint par un
+      // CHECK (liste fermée, voir migrations) — en ajouter un exigerait de
+      // réécrire cette contrainte pour une simple trace.
+      return new Response(JSON.stringify({
+        data: { success: true, fichier: { id: ordo.id, name: ordo.fichier_nom || "ordonnance", type: ordo.fichier_type || "image" } },
+      }), { headers: CORS });
+    }
+
+    // Retirer une ordonnance d'un rappel (08/11/2026). Le LIEN est toujours
+    // supprimé ; l'ordonnance elle-même (ligne + fichier Storage) ne l'est que
+    // si elle a été ajoutée manuellement pour ce rappel (ordonnances_create,
+    // from_name "Ajout manuel …") ET n'est liée à aucun autre rappel : une
+    // ordonnance venue d'un patient (QR / email) appartient à la file
+    // Ordonnances de la pharmacie et ne doit JAMAIS disparaître parce qu'on la
+    // détache d'un rappel.
+    if (resource === "rappels_ordonnance_retirer") {
+      if (!pharmacieId) {
+        return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
+      }
+      const { rappelId, ordonnanceId } = params || {};
+      if (!rappelId || !ordonnanceId) {
+        return new Response(JSON.stringify({ error: "rappelId et ordonnanceId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: rappel } = await sb.from("rappels_ordonnance").select("id, pharmacie_id").eq("id", rappelId).maybeSingle();
+      if (!rappel || rappel.pharmacie_id !== pharmacieId) {
+        return new Response(JSON.stringify({ error: "Rappel introuvable" }), { status: 404, headers: CORS });
+      }
+      const { data: lien } = await sb.from("rappels_ordonnances_liens")
+        .select("ordonnance_id").eq("rappel_id", rappelId).eq("ordonnance_id", ordonnanceId).maybeSingle();
+      if (!lien) {
+        return new Response(JSON.stringify({ error: "Cette ordonnance n'est pas jointe à ce rappel" }), { status: 404, headers: CORS });
+      }
+      const { error: delLienErr } = await sb.from("rappels_ordonnances_liens").delete().eq("rappel_id", rappelId).eq("ordonnance_id", ordonnanceId);
+      if (delLienErr) throw new Error(delLienErr.message);
+      await resyncPremiereOrdonnance(sb, rappelId);
+
+      let ordonnanceSupprimee = false;
+      const { data: ordo } = await sb.from("ordonnances")
+        .select("id, pharmacie_id, source, from_name, fichier_url").eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId).maybeSingle();
+      if (ordo && ordo.source === "upload" && typeof ordo.from_name === "string" && ordo.from_name.startsWith("Ajout manuel")) {
+        const { count: autresLiens } = await sb.from("rappels_ordonnances_liens")
+          .select("rappel_id", { count: "exact", head: true }).eq("ordonnance_id", ordonnanceId);
+        if ((autresLiens ?? 0) === 0) {
+          // Best-effort sur le fichier (même logique que ordonnances_delete) :
+          // un fichier déjà absent ne doit pas empêcher le nettoyage de la ligne.
+          if (ordo.fichier_url) await sb.storage.from("ordonnances-files").remove([ordo.fichier_url]).catch(() => {});
+          const { error: delOrdoErr } = await sb.from("ordonnances").delete().eq("id", ordonnanceId).eq("pharmacie_id", pharmacieId);
+          ordonnanceSupprimee = !delOrdoErr;
+        }
+      }
+      return new Response(JSON.stringify({ data: { success: true, ordonnanceSupprimee } }), { headers: CORS });
+    }
+
     if (resource === "rappels_list") {
       if (!pharmacieId) {
         return new Response(JSON.stringify({ error: "Réservé aux comptes pharmacie" }), { status: 403, headers: CORS });
@@ -264,7 +388,32 @@ export async function handle_rappels(ctx: ContexteSecureData): Promise<Response 
       q = q.order("created_at", { ascending: false }).limit(params?.limit || 200);
       const { data, error } = await q;
       if (error) throw new Error(error.message);
-      return new Response(JSON.stringify({ data }), { headers: CORS });
+      // Ordonnances jointes de chaque rappel (08/11/2026) — `fichiers` =
+      // [{ id, name, type }], jamais d'URL ici (générée à la demande par
+      // rappels_ordonnance_fichier). Un échec de cette requête annexe ne doit
+      // pas faire échouer toute la liste : `fichiers` reste alors absent et le
+      // client retombe sur l'ancien champ ordonnance_id.
+      const rappelIds = (data || []).map((r: any) => r.id);
+      let fichiersParRappel: Record<string, Array<{ id: string; name: string; type: string }>> | null = null;
+      if (rappelIds.length) {
+        const { data: liens, error: liensErr } = await sb.from("rappels_ordonnances_liens")
+          .select("rappel_id, created_at, ordonnances(id, pharmacie_id, fichier_nom, fichier_type, fichier_url)")
+          .in("rappel_id", rappelIds).order("created_at", { ascending: true });
+        if (liensErr) {
+          console.error("[rappels_list] liens ordonnances:", liensErr.message);
+        } else {
+          fichiersParRappel = {};
+          for (const l of (liens || []) as any[]) {
+            const o = Array.isArray(l.ordonnances) ? l.ordonnances[0] : l.ordonnances;
+            if (!o || o.pharmacie_id !== pharmacieId || !o.fichier_url) continue;
+            (fichiersParRappel[l.rappel_id] ||= []).push({ id: o.id, name: o.fichier_nom || "ordonnance", type: o.fichier_type || "image" });
+          }
+        }
+      }
+      const enrichi = fichiersParRappel
+        ? (data || []).map((r: any) => ({ ...r, fichiers: fichiersParRappel![r.id] || [] }))
+        : data;
+      return new Response(JSON.stringify({ data: enrichi }), { headers: CORS });
     }
 
     // Statistiques d'efficacité des rappels, côté pharmacien (08/09/2026) —

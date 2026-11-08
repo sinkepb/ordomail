@@ -6,8 +6,9 @@
 // identifié par l'audit de dette technique) ; ce fichier ne garde que le
 // container (état, handlers, liste) et RappelOrdonnanceUpload.
 import { useState, useEffect } from "react";
-import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, supprimerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance } from "../supabase.js";
+import { fetchRappels, fetchRappelJournal, fetchRappelsStats, traiterRappel, terminerRappel, supprimerRappel, reactiverRappel, updateRappel, envoyerTestRappel, preparerRappel, marquerRappelAAppeler, enregistrerAppelRappel, confirmerAppelPartiel, subscribeToRappels, fetchSmsConsommation, fetchRappelOrdonnance, ordonnancesDuRappel, ajouterOrdonnanceRappel, retirerOrdonnanceRappel } from "../supabase.js";
 import { OrdonnanceViewerModal } from "./OrdonnanceViewerModal.jsx";
+import { OrdonnancesJointes } from "./rappels/OrdonnancesJointes.jsx";
 import { STATUT_INFO, CHOIX_LABEL, CRENEAU_LABEL, FILTRES, journalLigne } from "./rappels/rappelsConstants.js";
 import { normalizeTel } from "./rappels/rappelsDateUtils.js";
 import { calculerGroupesAffichage } from "./rappels/groupesRappels.js";
@@ -70,6 +71,11 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // Ordonnance liée à un rappel (26/09/2026) — popup in-app, voir ViewerModal.
   const [viewerAtt, setViewerAtt] = useState(null);
   const [loadingOrdoId, setLoadingOrdoId] = useState(null);
+  // Plusieurs ordonnances jointes (08/11/2026) — sélecteur en lecture seule
+  // depuis la liste, et état des ajouts/retraits depuis "Modifier le rappel".
+  const [ordoPickerRappelId, setOrdoPickerRappelId] = useState(null);
+  const [ordoBusy, setOrdoBusy] = useState(false);
+  const [ordoError, setOrdoError] = useState("");
 
   useEffect(() => {
     if (!pharmacie?.id) return;
@@ -312,14 +318,60 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
   // serveur par secure-data (voir son commentaire) — jamais via
   // getSignedUrl() ici : ce dernier tourne avec la session du navigateur,
   // qui pour un poste vendeur n'a pas les droits nécessaires côté Storage.
-  async function handleViewOrdonnance(rappel) {
+  // ordonnanceId (08/11/2026) : quelle ordonnance ouvrir quand le rappel en a
+  // plusieurs ; sans lui, le serveur renvoie la première.
+  async function handleViewOrdonnance(rappel, ordonnanceId = null) {
     setLoadingOrdoId(rappel.id);
     try {
-      const att = await fetchRappelOrdonnance(rappel.id);
+      const att = await fetchRappelOrdonnance(rappel.id, ordonnanceId);
       if (att?.signedUrl) setViewerAtt({ ...att, dataUrl: att.signedUrl });
+      else {
+        // Affiché aux deux endroits possibles : bandeau de la liste, ou sous la
+        // liste d'ordonnances si l'ouverture vient de "Modifier le rappel".
+        setActionError("Impossible d'ouvrir cette ordonnance (fichier introuvable).");
+        setOrdoError("Impossible d'ouvrir cette ordonnance (fichier introuvable).");
+      }
     } finally {
       setLoadingOrdoId(null);
     }
+  }
+
+  // Ajout d'une ou plusieurs ordonnances à un rappel en cours d'édition
+  // (08/11/2026) — séquentiel (un fichier à la fois : chacun passe par
+  // validation + compression + upload côté serveur), un échec n'interrompt pas
+  // les suivants et est reporté à la fin avec le nom du fichier concerné.
+  async function handleAjouterOrdonnances(rappel, files) {
+    setOrdoBusy(true); setOrdoError("");
+    const echecs = [];
+    for (const file of files) {
+      try {
+        const fichier = await ajouterOrdonnanceRappel(pharmacie.id, rappel.id, file);
+        setRappels(prev => prev.map(r => r.id !== rappel.id ? r : {
+          ...r,
+          fichiers: [...ordonnancesDuRappel(r).filter(f => f.id !== fichier.id), fichier],
+          ordonnance_id: r.ordonnance_id || fichier.id,
+        }));
+      } catch (e) {
+        echecs.push(`${file.name} : ${e.message || "échec de l'envoi"}`);
+      }
+    }
+    if (echecs.length) setOrdoError(echecs.join(" — "));
+    setOrdoBusy(false);
+  }
+
+  async function handleRetirerOrdonnance(rappel, fichier) {
+    setOrdoBusy(true); setOrdoError("");
+    try {
+      await retirerOrdonnanceRappel(pharmacie.id, rappel.id, fichier.id);
+      setRappels(prev => prev.map(r => {
+        if (r.id !== rappel.id) return r;
+        const restantes = ordonnancesDuRappel(r).filter(f => f.id !== fichier.id);
+        return { ...r, fichiers: restantes, ordonnance_id: restantes[0]?.id || null };
+      }));
+    } catch (e) {
+      setOrdoError(e.message || "Échec du retrait de l'ordonnance.");
+    }
+    setOrdoBusy(false);
   }
 
   async function toggleJournal(rappelId) {
@@ -543,7 +595,7 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
                 </div>
               )}
               <span style={{ background: info.bg, color: info.fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
-              <button onClick={() => setEditingRappel(r)} disabled={busy}
+              <button onClick={() => { setOrdoError(""); setEditingRappel(r); }} disabled={busy}
                 style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}>
                 ✏️ Modifier
               </button>
@@ -631,12 +683,18 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
               {/* Ordonnance liée (26/09/2026) — accès direct au fichier
                   depuis la liste, sans quitter l'application (jamais de
                   nouvel onglet, voir OrdonnanceViewerModal). */}
-              {r.ordonnance_id && (
-                <button onClick={() => handleViewOrdonnance(r)} disabled={loadingOrdoId === r.id}
-                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: loadingOrdoId === r.id ? "default" : "pointer", fontFamily: "inherit", opacity: loadingOrdoId === r.id ? 0.6 : 1 }}>
-                  {loadingOrdoId === r.id ? "…" : "📎 Voir l'ordonnance"}
-                </button>
-              )}
+              {/* Une seule ordonnance : ouverture directe. Plusieurs (08/11/2026) :
+                  un sélecteur liste chacune — jamais N boutons sur la ligne. */}
+              {ordonnancesDuRappel(r).length > 0 && (() => {
+                const fichiers = ordonnancesDuRappel(r);
+                const plusieurs = fichiers.length > 1;
+                return (
+                  <button onClick={() => plusieurs ? setOrdoPickerRappelId(r.id) : handleViewOrdonnance(r, fichiers[0].id)} disabled={loadingOrdoId === r.id}
+                    style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #c7d2fe", background: "#f0f4ff", color: "#4338ca", fontWeight: 700, fontSize: 12.5, cursor: loadingOrdoId === r.id ? "default" : "pointer", fontFamily: "inherit", opacity: loadingOrdoId === r.id ? 0.6 : 1 }}>
+                    {loadingOrdoId === r.id ? "…" : plusieurs ? `📎 Ordonnances (${fichiers.length})` : "📎 Voir l'ordonnance"}
+                  </button>
+                );
+              })()}
               {/* Historique détaillé (07/09/2026) — journal complet des
                   événements du rappel (voir secure-data:rappels_journal),
                   utile en cas de litige ou de question du patient. */}
@@ -683,7 +741,34 @@ function RappelsSection({ pharmacie, onCountATraiter, userRole }) {
         })}
       </div>
 
-      {editingRappel && <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating} />}
+      {editingRappel && (() => {
+        // Version à jour du rappel (08/11/2026) : editingRappel est un instantané
+        // pris à l'ouverture, or les ordonnances jointes changent pendant que le
+        // formulaire est ouvert (ajout/retrait immédiats).
+        const live = rappels.find(x => x.id === editingRappel.id) || editingRappel;
+        return <RappelForm editingRappel={editingRappel} onCancel={() => setEditingRappel(null)} onCreated={handleUpdated} creating={creating} setCreating={setCreating}
+          ordonnances={ordonnancesDuRappel(live)} ordoBusy={ordoBusy} ordoError={ordoError}
+          onAddOrdonnances={files => handleAjouterOrdonnances(editingRappel, files)}
+          onRemoveOrdonnance={f => handleRetirerOrdonnance(editingRappel, f)}
+          onViewOrdonnance={f => handleViewOrdonnance(editingRappel, f.id)} />;
+      })()}
+      {ordoPickerRappelId && (() => {
+        const r = rappels.find(x => x.id === ordoPickerRappelId);
+        if (!r) return null;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,47,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setOrdoPickerRappelId(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 420, maxHeight: "92vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>📎 Ordonnances de {r.patient_prenom} {r.patient_nom}</div>
+              <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 12 }}>Pour en ajouter ou en retirer, utilisez « ✏️ Modifier ».</div>
+              <OrdonnancesJointes fichiers={ordonnancesDuRappel(r)} readOnly onView={f => handleViewOrdonnance(r, f.id)} />
+              <button type="button" onClick={() => setOrdoPickerRappelId(null)}
+                style={{ width: "100%", marginTop: 14, padding: "10px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        );
+      })()}
       {sendModalRappel && <EnvoyerTestModal rappel={sendModalRappel} onCancel={() => setSendModalRappel(null)} onSend={handleEnvoyer} sending={sending} error={sendError} />}
       {validatingRappel && <ValiderModal rappel={validatingRappel} onCancel={() => { setActionError(""); setValidatingRappel(null); }} onConfirm={handleValiderConfirm} submitting={busyId === validatingRappel.id} serverError={actionError} />}
       {terminatingRappel && <TerminerConfirmModal rappel={terminatingRappel} onCancel={() => { setActionError(""); setTerminatingRappel(null); }} onConfirm={handleTerminerConfirm} submitting={busyId === terminatingRappel.id} error={actionError} />}
