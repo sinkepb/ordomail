@@ -9,6 +9,21 @@ import { ErrorBoundary } from "../../components/ErrorBoundary.jsx";
 import { generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../../lib/print.jsx";
 import { savePostes, updateTitulaire, changePlan, isDemoMode, getSupabaseClient } from "../../supabase.js";
 
+// Formats de l'affiche QR (A6 ajouté le 08/11/2026 — affichette de comptoir).
+// Dimensions du PDF exporté en mm [largeur, hauteur], puis taille en px de
+// l'aperçu (celle de la page générée par print.jsx, avant réduction à l'écran).
+const POSTER_FORMATS = ["A4", "A3", "A6"];
+const POSTER_SIZES_MM = {
+  A4: { portrait: [210, 297], paysage: [297, 210] },
+  A3: { portrait: [297, 420], paysage: [420, 297] },
+  A6: { portrait: [105, 148], paysage: [148, 105] },
+};
+const POSTER_PREVIEW_PX = {
+  A4: { portrait: { w: 793, h: 1123 }, paysage: { w: 1122, h: 793 } },
+  A3: { portrait: { w: 1122, h: 1588 }, paysage: { w: 1587, h: 1122 } },
+  A6: { portrait: { w: 398, h: 562 }, paysage: { w: 562, h: 398 } },
+};
+
 export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOrdo }) {
   const [section, setSection] = useState("postes");
   const [showUpgrade, setShowUpgrade] = useState(null);
@@ -32,45 +47,38 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   // Onglet QR code en libre-service (14/09/2026) — uniquement les affiches
-  // A4/A3 (portrait + paysage) : la génération de lots de stickers physiques
+  // A4/A3/A6 (portrait + paysage) : la génération de lots de stickers physiques
   // et l'association manuelle restent réservées au backoffice OrdoMail
   // (QrCodesAdmin.jsx), ce panneau ne fait que réimprimer l'affiche du QR
   // déjà actif pour CETTE pharmacie (pharmacie.qr_token, voir register-pharmacie
   // et la migration de backfill du 14/09/2026).
   const [posterFormat, setPosterFormat] = useState("A4");
   const [posterOrientation, setPosterOrientation] = useState("portrait");
-  const [posterHtml, setPosterHtml] = useState(null);
-  const [posterHtmlA3, setPosterHtmlA3] = useState(null);
-  const [posterHtmlPaysage, setPosterHtmlPaysage] = useState(null);
-  const [posterHtmlPaysageA3, setPosterHtmlPaysageA3] = useState(null);
+  // HTML des affiches, indexé "{format}-{orientation}" (ex. "A6-portrait") —
+  // un état par variante ne passait plus à l'échelle avec un 3e format.
+  const [posters, setPosters] = useState({});
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterDownloading, setPosterDownloading] = useState(false);
   const [posterErr, setPosterErr] = useState("");
 
   useEffect(() => {
-    if (section !== "qrcode" || !pharmacie.qr_token || posterHtml) return;
+    if (section !== "qrcode" || !pharmacie.qr_token || Object.keys(posters).length) return;
     setPosterLoading(true); setPosterErr("");
     const params = { url: `${window.location.origin}/?patient=${pharmacie.id}&t=${pharmacie.qr_token}`, pharmacieName: pharmacie.nom };
-    Promise.all([
-      generatePosterHTML({ ...params, format: "A4" }).then(setPosterHtml),
-      generatePosterHTML({ ...params, format: "A3" }).then(setPosterHtmlA3),
-      generatePosterLandscapeHTML({ ...params, format: "A4" }).then(setPosterHtmlPaysage),
-      generatePosterLandscapeHTML({ ...params, format: "A3" }).then(setPosterHtmlPaysageA3),
-    ]).catch(e => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
+    Promise.all(POSTER_FORMATS.flatMap(f => [
+      generatePosterHTML({ ...params, format: f }).then(html => [`${f}-portrait`, html]),
+      generatePosterLandscapeHTML({ ...params, format: f }).then(html => [`${f}-paysage`, html]),
+    ])).then(entries => setPosters(Object.fromEntries(entries)))
+      .catch(e => setPosterErr("Aperçu indisponible : " + e.message)).finally(() => setPosterLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
   async function handleDownloadPoster() {
-    const map = { A4: { portrait: posterHtml, paysage: posterHtmlPaysage }, A3: { portrait: posterHtmlA3, paysage: posterHtmlPaysageA3 } };
-    const html = map[posterFormat][posterOrientation];
+    const html = posters[`${posterFormat}-${posterOrientation}`];
     if (!html) return;
     setPosterErr("");
     setPosterDownloading(true);
-    const isA3 = posterFormat === "A3";
-    const isPortrait = posterOrientation === "portrait";
-    const [widthMm, heightMm] = isA3
-      ? (isPortrait ? [297, 420] : [420, 297])
-      : (isPortrait ? [210, 297] : [297, 210]);
+    const [widthMm, heightMm] = POSTER_SIZES_MM[posterFormat][posterOrientation];
     try {
       await downloadPosterPDF(html, {
         filename: `affiche-qr-${sanitizePdfFilenamePart(pharmacie.nom)}-${posterFormat}-${posterOrientation}.pdf`,
@@ -379,7 +387,7 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
             ) : (
               <>
                 <div style={{display:"flex",gap:6,marginBottom:10}}>
-                  {["A4","A3"].map(f=>(
+                  {POSTER_FORMATS.map(f=>(
                     <button key={f} onClick={()=>setPosterFormat(f)}
                       style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterFormat===f?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterFormat===f?"#1a3a6e":"#fff",color:posterFormat===f?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
                       Format {f}
@@ -395,10 +403,9 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
                   ))}
                 </div>
                 {(() => {
-                  const isA3 = posterFormat === "A3";
                   const isPortrait = posterOrientation === "portrait";
-                  const html = isA3 ? (isPortrait ? posterHtmlA3 : posterHtmlPaysageA3) : (isPortrait ? posterHtml : posterHtmlPaysage);
-                  const dims = isPortrait ? (isA3 ? {w:1122,h:1588} : {w:793,h:1123}) : (isA3 ? {w:1587,h:1122} : {w:1122,h:793});
+                  const html = posters[`${posterFormat}-${posterOrientation}`];
+                  const dims = POSTER_PREVIEW_PX[posterFormat][posterOrientation];
                   const scale = (isPortrait ? 222 : 314) / dims.w;
                   return (
                     <div style={{width:314,height:222,margin:"0 auto 14px",borderRadius:10,overflow:"hidden",background:"#f8faff",border:"1px solid #e0e7ff",display:"flex",alignItems:"center",justifyContent:"center"}}>
