@@ -9,7 +9,7 @@ import { escapeHtml } from "./utils.js";
 // fonts.googleapis.com. Mêmes fichiers que src/styles/fonts.css.
 const POSTER_FONT_FACE_CSS = `
 <style>
-@font-face { font-family:'Bricolage Grotesque'; font-style:normal; font-display:swap; font-weight:200 800; font-stretch:75% 100%; src:url('/fonts/bricolage-grotesque-latin.woff2') format('woff2-variations'); unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:'Bricolage Grotesque'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/bricolage-grotesque-latin.woff2') format('woff2-variations'); unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 @font-face { font-family:'Bricolage Grotesque'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2-variations'); unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
 @font-face { font-family:'Manrope'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/manrope-latin.woff2') format('woff2-variations'); unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 @font-face { font-family:'Manrope'; font-style:normal; font-display:swap; font-weight:200 800; src:url('/fonts/manrope-latin-ext.woff2') format('woff2-variations'); unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
@@ -682,7 +682,14 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
   const shadow = host.attachShadow({ mode: "open" });
   try {
     const styleEl = document.createElement("style");
-    styleEl.textContent = parsed.querySelector("style")?.textContent || "";
+    // @fix 08/11/2026 — TOUS les <style> du document, pas seulement le premier :
+    // depuis l'auto-hébergement des polices (09/10/2026) le premier <style> est
+    // POSTER_FONT_FACE_CSS (@font-face), et le style de mise en page de l'affiche
+    // (.page, .sheet : dimensions, fond, centrage, mise à l'échelle) est le
+    // second. En ne lisant que le premier, l'export PDF perdait toute la mise en
+    // page — fond blanc, contenu non centré, paysage écrasé en colonne — sans
+    // aucune erreur visible.
+    styleEl.textContent = [...parsed.querySelectorAll("style")].map((s) => s.textContent).join("\n");
     shadow.appendChild(styleEl);
     const wrapper = document.createElement("div");
     wrapper.innerHTML = parsed.body.innerHTML;
@@ -691,7 +698,24 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
     // Doit venir APRÈS la construction du contenu ci-dessus (voir note plus
     // haut) : c'est le texte du shadow root qui déclenche le chargement
     // paresseux des polices que cette attente doit suivre.
-    try { await document.fonts.ready; } catch { /* tant pis, capture avec la police de secours */ }
+    // @fix 08/11/2026 — les titres de l'affiche (Bricolage Grotesque) sortaient en
+    // police de secours serif dans le PDF ; Manrope, elle, était correcte.
+    // Cause racine : les deux @font-face de Bricolage (sous-ensembles latin et
+    // latin-ext) avaient des descripteurs font-stretch DIFFÉRENTS (« 75% 100% » sur
+    // l'un, absent sur l'autre) depuis l'auto-hébergement des polices du
+    // 05/10/2026 ; avec cette combinaison Chrome ne retient aucune des deux faces
+    // (document.fonts.load() renvoie 0 face), la police n'est donc jamais appliquée
+    // — dans toute l'application, pas seulement ici. Descripteur retiré de
+    // fonts.css et de POSTER_FONT_FACE_CSS.
+    // Chargement explicite en plus : document.fonts.ready ne suit que les
+    // chargements déjà lancés, or Bricolage n'est utilisée qu'ici et n'est demandée
+    // qu'au premier rendu du texte, après que cette promesse s'est résolue.
+    try {
+      await Promise.all([...document.fonts]
+        .filter((f) => /Bricolage Grotesque|Manrope/.test(f.family))
+        .map((f) => f.load()));
+      await document.fonts.ready;
+    } catch { /* tant pis, capture avec la police de secours */ }
     const pageEl = shadow.querySelector(".page");
     if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
     const canvas = await html2canvas(pageEl, {
