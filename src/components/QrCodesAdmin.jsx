@@ -6,7 +6,7 @@
 // sombre #0f172a/#1e293b/#334155).
 import { callSecureDataAdmin } from "../lib/supabase/adminApi.js";
 import { useState, useEffect, useRef } from "react";
-import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../lib/print.jsx";
+import { openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, A3_CAPTURE_SCALE, sanitizePdfFilenamePart } from "../lib/print.jsx";
 import { renderStickerPreview, downloadStickerImage } from "../lib/sticker.js";
 import { NfcWriter } from "./NfcWriter.jsx";
 import { PaginationControls } from "./PaginationControls.jsx";
@@ -186,14 +186,14 @@ function QrCodesAdmin({ adminToken } = {}) {
   // "Imprimer" à l'intérieur ne déclenchait rien pour un titulaire en usage
   // réel (voir downloadPosterPDF dans lib/print.jsx). Plus de fenêtre ni de
   // window.print() : export PDF réel généré et téléchargé directement.
-  async function runPosterDownload(html, widthMm, heightMm, orientationLabel, format) {
+  async function runPosterDownload(html, widthMm, heightMm, orientationLabel, format, scale) {
     if (!viewingQr || !html) return;
     setPosterErr("");
     setPosterDownloading(true);
     try {
       await downloadPosterPDF(html, {
         filename: `affiche-qr-${sanitizePdfFilenamePart(viewingQr.pharmacies?.nom || viewingQr.code)}-${format}-${orientationLabel}.pdf`,
-        widthMm, heightMm,
+        widthMm, heightMm, scale,
       });
     } catch (e) {
       setPosterErr("Échec de l'export PDF : " + e.message);
@@ -206,7 +206,8 @@ function QrCodesAdmin({ adminToken } = {}) {
   }
 
   function handleDownloadPosterA3() {
-    return runPosterDownload(posterHtmlA3, 297, 420, "portrait", "A3");
+    // A3 (08/11/2026) : gabarit A4 capturé à A3_CAPTURE_SCALE — le HTML A3 est rogné par html2canvas (voir downloadPostersPDF).
+    return runPosterDownload(posterHtml, 297, 420, "portrait", "A3", A3_CAPTURE_SCALE);
   }
 
   function handleDownloadPosterPaysage() {
@@ -214,7 +215,7 @@ function QrCodesAdmin({ adminToken } = {}) {
   }
 
   function handleDownloadPosterPaysageA3() {
-    return runPosterDownload(posterHtmlPaysageA3, 420, 297, "paysage", "A3");
+    return runPosterDownload(posterHtmlPaysage, 420, 297, "paysage", "A3", A3_CAPTURE_SCALE);
   }
 
   // Un onglet Affiche par format papier (A4/A3, 14/09/2026) — chacun propose
