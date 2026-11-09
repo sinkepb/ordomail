@@ -741,10 +741,15 @@ async function downloadPostersPDF(pages, { filename }) {
   }
 
   // Pages capturées l'une après l'autre (jamais en parallèle : un canvas A4 à
-  // 288 dpi pèse plusieurs dizaines de Mo en mémoire).
+  // 288 dpi pèse plusieurs dizaines de Mo en mémoire). Une même affiche répétée
+  // (ex. « 4 pages identiques ») n'est capturée qu'UNE fois : l'image est
+  // réutilisée pour chaque page qui a le même HTML et la même résolution.
   let pdf = null;
+  const dejaCapture = new Map();
   for (const { html, widthMm, heightMm, scale = 3 } of pages) {
-    const imgData = await capturePage(html, scale);
+    const cle = `${scale}|${html}`;
+    if (!dejaCapture.has(cle)) dejaCapture.set(cle, await capturePage(html, scale));
+    const imgData = dejaCapture.get(cle);
     const orientation = widthMm > heightMm ? "l" : "p";
     if (!pdf) pdf = new jsPDF({ orientation, unit: "mm", format: [widthMm, heightMm] });
     else pdf.addPage([widthMm, heightMm], orientation);
