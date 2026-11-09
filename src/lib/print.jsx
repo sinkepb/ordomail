@@ -364,16 +364,9 @@ async function generatePosterHTML({ url, pharmacieName, format = "A4", variant =
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
   const isA3 = format === "A3";
-  // A6 (08/11/2026, demande titulaire — affichette de comptoir) : A6 = A4 / 2
-  // dans les deux sens (ISO 216), donc même principe que l'A3 mais à l'échelle
-  // ×0,5 — le contenu 793×1123px n'est pas redessiné. La page fait 793/2 ×
-  // 1123/2 px (≈ 105×148,5 mm) ; .sheet garde sa taille de mise en page d'origine
-  // et se centre dans .page (overflow:hidden) avant d'être réduit autour de son
-  // centre, donc le résultat remplit exactement la page.
-  const isA6 = format === "A6";
-  const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
-  const pageW = isA3 ? 1122 : isA6 ? 396.5 : 793;
-  const pageH = isA3 ? 1588 : isA6 ? 561.5 : 1123;
+  const scale = isA3 ? Math.SQRT2 : 1;
+  const pageW = isA3 ? 1122 : 793;
+  const pageH = isA3 ? 1588 : 1123;
   const isRappel = variant === "rappel";
   const qrBox = isRappel ? 456 : 540;
   const qrInner = isRappel ? 392 : 465;
@@ -511,12 +504,9 @@ async function generatePosterLandscapeHTML({ url, pharmacieName, format = "A4", 
   });
   const brand = escapeHtml((pharmacieName || "OrdoMail").toUpperCase());
   const isA3 = format === "A3";
-  // A6 paysage (08/11/2026) : 148,5×105 mm = l'A4 paysage ×0,5, voir le commentaire
-  // équivalent dans generatePosterHTML.
-  const isA6 = format === "A6";
-  const scale = isA3 ? Math.SQRT2 : isA6 ? 0.5 : 1;
-  const pageW = isA3 ? 420 : isA6 ? 148.5 : 297;
-  const pageH = isA3 ? 297 : isA6 ? 105 : 210;
+  const scale = isA3 ? Math.SQRT2 : 1;
+  const pageW = isA3 ? 420 : 297;
+  const pageH = isA3 ? 297 : 210;
   const isRappel = variant === "rappel";
   const headHtml = isRappel ? `
     <div style="margin-top:30px;display:flex;flex-direction:column;gap:4px;white-space:nowrap;">
@@ -642,7 +632,21 @@ function sanitizePdfFilenamePart(s) {
     .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "ordomail";
 }
 
-async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
+// pages : [{ html, widthMm, heightMm, scale? }] — un PDF de N pages, chacune avec
+// ses propres dimensions (donc éventuellement mélange portrait/paysage). `scale`
+// = résolution de capture html2canvas (3 par défaut ≈ 288 dpi en A4).
+//
+// A3 (08/11/2026) : NE PAS passer le HTML « A3 » de generatePoster*HTML à cet
+// export. Ce HTML agrandit l'A4 par `transform: scale(√2)` dans un .sheet en
+// overflow:hidden, et html2canvas rogne le contenu agrandi à la taille NON
+// agrandie du .sheet (affiche décalée et coupée de tous côtés). L'A3 étant
+// exactement l'A4 × √2 (ISO 216), on capture le gabarit A4 à A3_CAPTURE_SCALE
+// (même densité de pixels par mm) et on le place sur une page A3 — rendu
+// identique, sans transformation. Le HTML A3 reste valable pour l'aperçu et
+// l'impression navigateur, qui gèrent correctement le transform.
+const A3_CAPTURE_SCALE = 3 * Math.SQRT2;
+
+async function downloadPostersPDF(pages, { filename }) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import("html2canvas"),
     import("jspdf"),
@@ -674,6 +678,9 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
   // l'application (src/styles/fonts.css, importé par main.jsx) : plus besoin
   // d'injecter dynamiquement une feuille Google Fonts dans le document
   // principal avant de construire le contenu du shadow root ci-dessous.
+  // Capture d'UNE page → image JPEG (data URL). Un hôte shadow DOM par page,
+  // retiré du document dès la capture terminée.
+  async function capturePage(html, scale) {
   const parsed = new DOMParser().parseFromString(html, "text/html");
 
   const host = document.createElement("div");
@@ -719,7 +726,7 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
     const pageEl = shadow.querySelector(".page");
     if (!pageEl) throw new Error("Contenu de l'affiche introuvable.");
     const canvas = await html2canvas(pageEl, {
-      scale: 3,
+      scale,
       useCORS: true,
       backgroundColor: "#ffffff",
       // Le bouton "Imprimer" intégré au HTML (.no-print) n'a pas sa place dans
@@ -727,14 +734,28 @@ async function downloadPosterPDF(html, { filename, widthMm, heightMm }) {
       // défaut, donc on le retire explicitement de la capture.
       ignoreElements: (el) => el.classList?.contains("no-print"),
     });
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    const orientation = widthMm > heightMm ? "l" : "p";
-    const pdf = new jsPDF({ orientation, unit: "mm", format: [widthMm, heightMm] });
-    pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
-    pdf.save(filename);
+    return canvas.toDataURL("image/jpeg", 0.95);
   } finally {
     document.body.removeChild(host);
   }
+  }
+
+  // Pages capturées l'une après l'autre (jamais en parallèle : un canvas A4 à
+  // 288 dpi pèse plusieurs dizaines de Mo en mémoire).
+  let pdf = null;
+  for (const { html, widthMm, heightMm, scale = 3 } of pages) {
+    const imgData = await capturePage(html, scale);
+    const orientation = widthMm > heightMm ? "l" : "p";
+    if (!pdf) pdf = new jsPDF({ orientation, unit: "mm", format: [widthMm, heightMm] });
+    else pdf.addPage([widthMm, heightMm], orientation);
+    pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
+  }
+  pdf.save(filename);
+}
+
+// Une seule page — signature historique, conservée pour les appelants existants.
+async function downloadPosterPDF(html, { filename, widthMm, heightMm, scale }) {
+  return downloadPostersPDF([{ html, widthMm, heightMm, scale }], { filename });
 }
 
 // Ouvre un HTML d'affiche déjà généré, sans aucun await avant window.open() —
@@ -757,4 +778,4 @@ function openPosterPDFFromHTML(html) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML, downloadPosterPDF, sanitizePdfFilenamePart };
+export { generateInvoiceHTML, openInvoicePDF, generateOrdoPDF, generateQrSheetHTML, openQrSheetPDF, generatePosterHTML, generatePosterLandscapeHTML, openPosterPDFFromHTML, downloadPosterPDF, downloadPostersPDF, A3_CAPTURE_SCALE, sanitizePdfFilenamePart };

@@ -6,24 +6,27 @@ import { StoriesSection } from "../../components/StoriesSection.jsx";
 import { Btn } from "../../components/ui.jsx";
 import { LogsPanel } from "../../components/LogsPanel.jsx";
 import { ErrorBoundary } from "../../components/ErrorBoundary.jsx";
-import { generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, sanitizePdfFilenamePart } from "../../lib/print.jsx";
+import { generatePosterHTML, generatePosterLandscapeHTML, downloadPosterPDF, downloadPostersPDF, A3_CAPTURE_SCALE, sanitizePdfFilenamePart } from "../../lib/print.jsx";
 import { savePostes, updateTitulaire, changePlan, isDemoMode, getSupabaseClient } from "../../supabase.js";
 
-// Formats de l'affiche QR (A6 ajouté le 08/11/2026 — affichette de comptoir).
-// Dimensions du PDF exporté en mm [largeur, hauteur], puis taille en px de
-// l'aperçu (celle de la page générée par print.jsx, avant réduction à l'écran).
-const POSTER_FORMATS = ["A4", "A3", "A6"];
-// Modèles de message (08/11/2026) : même affiche et même QR, texte différent.
+// Affiche QR (08/11/2026) :
+// - A4 = UN PDF de 4 pages : les deux modèles de message (« Gagnez du temps »,
+//   « Ordonnance à renouveler ») chacun en portrait puis en paysage — le
+//   pharmacien imprime la page qui lui convient.
+// - A3 = UNE page, modèle et orientation au choix.
+// Dimensions du PDF en mm [largeur, hauteur] ; taille en px de l'aperçu (celle de
+// la page générée par print.jsx, avant réduction à l'écran).
+const POSTER_FORMATS = ["A4", "A3"];
+// Modèles de message : même affiche et même QR, texte différent.
 const POSTER_VARIANTS = [["standard", "Gagnez du temps"], ["rappel", "Ordonnance à renouveler"]];
+const A4_PAGES = [["standard", "portrait"], ["standard", "paysage"], ["rappel", "portrait"], ["rappel", "paysage"]];
 const POSTER_SIZES_MM = {
   A4: { portrait: [210, 297], paysage: [297, 210] },
   A3: { portrait: [297, 420], paysage: [420, 297] },
-  A6: { portrait: [105, 148], paysage: [148, 105] },
 };
 const POSTER_PREVIEW_PX = {
   A4: { portrait: { w: 793, h: 1123 }, paysage: { w: 1122, h: 793 } },
   A3: { portrait: { w: 1122, h: 1588 }, paysage: { w: 1587, h: 1122 } },
-  A6: { portrait: { w: 398, h: 562 }, paysage: { w: 562, h: 398 } },
 };
 
 export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, onOpenOrdo }) {
@@ -49,7 +52,7 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
   const planInfo = PLAN_LIMITS[pharmacie.plan] || PLAN_LIMITS.starter;
 
   // Onglet QR code en libre-service (14/09/2026) — uniquement les affiches
-  // A4/A3/A6 (portrait + paysage) : la génération de lots de stickers physiques
+  // A4 (PDF de 4 pages) et A3 : la génération de lots de stickers physiques
   // et l'association manuelle restent réservées au backoffice OrdoMail
   // (QrCodesAdmin.jsx), ce panneau ne fait que réimprimer l'affiche du QR
   // déjà actif pour CETTE pharmacie (pharmacie.qr_token, voir register-pharmacie
@@ -58,7 +61,7 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
   const [posterOrientation, setPosterOrientation] = useState("portrait");
   const [posterVariant, setPosterVariant] = useState("standard");
   // HTML des affiches, indexé "{modèle}-{format}-{orientation}" (ex.
-  // "rappel-A6-portrait") — un état par variante ne passait plus à l'échelle.
+  // "rappel-A4-portrait") — un état par variante ne passait plus à l'échelle.
   const [posters, setPosters] = useState({});
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterDownloading, setPosterDownloading] = useState(false);
@@ -77,16 +80,29 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
   }, [section]);
 
   async function handleDownloadPoster() {
-    const html = posters[`${posterVariant}-${posterFormat}-${posterOrientation}`];
-    if (!html) return;
     setPosterErr("");
-    setPosterDownloading(true);
-    const [widthMm, heightMm] = POSTER_SIZES_MM[posterFormat][posterOrientation];
+    const nomFichier = sanitizePdfFilenamePart(pharmacie.nom);
     try {
-      await downloadPosterPDF(html, {
-        filename: `affiche-qr${posterVariant === "rappel" ? "-rappel" : ""}-${sanitizePdfFilenamePart(pharmacie.nom)}-${posterFormat}-${posterOrientation}.pdf`,
-        widthMm, heightMm,
-      });
+      if (posterFormat === "A4") {
+        const pages = A4_PAGES.map(([v, o]) => {
+          const [widthMm, heightMm] = POSTER_SIZES_MM.A4[o];
+          return { html: posters[`${v}-A4-${o}`], widthMm, heightMm };
+        });
+        if (pages.some(p => !p.html)) return;
+        setPosterDownloading(true);
+        await downloadPostersPDF(pages, { filename: `affiche-qr-${nomFichier}-A4-4-pages.pdf` });
+      } else {
+        // A3 : capture du gabarit A4 à A3_CAPTURE_SCALE puis page A3 — voir le
+        // commentaire de downloadPostersPDF (le HTML « A3 » est rogné par html2canvas).
+        const html = posters[`${posterVariant}-A4-${posterOrientation}`];
+        if (!html) return;
+        setPosterDownloading(true);
+        const [widthMm, heightMm] = POSTER_SIZES_MM.A3[posterOrientation];
+        await downloadPosterPDF(html, {
+          filename: `affiche-qr${posterVariant === "rappel" ? "-rappel" : ""}-${nomFichier}-A3-${posterOrientation}.pdf`,
+          widthMm, heightMm, scale: A3_CAPTURE_SCALE,
+        });
+      }
     } catch (e) {
       setPosterErr("Échec de l'export PDF : " + e.message);
     }
@@ -390,47 +406,70 @@ export function ParametresTab({ pharmacie, onSave, onPlanChanged, pharmacieId, o
             ) : (
               <>
                 <div style={{display:"flex",gap:6,marginBottom:10}}>
-                  {POSTER_VARIANTS.map(([k,l])=>(
-                    <button key={k} onClick={()=>setPosterVariant(k)}
-                      style={{flex:1,padding:"7px 8px",border:`1.5px solid ${posterVariant===k?"#0B7A54":"#e0e7ff"}`,borderRadius:8,background:posterVariant===k?"#ecfdf5":"#fff",color:posterVariant===k?"#0B7A54":"#64748b",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:6,marginBottom:10}}>
                   {POSTER_FORMATS.map(f=>(
                     <button key={f} onClick={()=>setPosterFormat(f)}
                       style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterFormat===f?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterFormat===f?"#1a3a6e":"#fff",color:posterFormat===f?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                      Format {f}
+                      {f === "A4" ? "Format A4 · 4 pages" : "Format A3"}
                     </button>
                   ))}
                 </div>
-                <div style={{display:"flex",gap:6,marginBottom:14}}>
-                  {[["portrait","📄 Portrait"],["paysage","🖼️ Paysage"]].map(([k,l])=>(
-                    <button key={k} onClick={()=>setPosterOrientation(k)}
-                      style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterOrientation===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterOrientation===k?"#f0f4ff":"#fff",color:posterOrientation===k?"#1a3a6e":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
-                {(() => {
-                  const isPortrait = posterOrientation === "portrait";
-                  const html = posters[`${posterVariant}-${posterFormat}-${posterOrientation}`];
-                  const dims = POSTER_PREVIEW_PX[posterFormat][posterOrientation];
-                  const scale = (isPortrait ? 222 : 314) / dims.w;
-                  return (
-                    <div style={{width:314,height:222,margin:"0 auto 14px",borderRadius:10,overflow:"hidden",background:"#f8faff",border:"1px solid #e0e7ff",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {posterLoading && <div style={{color:"#94a3b8",fontSize:12}}>Aperçu…</div>}
-                      {!posterLoading && html && (
-                        <iframe title={`Aperçu affiche ${posterFormat} ${posterOrientation}`} srcDoc={html}
-                          style={{width:dims.w,height:dims.h,border:"none",flexShrink:0,transform:`scale(${scale})`,transformOrigin:"top left"}}/>
-                      )}
+                {posterFormat === "A4" ? (
+                  <div style={{fontSize:11.5,color:"#64748b",marginBottom:12,lineHeight:1.45}}>
+                    Un seul PDF de 4 pages : les deux messages (« Gagnez du temps » et « Ordonnance à renouveler »), chacun en portrait puis en paysage. Imprimez la page qui vous convient.
+                  </div>
+                ) : (
+                  <>
+                    <div style={{display:"flex",gap:6,marginBottom:10}}>
+                      {POSTER_VARIANTS.map(([k,l])=>(
+                        <button key={k} onClick={()=>setPosterVariant(k)}
+                          style={{flex:1,padding:"7px 8px",border:`1.5px solid ${posterVariant===k?"#0B7A54":"#e0e7ff"}`,borderRadius:8,background:posterVariant===k?"#ecfdf5":"#fff",color:posterVariant===k?"#0B7A54":"#64748b",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                          {l}
+                        </button>
+                      ))}
                     </div>
-                  );
+                    <div style={{display:"flex",gap:6,marginBottom:14}}>
+                      {[["portrait","📄 Portrait"],["paysage","🖼️ Paysage"]].map(([k,l])=>(
+                        <button key={k} onClick={()=>setPosterOrientation(k)}
+                          style={{flex:1,padding:"7px 12px",border:`1.5px solid ${posterOrientation===k?"#1a3a6e":"#e0e7ff"}`,borderRadius:8,background:posterOrientation===k?"#f0f4ff":"#fff",color:posterOrientation===k?"#1a3a6e":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {(() => {
+                  // Aperçu : une vignette d'une page, dont la plus grande dimension
+                  // est ramenée à `max` px ; l'iframe garde sa taille réelle de
+                  // page et est réduite par transform (affichage seulement — jamais
+                  // utilisé pour l'export PDF).
+                  const vignette = (html, dims, max, titre) => {
+                    const s = max / Math.max(dims.w, dims.h);
+                    return (
+                      <div key={titre} style={{width:dims.w*s,height:dims.h*s,overflow:"hidden",borderRadius:6,border:"1px solid #e0e7ff",background:"#f8faff",flexShrink:0}}>
+                        {html && <iframe title={titre} srcDoc={html} style={{width:dims.w,height:dims.h,border:"none",transform:`scale(${s})`,transformOrigin:"top left"}}/>}
+                      </div>
+                    );
+                  };
+                  const cadre = {margin:"0 auto 14px",borderRadius:10,background:"#f8faff",border:"1px solid #e0e7ff",display:"flex",alignItems:"center",justifyContent:"center"};
+                  if (posterLoading) return <div style={{...cadre,width:314,height:222,color:"#94a3b8",fontSize:12}}>Aperçu…</div>;
+                  if (posterFormat === "A4") {
+                    return (
+                      <div style={{...cadre,padding:10,gap:10,flexWrap:"wrap",width:314}}>
+                        {A4_PAGES.map(([v,o],i)=>(
+                          <div key={`${v}-${o}`} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                            {vignette(posters[`${v}-A4-${o}`], POSTER_PREVIEW_PX.A4[o], 120, `Aperçu page ${i+1} — ${v} ${o}`)}
+                            <span style={{fontSize:10,color:"#94a3b8"}}>Page {i+1}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  const dims = POSTER_PREVIEW_PX.A3[posterOrientation];
+                  return <div style={{...cadre,width:314,height:222}}>{vignette(posters[`${posterVariant}-A3-${posterOrientation}`], dims, 214, `Aperçu affiche A3 ${posterOrientation}`)}</div>;
                 })()}
                 <button onClick={handleDownloadPoster} disabled={posterLoading||posterDownloading}
                   style={{width:"100%",padding:"11px 16px",border:"none",borderRadius:10,background:"#1a3a6e",color:"#fff",fontWeight:800,fontSize:13,cursor:(posterLoading||posterDownloading)?"default":"pointer",fontFamily:"inherit",opacity:(posterLoading||posterDownloading)?0.6:1}}>
-                  {posterLoading ? "Préparation…" : posterDownloading ? "Génération du PDF…" : `⬇️ Télécharger le PDF (${posterFormat} ${posterOrientation==="portrait"?"portrait":"paysage"})`}
+                  {posterLoading ? "Préparation…" : posterDownloading ? "Génération du PDF…" : posterFormat === "A4" ? "⬇️ Télécharger le PDF (A4, 4 pages)" : `⬇️ Télécharger le PDF (A3 ${posterOrientation==="portrait"?"portrait":"paysage"})`}
                 </button>
                 {posterErr && <div style={{marginTop:10,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",color:"#b91c1c",fontSize:12}}>{posterErr}</div>}
               </>
