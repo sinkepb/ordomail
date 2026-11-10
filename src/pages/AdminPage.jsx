@@ -359,7 +359,7 @@ function AdminDashboardLive({ adminToken } = {}) {
         {!loading && tab === "clients" ? (
           selected ? (
             /* ── Détail client ── */
-            <ClientDetail client={selected} plans={PLANS} adminToken={adminToken} onClose={()=>setSelected(null)} onSupprime={loadClients}/>
+            <ClientDetail client={selected} plans={PLANS} adminToken={adminToken} onClose={()=>setSelected(null)} onSupprime={loadClients} onEssaiProlonge={loadClients}/>
           ) : (
             /* ── Liste clients ── */
             <div>

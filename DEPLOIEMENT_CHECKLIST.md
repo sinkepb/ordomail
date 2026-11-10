@@ -314,6 +314,21 @@ sécurité/qualité perçue et la valeur commerciale.
   anon/authenticated (lecture uniquement via `secure-data`, jeton admin vérifié), pour ne
   pas exposer les alertes de sécurité à quiconque détient la clé anon publique.
 
+### Résolu le 10/11/2026 — Prolonger l'essai gratuit d'une pharmacie
+
+L'essai de 30 jours est porté par l'abonnement Stripe (`TRIAL_DAYS` dans
+`create-checkout-session`) : c'est Stripe qui fixe le jour du premier
+prélèvement. Pour offrir du temps gratuit à **un** client (ex. un 2ᵉ mois) sans
+changer la durée standard : backoffice → Clients → fiche de la pharmacie →
+carte « 🎁 Essai gratuit » → « Prolonger l'essai ». Appelle
+`secure-data-admin:admin_prolonger_essai`, qui repousse le `trial_end` Stripe
+(`proration_behavior: none`), aligne `pharmacies.trial_ends_at` (affichage),
+trace l'action dans `alerts` et prévient la pharmacie par email (case à cocher).
+Limites volontaires (`_shared/essaiLogic.ts`) : uniquement pendant un essai en
+cours (pas de carte enregistrée ou essai terminé → message explicite, un cadeau
+passe alors par un avoir Stripe), 1 à 90 jours par action, essai total ≤ 1 an.
+Aucune migration. Fonction à déployer : `secure-data-admin`.
+
 ### Résolu le 09/08/2026 — Rétention/purge et outil RGPD droits patient
 
 - **Purge automatique** : edge function `purge-ordonnances` (cron nocturne, même schéma
