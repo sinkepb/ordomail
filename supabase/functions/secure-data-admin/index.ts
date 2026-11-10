@@ -25,6 +25,8 @@ import { runPurge, runRappelsPurge } from "../_shared/purgeLogic.ts";
 import { getSmsConsommation } from "../_shared/smsQuota.ts";
 import { safeErrorMessage } from "../_shared/errors.ts";
 import { reportAlert } from "../_shared/alert.ts";
+import { calculerNouvelleFinEssai } from "../_shared/essaiLogic.ts";
+import { sendTransactionalEmail, wrapCustomerEmail } from "../_shared/email.ts";
 
 // Fréquences proposées dans l'onglet Purge du backoffice — whitelist plutôt
 // que d'accepter une expression cron arbitraire depuis le frontend.
@@ -404,6 +406,77 @@ Deno.serve(async (req) => {
       if (error) throw new Error(error.message);
       await trimExcessPostes(sb, targetPharmacieId, plan);
       return new Response(JSON.stringify({ success: true }), { headers: CORS });
+    }
+
+    // Prolonger l'essai gratuit d'UNE pharmacie (10/11/2026, demande du
+    // responsable : offrir un 2ᵉ mois à un client précis). L'essai est porté
+    // par l'abonnement Stripe : on repousse son `trial_end` (le premier
+    // prélèvement suit), puis on aligne trial_ends_at, qui ne sert qu'à
+    // l'affichage du backoffice. Règles de calcul et bornes : _shared/essaiLogic.ts.
+    //
+    // Refusé dans trois cas, avec un message clair plutôt qu'un échec Stripe
+    // obscur : pas encore d'abonnement (la carte n'est pas enregistrée, rien à
+    // prolonger), essai déjà terminé (le client a été prélevé : un cadeau
+    // passe alors par un avoir Stripe), nombre de jours hors bornes.
+    // Tracé dans `alerts` (severity info : jamais de notification poussée) —
+    // une action qui repousse un encaissement doit laisser une trace.
+    if (resource === "admin_prolonger_essai") {
+      const { pharmacieId: cible, jours, notifier } = params || {};
+      if (!cible) {
+        return new Response(JSON.stringify({ error: "pharmacieId requis" }), { status: 400, headers: CORS });
+      }
+      const { data: ph } = await sb.from("pharmacies")
+        .select("id, nom, email, stripe_subscription_id")
+        .eq("id", cible).maybeSingle();
+      if (!ph) {
+        return new Response(JSON.stringify({ error: "Pharmacie introuvable" }), { status: 404, headers: CORS });
+      }
+      if (!ph.stripe_subscription_id) {
+        return new Response(JSON.stringify({ error: "Cette pharmacie n'a pas encore d'abonnement (carte non enregistrée) : il n'y a pas d'essai à prolonger. Réessayez après son inscription au paiement." }),
+          { status: 409, headers: CORS });
+      }
+      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
+      const sub = await stripe.subscriptions.retrieve(ph.stripe_subscription_id);
+      if (sub.status !== "trialing") {
+        return new Response(JSON.stringify({ error: `L'essai est terminé (statut de l'abonnement : ${sub.status}). Pour offrir du temps gratuit maintenant, créez un avoir depuis le tableau de bord Stripe.` }),
+          { status: 409, headers: CORS });
+      }
+      const calcul = calculerNouvelleFinEssai(sub.trial_end, jours, Math.floor(Date.now() / 1000));
+      if (!calcul.ok) {
+        return new Response(JSON.stringify({ error: calcul.error }), { status: 400, headers: CORS });
+      }
+      // proration_behavior "none" : repousser la date du premier prélèvement ne
+      // doit générer ni facture ni crédit intermédiaire.
+      await stripe.subscriptions.update(sub.id, { trial_end: calcul.nouvelleFinSec, proration_behavior: "none" });
+
+      const nouvelleFinIso = new Date(calcul.nouvelleFinSec * 1000).toISOString();
+      const ancienneFinIso = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
+      const { error: majErr } = await sb.from("pharmacies").update({ trial_ends_at: nouvelleFinIso }).eq("id", ph.id);
+      if (majErr) console.error("[admin_prolonger_essai] trial_ends_at non mis à jour :", majErr.message);
+
+      const dateFr = new Date(calcul.nouvelleFinSec * 1000).toLocaleDateString("fr-FR");
+      await reportAlert(sb, {
+        source: "secure-data-admin", severity: "info",
+        message: `Essai prolongé de ${Number(jours)} jours — ${ph.nom || ph.id} (premier prélèvement le ${dateFr})`,
+        meta: { pharmacieId: ph.id, jours: Number(jours), ancienneFin: ancienneFinIso, nouvelleFin: nouvelleFinIso },
+      });
+
+      // Email au client, à la demande de l'administrateur (case à cocher) —
+      // best-effort : un échec d'envoi ne défait pas la prolongation, déjà faite.
+      let emailEnvoye = false;
+      if (notifier && ph.email) {
+        try {
+          const { html, text } = wrapCustomerEmail(
+            `<p>Bonne nouvelle : votre période d'essai gratuit OrdoMail est <strong>prolongée de ${Number(jours)} jours</strong>.</p><p>Votre premier prélèvement aura lieu le <strong>${dateFr}</strong>. Rien à faire de votre côté.</p>`,
+            `Bonne nouvelle : votre période d'essai gratuit OrdoMail est prolongée de ${Number(jours)} jours.\n\nVotre premier prélèvement aura lieu le ${dateFr}. Rien à faire de votre côté.`,
+          );
+          const r = await sendTransactionalEmail(ph.email, "Votre essai gratuit OrdoMail est prolongé", html, text);
+          emailEnvoye = !!r.success;
+        } catch (e) {
+          console.error("[admin_prolonger_essai] email non envoyé :", (e as Error).message);
+        }
+      }
+      return new Response(JSON.stringify({ data: { success: true, trialEndsAt: nouvelleFinIso, emailEnvoye } }), { headers: CORS });
     }
 
     if (resource === "admin_alerts") {
