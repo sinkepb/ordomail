@@ -14,7 +14,7 @@ const GRANULARITES = [["jour", "Jour"], ["mois", "Mois"], ["annee", "Année"]];
 // la liste des pharmacies (admin_pharmacies, coûteuse pour N pharmacies) :
 // un admin n'ouvre qu'une fiche à la fois, donc un fetch dédié ici plutôt
 // qu'un calcul pour toute la liste à chaque chargement de l'onglet Clients.
-function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
+function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime, onEssaiProlonge }) {
   const planInfo = plans[ph.plan] || {};
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
@@ -82,7 +82,46 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
     [rappelsDates, granularite],
   );
 
-  const trialLeft = ph.trial_ends_at ? Math.ceil((new Date(ph.trial_ends_at)-new Date())/86400000) : null;
+  // Essai gratuit (10/11/2026) — prolonger l'essai d'UNE pharmacie (ex. offrir un
+  // 2ᵉ mois), voir secure-data-admin:admin_prolonger_essai. trialEndsAt est une
+  // copie locale de ph.trial_ends_at : la fiche reflète la nouvelle date dès la
+  // prolongation faite, sans recharger toute la liste des clients.
+  const [trialEndsAt, setTrialEndsAt] = useState(ph.trial_ends_at || null);
+  const [essaiJours, setEssaiJours] = useState(30);
+  const [essaiNotifier, setEssaiNotifier] = useState(true);
+  const [essaiBusy, setEssaiBusy] = useState(false);
+  const [essaiMsg, setEssaiMsg] = useState(null);
+  useEffect(() => { setTrialEndsAt(ph.trial_ends_at || null); setEssaiMsg(null); }, [ph.id, ph.trial_ends_at]);
+  const essaiProlongeable = !!ph.stripe_subscription_id && ph.plan_status === "trialing";
+  const essaiRaisonBlocage = !ph.stripe_subscription_id
+    ? "Pas encore d'abonnement : la carte n'est pas enregistrée, il n'y a pas d'essai à prolonger. Revenez après son inscription au paiement."
+    : ph.plan_status !== "trialing"
+      ? "L'essai est terminé. Pour offrir du temps gratuit maintenant, créez un avoir depuis le tableau de bord Stripe."
+      : "";
+  const fmtDate = (d) => new Date(d).toLocaleDateString("fr-FR");
+
+  async function prolongerEssai() {
+    const n = Number(essaiJours);
+    if (!Number.isInteger(n) || n < 1) { setEssaiMsg({ ok: false, text: "Indiquez un nombre de jours entier (1 ou plus)." }); return; }
+    const fin = trialEndsAt ? new Date(trialEndsAt) : null;
+    const nouvelle = fin ? new Date(fin.getTime() + n * 86400000) : null;
+    const question = `Offrir ${n} jour${n > 1 ? "s" : ""} d'essai gratuit supplémentaire${n > 1 ? "s" : ""} à "${ph.nom}" ?`
+      + (nouvelle ? `\n\nLe premier prélèvement passera du ${fmtDate(fin)} au ${fmtDate(nouvelle)}.` : "")
+      + (essaiNotifier ? "\nUn email préviendra la pharmacie." : "");
+    if (!window.confirm(question)) return;
+    setEssaiBusy(true); setEssaiMsg(null);
+    try {
+      const { data } = await callSecureDataAdmin("admin_prolonger_essai", { pharmacieId: ph.id, jours: n, notifier: essaiNotifier }, adminToken);
+      setTrialEndsAt(data.trialEndsAt);
+      onEssaiProlonge?.();
+      setEssaiMsg({ ok: true, text: `Essai prolongé : premier prélèvement le ${fmtDate(data.trialEndsAt)}.${essaiNotifier ? (data.emailEnvoye ? " Email envoyé à la pharmacie." : " (L'email n'a pas pu être envoyé.)") : ""}` });
+    } catch (e) {
+      setEssaiMsg({ ok: false, text: e.message });
+    }
+    setEssaiBusy(false);
+  }
+
+  const trialLeft = trialEndsAt ? Math.ceil((new Date(trialEndsAt)-new Date())/86400000) : null;
   const scoreColor = (s) => s>=70?"#4ade80":s>=40?"#fbbf24":"#f87171";
   const scoreBg    = (s) => s>=70?"rgba(74,222,128,0.1)":s>=40?"rgba(251,191,36,0.1)":"rgba(248,113,113,0.1)";
   // Délai moyen envoi → impression (delai_moyen_min), voir
@@ -105,12 +144,47 @@ function ClientDetail({ client: ph, plans, adminToken, onClose, onSupprime }) {
         <div style={{display:"flex",gap:8}}>
           <span style={{padding:"4px 12px",borderRadius:20,background:planInfo.color||"#334155",color:"#fff",fontSize:12,fontWeight:700}}>{planInfo.label||ph.plan}</span>
           {trialLeft > 0 && <span style={{padding:"4px 12px",borderRadius:20,background:"#fef3c7",color:"#92400e",fontSize:12,fontWeight:700}}>Trial · {trialLeft}j restants</span>}
-          {trialLeft <= 0 && ph.trial_ends_at && <span style={{padding:"4px 12px",borderRadius:20,background:"#fee2e2",color:"#dc2626",fontSize:12,fontWeight:700}}>Trial expiré</span>}
+          {trialLeft <= 0 && trialEndsAt && <span style={{padding:"4px 12px",borderRadius:20,background:"#fee2e2",color:"#dc2626",fontSize:12,fontWeight:700}}>Trial expiré</span>}
         </div>
         <button onClick={onClose} style={{background:"#0f172a",border:"1px solid #334155",color:"#64748b",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>← Retour</button>
         <button onClick={()=>snapshotMetriquesJournalieres()} style={{background:"#1e40af",border:"none",color:"#fff",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
           📸 Snapshot
         </button>
+      </div>
+
+      {/* Essai gratuit : prolonger l'essai de cette pharmacie (10/11/2026) */}
+      <div style={{ padding: "16px 24px 0" }}>
+        <div style={{ background: "#0f172a", borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>🎁 Essai gratuit</div>
+          <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 12 }}>
+            {trialEndsAt
+              ? <>Fin de l'essai : <strong style={{ color: "#fff" }}>{fmtDate(trialEndsAt)}</strong>{trialLeft > 0 ? ` (${trialLeft} jour${trialLeft > 1 ? "s" : ""} restant${trialLeft > 1 ? "s" : ""})` : " (terminé)"}. Le premier prélèvement a lieu à cette date.</>
+              : "Aucune date de fin d'essai enregistrée."}
+          </div>
+          {essaiProlongeable ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 12.5, color: "#94a3b8", display: "flex", alignItems: "center", gap: 8 }}>
+                Offrir
+                <input type="number" min={1} max={90} value={essaiJours} onChange={e => setEssaiJours(e.target.value)} disabled={essaiBusy}
+                  style={{ width: 70, padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#1e293b", color: "#fff", fontFamily: "inherit", fontSize: 13 }} />
+                jours supplémentaires
+              </label>
+              <label style={{ fontSize: 12.5, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={essaiNotifier} onChange={e => setEssaiNotifier(e.target.checked)} disabled={essaiBusy} />
+                Prévenir la pharmacie par email
+              </label>
+              <button onClick={prolongerEssai} disabled={essaiBusy}
+                style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#15803d", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: essaiBusy ? "default" : "pointer", fontFamily: "inherit", opacity: essaiBusy ? 0.6 : 1 }}>
+                {essaiBusy ? "…" : "Prolonger l'essai"}
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: "#fbbf24", lineHeight: 1.5 }}>{essaiRaisonBlocage}</div>
+          )}
+          {essaiMsg && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: essaiMsg.ok ? "#4ade80" : "#f87171" }}>{essaiMsg.ok ? "✓ " : "⚠️ "}{essaiMsg.text}</div>
+          )}
+        </div>
       </div>
 
       {/* Graphique historique 30 jours */}
