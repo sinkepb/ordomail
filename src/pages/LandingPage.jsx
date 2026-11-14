@@ -114,6 +114,7 @@ function FeaturesSection() {
     { icon: "🔍", title: "Identification en 2 secondes", desc: "Le patient dit son nom au comptoir. Le vendeur le repère instantanément dans la grille. Fini de fouiller dans Gmail.", accent: C.navy },
     { icon: "📱", title: "QR Code + Badge NFC", desc: "Le patient scanne ou approche son téléphone. Son ordonnance électronique arrive directement dans votre tableau de bord en moins de 5 secondes.", accent: "#7c3aed" },
     { icon: "✉️", title: "Transfert email simplifié", desc: "Si le médecin envoie l'ordonnance par email, le patient transfère d'un clic à l'adresse dédiée de la pharmacie. Zéro ressaisie.", accent: "#0369a1" },
+    { icon: "🔔", title: "Rappels de renouvellement", desc: "Le patient est relancé par SMS avant l'échéance et répond en un clic : vous préparez avant qu'il arrive, sans téléphoner à personne. Plan Performance.", accent: C.green, ancre: "renouvellements" },
     { icon: "🖨️", title: "Impression avec confirmation", desc: "Un clic → boîte d'impression → confirmation que le papier est sorti. L'ordonnance est marquée traitée uniquement après validation.", accent: C.amber },
     { icon: "🗒️", title: "Journal d'audit complet", desc: "Chaque consultation, chaque impression, chaque connexion est tracée. Export CSV pour les contrôles. Aucune donnée médicale dans les logs.", accent: "#15803d" },
     { icon: "🎁", title: "Offres & promotions patient", desc: "Diffusez vos promotions et offres de fidélité dans la salle d'attente numérique pendant que le patient patiente. Plan Pro.", accent: "#4c1d95" },
@@ -134,9 +135,142 @@ function FeaturesSection() {
               <div style={{ width:44, height:44, borderRadius:12, background:f.accent+"18", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, marginBottom:14 }}>{f.icon}</div>
               <div style={{ fontWeight:800, fontSize:16, color:C.ink, marginBottom:8 }}>{f.title}</div>
               <div style={{ fontSize:14, color:C.slate, lineHeight:1.65 }}>{f.desc}</div>
+              {f.ancre && (
+                <button onClick={() => document.getElementById(f.ancre)?.scrollIntoView({ behavior:"smooth" })}
+                  style={{ marginTop:10, padding:0, background:"none", border:"none", color:f.accent, fontWeight:700, fontSize:13.5, cursor:"pointer", fontFamily:"inherit" }}>
+                  Voir comment ça marche ↓
+                </button>
+              )}
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Renouvellements (13/11/2026, demande titulaire) ──────────────────────
+// Met en avant les rappels de renouvellement (plan Performance). Les textes
+// reprennent le comportement réel : SMS ~7 jours avant la date (voir
+// AideModal), message de buildRappelMessage (rappelLogic.ts), choix patient de
+// RappelChoixPage.jsx, relance J+3 puis "à appeler" (RELANCE/ESCALADE_DELAI_JOURS).
+// Garder ces textes alignés si le fonctionnement change.
+const RENOUV_ETAPES = [
+  { icon: "🖱️", title: "Un clic au comptoir", desc: "Créez le rappel depuis l'ordonnance, avec l'accord du patient. Son nom et son médecin sont repris de l'ordonnance : ajoutez son téléphone, c'est prêt." },
+  { icon: "💬", title: "Le SMS part tout seul", desc: "Environ 7 jours avant l'échéance, sans que personne n'y pense. Sans réponse, une relance, puis le patient passe dans votre liste à appeler." },
+  { icon: "👆", title: "Le patient répond en un clic", desc: "Sans application : tout renouveler, renouvellement partiel ou rien, et il choisit son créneau de retrait." },
+  { icon: "📦", title: "Vous préparez à l'avance", desc: "La réponse s'affiche en temps réel. Vous préparez, rangez en casier, et anticipez les ruptures avant son passage." },
+];
+
+function RenouvellementDemo() {
+  // 0 : SMS reçu · 1 : choix du patient · 2 : créneau · 3 : côté pharmacie
+  const [etape, setEtape] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setEtape(e => (e + 1) % 4), 2600);
+    return () => clearInterval(t);
+  }, []);
+  const choix = [["✅", "Tout renouveler"], ["🔶", "Renouvellement partiel"], ["🚫", "Ne rien prendre"]];
+  const creneaux = [["🌅", "Ce matin"], ["☀️", "Cet après-midi"], ["🌤️", "Demain matin"], ["🌇", "Demain après-midi"]];
+  const ecranPatient = etape < 3;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+      {/* Téléphone du patient */}
+      <div style={{ width: "100%", maxWidth: 300, background: "#0f172a", borderRadius: 34, padding: 10, boxShadow: "0 24px 60px rgba(15,35,71,0.28)" }}>
+        <div style={{ background: "#f8fafc", borderRadius: 26, minHeight: 330, padding: "18px 14px", fontFamily: "'Inter', system-ui, sans-serif", position: "relative", overflow: "hidden" }}>
+          <div style={{ width: 70, height: 6, borderRadius: 3, background: "#cbd5e1", margin: "0 auto 14px" }} />
+          {etape === 0 && (
+            <div key="sms" style={{ animation: "popIn 0.4s ease" }}>
+              <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginBottom: 10 }}>SMS · maintenant</div>
+              <div style={{ background: "#e2e8f0", borderRadius: "16px 16px 16px 4px", padding: "11px 13px", fontSize: 12.5, lineHeight: 1.5, color: C.ink }}>
+                Bonjour M/Mme Pierre MARTIN,<br />
+                Pharmacie du Centre vous informe que votre renouvellement d'ordonnance est prévu prochainement.<br />
+                Cliquez ici pour nous dire ce que vous souhaitez faire :<br />
+                <span style={{ color: "#2563eb", textDecoration: "underline" }}>ordomail.fr/r/k3F9a</span>
+              </div>
+            </div>
+          )}
+          {etape === 1 && (
+            <div key="choix" style={{ animation: "popIn 0.4s ease" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: C.ink, marginBottom: 4 }}>Pharmacie du Centre</div>
+              <div style={{ fontSize: 12, color: C.slate, marginBottom: 12, lineHeight: 1.5 }}>Le renouvellement de votre ordonnance est prévu prochainement. Que souhaitez-vous faire ?</div>
+              {choix.map(([e, l], i) => (
+                <div key={l} style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 12px", marginBottom: 7, borderRadius: 12, fontSize: 13, fontWeight: 700, border: `1.5px solid ${i === 0 ? C.green : C.border}`, background: i === 0 ? C.greenL : "#fff", color: C.ink }}>
+                  <span>{e}</span>{l}
+                </div>
+              ))}
+            </div>
+          )}
+          {etape === 2 && (
+            <div key="creneau" style={{ animation: "popIn 0.4s ease" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: C.ink, marginBottom: 12 }}>Quand passez-vous le récupérer ?</div>
+              {creneaux.map(([e, l], i) => (
+                <div key={l} style={{ display: "flex", gap: 8, alignItems: "center", padding: "9px 12px", marginBottom: 7, borderRadius: 12, fontSize: 13, fontWeight: 700, border: `1.5px solid ${i === 2 ? C.green : C.border}`, background: i === 2 ? C.greenL : "#fff", color: C.ink }}>
+                  <span>{e}</span>{l}
+                </div>
+              ))}
+            </div>
+          )}
+          {etape === 3 && (
+            <div key="merci" style={{ animation: "popIn 0.4s ease", textAlign: "center", paddingTop: 50 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: C.ink, marginBottom: 6 }}>Merci !</div>
+              <div style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.5 }}>Votre pharmacie a bien été informée de votre choix.</div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Côté pharmacie : la réponse arrive en temps réel */}
+      <div style={{ width: "100%", maxWidth: 340, background: "#fff", borderRadius: 14, border: `1.5px solid ${ecranPatient ? C.border : C.green}`, boxShadow: ecranPatient ? "0 4px 14px rgba(15,35,71,0.06)" : `0 0 0 3px ${C.green}22, 0 8px 24px ${C.green}22`, padding: "11px 14px", transition: "all 0.3s", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.navy, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 13, flexShrink: 0 }}>M</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, color: C.ink }}>MARTIN Pierre</div>
+          <div style={{ fontSize: 11.5, color: ecranPatient ? C.muted : C.green, fontWeight: 700 }}>
+            {ecranPatient ? "💬 SMS envoyé · en attente de réponse" : "✅ Tout renouveler · Demain matin"}
+          </div>
+        </div>
+        <span style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, letterSpacing: 0.5 }}>VOTRE ÉCRAN</span>
+      </div>
+    </div>
+  );
+}
+
+function RenouvellementsSection({ onCTA }) {
+  const ref = useRef(); const visible = useFadeIn(ref);
+  return (
+    <section ref={ref} style={{ padding: "60px 16px", background: `linear-gradient(180deg, ${C.greenL} 0%, #fff 100%)` }}>
+      <div style={{ maxWidth: 1060, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 40, alignItems: "center", opacity: visible ? 1 : 0, transform: visible ? "none" : "translateY(20px)", transition: "all 0.6s ease" }}>
+        <div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            <span style={{ background: C.green, color: "#fff", fontSize: 11, fontWeight: 800, letterSpacing: 1.5, padding: "5px 14px", borderRadius: 20 }}>RENOUVELLEMENTS</span>
+            <span style={{ background: "#ede9fe", color: "#4c1d95", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, padding: "5px 12px", borderRadius: 20 }}>🏥 Plan Performance</span>
+          </div>
+          <h2 style={{ fontSize: "clamp(24px, 6vw, 38px)", fontWeight: 900, color: C.ink, margin: "0 0 14px", lineHeight: 1.15 }}>
+            Récupérez les renouvellements<br />qui vous échappent.
+          </h2>
+          <p style={{ fontSize: 17, color: C.slate, lineHeight: 1.7, margin: "0 0 26px", maxWidth: 500 }}>
+            Un patient qui oublie de renouveler, c'est une vente perdue, et parfois un patient qui part ailleurs. OrdoMail le relance pour vous, au bon moment, et vous dit ce qu'il veut avant qu'il passe la porte.
+          </p>
+          <div style={{ display: "grid", gap: 14, marginBottom: 26 }}>
+            {RENOUV_ETAPES.map((s, i) => (
+              <div key={s.title} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#fff", border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, flexShrink: 0, boxShadow: "0 2px 6px rgba(15,35,71,0.06)" }}>{s.icon}</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: C.ink, marginBottom: 3 }}><span style={{ color: C.green }}>{i + 1}.</span> {s.title}</div>
+                  <div style={{ fontSize: 14, color: C.slate, lineHeight: 1.6 }}>{s.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 22 }}>
+            {["📱 Sans application patient", "📞 SMS ou appel : personne n'est oublié", "💶 100 SMS inclus par mois"].map(t => (
+              <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 12px" }}>{t}</span>
+            ))}
+          </div>
+          <button onClick={onCTA} style={{ padding: "13px 26px", border: "none", borderRadius: 12, background: C.green, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 4px 16px ${C.green}44` }}>
+            Essayer les renouvellements 30 jours →
+          </button>
+        </div>
+        <RenouvellementDemo />
       </div>
     </section>
   );
@@ -314,7 +448,7 @@ function TestimonialsSection() {
   );
 }
 
-function CTASection({ onCTA }) {
+function CTASection({ onCTA, onContact }) {
   const ref = useRef(); const visible = useFadeIn(ref);
   return (
     <section ref={ref} style={{ padding:"52px 16px", background:`linear-gradient(135deg, ${C.navyD} 0%, ${C.navy} 60%, ${C.green} 150%)` }}>
@@ -336,6 +470,11 @@ function CTASection({ onCTA }) {
           <span>✓ Données chiffrées</span>
           <span>✓ Support inclus</span>
         </div>
+        {onContact && (
+          <button onClick={onContact} style={{ marginTop:22, background:"none", border:"none", color:"#fff", fontSize:15, fontWeight:600, textDecoration:"underline", cursor:"pointer", fontFamily:"inherit" }}>
+            Une question avant de vous lancer ? Écrivez-nous →
+          </button>
+        )}
       </div>
     </section>
   );
@@ -356,7 +495,7 @@ function Footer({ onNav }) {
           {[
             ["Produit",["Fonctionnalités","Tarifs","Sécurité","Démo"]],
             ["Légal",["CGU","Politique de confidentialité","Mentions légales","RGPD"]],
-            ["Contact",["Support","Partenariats","Presse","Recrutement"]],
+            ["Contact",["Nous écrire","Support","Partenariats","Presse"]],
           ].map(([title, links])=>(
             <div key={title}>
               <div style={{ fontSize:12, fontWeight:700, color:"#e2e8f0", letterSpacing:1, marginBottom:14 }}>{title.toUpperCase()}</div>
@@ -383,7 +522,7 @@ function Footer({ onNav }) {
   );
 }
 
-function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, onGoToLegal }) {
+function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, onGoToLegal, onGoToContact }) {
   const [scrolled, setScrolled] = useState(false);
   const heroRef = useRef();
   const [heroVisible, setHeroVisible] = useState(false);
@@ -405,10 +544,12 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
           <span style={{ fontWeight:900, fontSize:18, color: scrolled?C.navy:"#fff" }}>OrdoMail</span>
         </div>
         <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-          {[["Fonctionnalités","features"],["Tarifs","pricing"],["Sécurité","security"]].map(([l,id])=>(
-            <button key={l} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
+          {[["Fonctionnalités","features"],["Renouvellements","renouvellements"],["Tarifs","pricing"],["Sécurité","security"]].map(([l,id])=>(
+            <button key={l} className="nav-sec" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
               style={{ padding:"7px 14px", borderRadius:8, color: scrolled?C.slate:"rgba(255,255,255,0.75)", fontSize:14, fontWeight:500, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
           ))}
+          <button className="nav-sec" onClick={() => onGoToContact?.()}
+            style={{ padding:"7px 14px", borderRadius:8, color: scrolled?C.slate:"rgba(255,255,255,0.75)", fontSize:14, fontWeight:500, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>Contact</button>
           <div style={{ width:1, height:18, background: scrolled?"#e2e8f0":"rgba(255,255,255,0.2)", margin:"0 6px" }} />
           <button onClick={()=>onGoToApp("login")} className="nav-links" style={{ padding:"7px 16px", border:`1px solid ${scrolled?C.border:"rgba(255,255,255,0.3)"}`, borderRadius:9, background:"transparent", color: scrolled?C.slate:"rgba(255,255,255,0.85)", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Connexion</button>
           <button onClick={()=>onGoToCheckout("standard","monthly")} className="nav-cta" style={{ padding:"8px 18px", border:"none", borderRadius:9, background:"#fff", color:C.navy, fontSize:14, fontWeight:800, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 2px 8px rgba(0,0,0,0.12)" }}>Essai gratuit</button>
@@ -441,7 +582,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
               </button>
             </div>
             <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
-              {[["30j","Essai gratuit"],["<1min","Installation"],["🔐","Données chiffrées"]].map(([v,l])=>(
+              {[["30j","Essai gratuit"],["<1min","Installation"],["🔔","Renouvellements par SMS"],["🔐","Données chiffrées"]].map(([v,l])=>(
                 <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
                   <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
                   <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
@@ -462,17 +603,24 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
 
       {/* ── SECTIONS ── */}
       <div id="features"><FeaturesSection /></div>
+      <div id="renouvellements"><RenouvellementsSection onCTA={()=>onGoToCheckout("pro","monthly")} /></div>
       <WorkflowSection />
       <div id="security"><SecuritySection /></div>
       <div id="pricing"><PricingSection onGoToPricing={onGoToPricing} /></div>
-      <CTASection onCTA={(action)=>{ if(action==="trial") onGoToCheckout("standard","monthly"); else onGoToApp("demo"); }} />
+      <CTASection onCTA={(action)=>{ if(action==="trial") onGoToCheckout("standard","monthly"); else onGoToApp("demo"); }} onContact={onGoToContact ? () => onGoToContact("question") : null} />
       <Footer onNav={(l)=>{
         if(l==="Tarifs") onGoToPricing();
         else if(l==="backoffice") onGoToAdmin();
         else if(l==="CGU") onGoToLegal("cgu");
         else if(l==="Politique de confidentialité" || l==="RGPD") onGoToLegal("confidentialite");
         else if(l==="Mentions légales") onGoToLegal("mentions");
-        else if(l==="Support") window.location.href = "mailto:contact@ordomail.fr";
+        else if(l==="Nous écrire") onGoToContact?.("question");
+        else if(l==="Support") onGoToContact?.("support");
+        else if(l==="Partenariats") onGoToContact?.("partenariat");
+        else if(l==="Presse") onGoToContact?.("presse");
+        else if(l==="Démo") onGoToContact?.("demo");
+        else if(l==="Fonctionnalités") document.getElementById("features")?.scrollIntoView({ behavior:"smooth" });
+        else if(l==="Sécurité") document.getElementById("security")?.scrollIntoView({ behavior:"smooth" });
       }} />
 
       <style>{`
@@ -485,6 +633,9 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
         html { scroll-behavior: smooth; }
         a:hover { opacity: 0.75; }
         /* ── Responsive mobile ── */
+        @media (max-width: 760px) {
+          nav .nav-sec { display: none !important; }
+        }
         @media (max-width: 640px) {
           nav { padding: 0 12px !important; }
           nav button { padding: 6px 10px !important; font-size: 12px !important; }

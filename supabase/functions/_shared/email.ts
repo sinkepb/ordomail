@@ -41,6 +41,10 @@ export async function sendTransactionalEmail(
   subject: string,
   htmlBody: string,
   textBody: string,
+  // Adresse de réponse (14/11/2026, formulaire de contact) : "Répondre" dans
+  // la messagerie du destinataire écrit directement au visiteur, alors que
+  // l'expéditeur reste l'adresse vérifiée (EMAIL_FROM).
+  replyTo?: string,
 ): Promise<SendEmailResult> {
   const token = Deno.env.get("POSTMARK_SERVER_TOKEN");
   const from = Deno.env.get("EMAIL_FROM") || "OrdoMail <notifications@ordomail.fr>";
@@ -62,6 +66,7 @@ export async function sendTransactionalEmail(
         HtmlBody: htmlBody,
         TextBody: textBody,
         MessageStream: "outbound",
+        ...(replyTo ? { ReplyTo: replyTo } : {}),
       }),
     });
     if (!res.ok) {

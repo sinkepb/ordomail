@@ -24,6 +24,7 @@ const PatientPage      = lazy(() => import("./pages/PatientPage.jsx").then(m => 
 const MobileOffreCapture = lazy(() => import("./pages/MobileOffreCapture.jsx").then(m => ({ default: m.MobileOffreCapture })));
 const RappelChoixPage  = lazy(() => import("./pages/RappelChoixPage.jsx").then(m => ({ default: m.RappelChoixPage })));
 const LegalPage        = lazy(() => import("./pages/LegalPage.jsx").then(m => ({ default: m.LegalPage })));
+const ContactPage      = lazy(() => import("./pages/ContactPage.jsx").then(m => ({ default: m.ContactPage })));
 // Seul PharmacieDashboard est utilisé ici — les autres exports de Dashboard.jsx
 // (QRNFCTab, ParametresTab…) sont consommés en interne par PharmacieDashboard
 // lui-même, pas besoin de les réimporter ici (même remarque que pour AdminPage.jsx).
@@ -259,9 +260,19 @@ function AppInner() {
       posteNom: storedVendeur.payload.poste_nom,
     };
   }
-  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : (storedVendeur ? "dashboard" : logoutDestination)));
+  // ?contact=1 (14/11/2026) : lien direct vers la page de contact (à donner
+  // par email, sur la plaquette, etc.), comme ?connexion=1 pour la connexion.
+  const contactParam = urlParams.get("contact") === "1";
+  const initialRoute = isRecovery ? "reset-password" : rappelToken ? "rappel-choix" : mobileOffreToken ? "mobile-offre" : checkoutReturn ? "checkout" : ((patientParam || qrCodeParam) ? "patient" : (readStoredAdminToken() ? "backoffice" : (storedVendeur ? "dashboard" : (contactParam ? "contact" : logoutDestination))));
   const [route, setRoute] = useState(initialRoute);
   const [legalDoc, setLegalDoc] = useState(null);
+  const [contactSujet, setContactSujet] = useState("question");
+  function goToContact(sujet) {
+    setContactSujet(sujet || "question");
+    window.history.replaceState({}, "", "?contact=1");
+    setRoute("contact");
+    window.scrollTo(0, 0);
+  }
   const [patientPharmacieQR, setPatientPharmacieQR] = useState(demoInitialPharmacie||null);
   const [sessionLoading, setSessionLoading] = useState(!isDemoMode && !isRecovery && !patientParam && !qrCodeParam && !mobileOffreToken && !rappelToken);
   const [authError, setAuthError] = useState(() => hashErrorCode ? friendlyAuthError(hashErrorCode, hashErrorDescription) : null);
@@ -304,7 +315,7 @@ function AppInner() {
     // rafraîchir le backoffice vers "finish-subscription". Même exclusion
     // pour storedVendeur (16/09/2026), même raison : un poste vendeur n'a pas
     // non plus de session Supabase Auth réelle (voir vendeurSession.js).
-    if (isDemoMode || isRecovery || patientParam || qrCodeParam || mobileOffreToken || rappelToken || checkoutReturn || readStoredAdminToken() || storedVendeur) { setSessionLoading(false); return; }
+    if (isDemoMode || isRecovery || patientParam || qrCodeParam || mobileOffreToken || rappelToken || checkoutReturn || contactParam || readStoredAdminToken() || storedVendeur) { setSessionLoading(false); return; }
     getCurrentSession().then(async session => {
       if (session) {
         try {
@@ -491,9 +502,11 @@ function AppInner() {
             setLogoutDestination("backoffice");
             setRoute("backoffice");
           }}
-          onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>
+          onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}
+          onGoToContact={goToContact}/>
       )}
       {route==="legal"&&<LegalPage doc={legalDoc} onBack={()=>setRoute("landing")}/>}
+      {route==="contact"&&<ContactPage sujetInitial={contactSujet} onBack={goToLanding} onGoToLegal={(doc)=>{setLegalDoc(doc); setRoute("legal");}}/>}
       {route==="pricing"&&<BillingModule initialView="pricing" onBack={()=>setRoute("landing")}/>}
       {route==="checkout"&&<BillingModule initialView="checkout" planId={checkoutPlan} billing={checkoutBilling} onBack={()=>setRoute("landing")}/>}
       {route==="finish-subscription"&&resumeSubscription&&(
