@@ -606,42 +606,42 @@ const HERO_DELAI_MS = 10000;
 function HeroTexte({ badge, titre1, titre2, texte, avantages, stats, Titre, onEssai, onDemo }) {
   return (
     <div>
-      <div style={{ display:"inline-flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:20, padding:"6px 14px", marginBottom:24 }}>
+      <div style={{ display:"inline-flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:20, padding:"5px 14px", marginBottom:14 }}>
         <span style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
         <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.75)", letterSpacing:0.5 }}>{badge}</span>
       </div>
-      <Titre style={{ fontSize:"clamp(28px, 8vw, 52px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.1, letterSpacing:"-0.5px" }}>
+      <Titre style={{ fontSize:"clamp(28px, 5.2vw, 42px)", fontWeight:900, color:"#fff", margin:"0 0 12px", lineHeight:1.08, letterSpacing:"-0.5px" }}>
         {titre1}<br />
         <span style={{ color:"#86efac" }}>{titre2}</span>
       </Titre>
-      <p style={{ fontSize:18, color:"rgba(255,255,255,0.65)", lineHeight:1.75, marginBottom: avantages ? 24 : 36, maxWidth:480 }}>{texte}</p>
+      <p style={{ fontSize:16.5, color:"rgba(255,255,255,0.65)", lineHeight:1.6, marginBottom: avantages ? 16 : 26, maxWidth:500 }}>{texte}</p>
       {avantages && (
-        <div style={{ display:"grid", gap:10, marginBottom:30, maxWidth:480 }}>
+        <div style={{ display:"grid", gap:7, marginBottom:20, maxWidth:500 }}>
           {avantages.map(([i,t,d])=>(
-            <div key={t} style={{ display:"flex", gap:12, alignItems:"flex-start", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"10px 14px" }}>
-              <span style={{ fontSize:20, lineHeight:1.2 }}>{i}</span>
+            <div key={t} style={{ display:"flex", gap:12, alignItems:"flex-start", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:11, padding:"7px 12px" }}>
+              <span style={{ fontSize:18, lineHeight:1.2 }}>{i}</span>
               <div>
-                <div style={{ fontWeight:800, fontSize:15, color:"#fff" }}>{t}</div>
-                <div style={{ fontSize:13.5, color:"rgba(255,255,255,0.6)", lineHeight:1.5 }}>{d}</div>
+                <div style={{ fontWeight:800, fontSize:14.5, color:"#fff" }}>{t}</div>
+                <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", lineHeight:1.4 }}>{d}</div>
               </div>
             </div>
           ))}
         </div>
       )}
-      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:28 }}>
-        <button onClick={onEssai} style={{ padding:"14px 28px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
+      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:16 }}>
+        <button onClick={onEssai} style={{ padding:"12px 24px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:15.5, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
           Essai gratuit 30 jours
           <span style={{ fontSize:14, opacity:0.6 }}>→</span>
         </button>
-        <button onClick={onDemo} style={{ padding:"14px 24px", border:"2px solid rgba(255,255,255,0.25)", borderRadius:12, background:"transparent", color:"#fff", fontWeight:700, fontSize:16, cursor:"pointer", fontFamily:"inherit" }}>
+        <button onClick={onDemo} style={{ padding:"12px 22px", border:"2px solid rgba(255,255,255,0.25)", borderRadius:12, background:"transparent", color:"#fff", fontWeight:700, fontSize:15.5, cursor:"pointer", fontFamily:"inherit" }}>
           Voir la démo live
         </button>
       </div>
-      <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
+      <div className="hero-stats" style={{ display:"flex", gap:"6px 18px", flexWrap:"wrap" }}>
         {stats.map(([v,l])=>(
           <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
-            <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
-            <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
+            <span style={{ fontWeight:900, fontSize:14.5, color:"#86efac" }}>{v}</span>
+            <span style={{ fontSize:12.5, color:"rgba(255,255,255,0.45)" }}>{l}</span>
           </div>
         ))}
       </div>
@@ -706,7 +706,7 @@ function HeroCarousel({ heroRef, heroVisible, onGoToCheckout, onGoToApp }) {
   }, [diapo, auto, pause]);
 
   const fleche = (sens) => ({
-    width:40, height:40, borderRadius:"50%", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.08)",
+    width:36, height:36, borderRadius:"50%", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.08)",
     color:"#fff", fontSize:18, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center",
     order: sens === "prec" ? 0 : 2,
   });
@@ -722,13 +722,13 @@ function HeroCarousel({ heroRef, heroVisible, onGoToCheckout, onGoToApp }) {
         toucheX.current = null;
         if (Math.abs(dx) > 50) aller(diapo + (dx < 0 ? 1 : -1), true);
       }}
-      style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.navyD} 0%, ${C.navy} 55%, #1a5c4a 120%)`, padding:"80px 16px 40px", display:"flex", flexDirection:"column", justifyContent:"center" }}>
+      style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.navyD} 0%, ${C.navy} 55%, #1a5c4a 120%)`, padding:"72px 16px 18px", display:"flex", flexDirection:"column", justifyContent:"center" }}>
       <div style={{ maxWidth:1100, margin:"0 auto", width:"100%", display:"grid" }}>
         {diapos.map((d, i) => {
           const active = i === diapo;
           return (
             <div key={d.nom} role="group" aria-roledescription="diapositive" aria-label={`${i + 1} sur ${diapos.length} : ${d.nom}`} aria-hidden={!active}
-              style={{ gridArea:"1 / 1", alignSelf:"center", display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap:36, alignItems:"center",
+              style={{ gridArea:"1 / 1", alignSelf:"center", display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap:"24px 40px", alignItems:"center",
                 opacity: active && heroVisible ? 1 : 0, visibility: active ? "visible" : "hidden",
                 transform: active ? (heroVisible ? "none" : "translateY(24px)") : "translateX(-24px)",
                 transition: "opacity 0.6s ease, transform 0.6s ease, visibility 0.6s" }}>
@@ -742,7 +742,7 @@ function HeroCarousel({ heroRef, heroVisible, onGoToCheckout, onGoToApp }) {
         })}
       </div>
       {/* Navigation : flèches + points (une pastille par diapo) */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginTop:28 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:14, marginTop:14 }}>
         <button type="button" onClick={() => aller(diapo - 1, true)} aria-label="Diapositive précédente" style={fleche("prec")}>‹</button>
         <div style={{ display:"flex", gap:8, order:1 }}>
           {diapos.map((d, i) => (
@@ -825,6 +825,10 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
         html { scroll-behavior: smooth; }
         a:hover { opacity: 0.75; }
+        /* Écrans peu hauts (portables 13") : on garde titre, bénéfices, boutons et flèches visibles */
+        @media (max-height: 700px) and (min-width: 761px) {
+          .hero-stats { display: none !important; }
+        }
         /* ── Responsive mobile ── */
         @media (max-width: 760px) {
           nav .nav-sec { display: none !important; }
