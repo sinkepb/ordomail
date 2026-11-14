@@ -25,8 +25,10 @@ const DEMO_RAPPELS = [
 ];
 const REPONSE_MARTIN = { statut: "a_traiter", detail: "✅ Tout renouveler · 🌤️ Demain matin", isNew: true };
 
-function MiniDashboard() {
-  const [filter, setFilter] = useState("rappels");
+// scenario (14/11/2026, carrousel du hero) : "rappels" ouvre sur les
+// renouvellements (diapo 1), "ordos" reprend la démo d'origine (diapo 2).
+function MiniDashboard({ scenario = "rappels", actif = true }) {
+  const [filter, setFilter] = useState(scenario === "rappels" ? "rappels" : "nouveau");
   const [searchQuery, setSearchQuery] = useState("");
   const [highlighted, setHighlighted] = useState(null);
   const [banniere, setBanniere] = useState(null);
@@ -37,14 +39,26 @@ function MiniDashboard() {
 
   useEffect(() => {
     const timers = [];
+    if (!actif) return;
     const plus = (ms, fn) => timers.push(setTimeout(fn, ms));
+    if (scenario === "ordos") {
+      plus(3200, () => {
+        setOrdos(prev => prev.some(o => o.nom === "GARCIA Manuel") ? prev : [
+          { nom: "GARCIA Manuel", cv: "1 73 07 92 042 118 85", medecin: "Dr Vidal", source: "qrcode", status: "nouveau", mins: 0, isNew: true },
+          ...prev,
+        ]);
+        setBanniere({ couleur: C.green, texte: "Nouvelle ordonnance reçue — GARCIA Manuel" });
+      });
+      plus(6200, () => setBanniere(null));
+      return () => timers.forEach(clearTimeout);
+    }
     plus(3200, () => {
       setRappels(prev => prev.map(r => r.id === "martin" ? { ...r, ...REPONSE_MARTIN } : r));
       setBanniere({ couleur: "#7c3aed", texte: "MARTIN Pierre veut renouveler — passe demain matin" });
     });
     plus(6400, () => setBanniere(null));
     plus(8200, () => {
-      setOrdos(prev => [
+      setOrdos(prev => prev.some(o => o.nom === "GARCIA Manuel") ? prev : [
         { nom: "GARCIA Manuel", cv: "1 73 07 92 042 118 85", medecin: "Dr Vidal", source: "qrcode", status: "nouveau", mins: 0, isNew: true },
         ...prev,
       ]);
@@ -52,7 +66,7 @@ function MiniDashboard() {
     });
     plus(11400, () => setBanniere(null));
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [scenario, actif]);
 
   const choisir = (k) => setFilter(k);
   const normalize = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
@@ -87,7 +101,7 @@ function MiniDashboard() {
 
       {/* Toolbar */}
       <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 6, alignItems: "center", background: C.surface }}>
-        {[["rappels","🔁 Renouvellements", aTraiter],["nouveau","🔔 À traiter", ordos.filter(o=>o.status==="nouveau").length],["imprime","✓ Imprimées", ordos.filter(o=>o.status==="imprime").length],["tous","Toutes",ordos.length]].map(([k,l,c])=>{
+        {(scenario === "rappels" ? ["rappels","nouveau","imprime","tous"] : ["nouveau","imprime","tous","rappels"]).map(k => ({ rappels:["rappels","🔁 Renouvellements", aTraiter], nouveau:["nouveau","🔔 À traiter", ordos.filter(o=>o.status==="nouveau").length], imprime:["imprime","✓ Imprimées", ordos.filter(o=>o.status==="imprime").length], tous:["tous","Toutes",ordos.length] })[k]).map(([k,l,c])=>{
           const actif = filter===k, violet = k==="rappels";
           const fond = actif ? (violet ? "#7c3aed" : C.navy) : "#fff";
           return (
@@ -579,6 +593,170 @@ function Footer({ onNav }) {
   );
 }
 
+// ─── Hero en carrousel (14/11/2026, demande titulaire) ─────────────────────
+// Diapo 1 : les renouvellements (ce qui fait vendre OrdoMail, en premier).
+// Diapo 2 : le hero d'origine « Vos ordonnances, enfin organisées ».
+// Les deux diapos sont superposées dans la même cellule de grille : la
+// hauteur du hero est celle de la plus haute, la page ne saute donc pas au
+// changement. Défilement automatique toutes les 10 s, en pause au survol ou
+// au focus clavier, arrêté dès que le visiteur choisit lui-même une diapo,
+// et désactivé si le système demande de réduire les animations.
+const HERO_DELAI_MS = 10000;
+
+function HeroTexte({ badge, titre1, titre2, texte, avantages, stats, Titre, onEssai, onDemo }) {
+  return (
+    <div>
+      <div style={{ display:"inline-flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:20, padding:"6px 14px", marginBottom:24 }}>
+        <span style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
+        <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.75)", letterSpacing:0.5 }}>{badge}</span>
+      </div>
+      <Titre style={{ fontSize:"clamp(28px, 8vw, 52px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.1, letterSpacing:"-0.5px" }}>
+        {titre1}<br />
+        <span style={{ color:"#86efac" }}>{titre2}</span>
+      </Titre>
+      <p style={{ fontSize:18, color:"rgba(255,255,255,0.65)", lineHeight:1.75, marginBottom: avantages ? 24 : 36, maxWidth:480 }}>{texte}</p>
+      {avantages && (
+        <div style={{ display:"grid", gap:10, marginBottom:30, maxWidth:480 }}>
+          {avantages.map(([i,t,d])=>(
+            <div key={t} style={{ display:"flex", gap:12, alignItems:"flex-start", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"10px 14px" }}>
+              <span style={{ fontSize:20, lineHeight:1.2 }}>{i}</span>
+              <div>
+                <div style={{ fontWeight:800, fontSize:15, color:"#fff" }}>{t}</div>
+                <div style={{ fontSize:13.5, color:"rgba(255,255,255,0.6)", lineHeight:1.5 }}>{d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:28 }}>
+        <button onClick={onEssai} style={{ padding:"14px 28px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
+          Essai gratuit 30 jours
+          <span style={{ fontSize:14, opacity:0.6 }}>→</span>
+        </button>
+        <button onClick={onDemo} style={{ padding:"14px 24px", border:"2px solid rgba(255,255,255,0.25)", borderRadius:12, background:"transparent", color:"#fff", fontWeight:700, fontSize:16, cursor:"pointer", fontFamily:"inherit" }}>
+          Voir la démo live
+        </button>
+      </div>
+      <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
+        {stats.map(([v,l])=>(
+          <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
+            <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeroCarousel({ heroRef, heroVisible, onGoToCheckout, onGoToApp }) {
+  const [diapo, setDiapo] = useState(0);
+  const [tour, setTour] = useState(0);          // relance l'animation de la démo à chaque affichage
+  const [pause, setPause] = useState(false);    // survol / focus
+  const [auto, setAuto] = useState(true);       // false dès que le visiteur a choisi une diapo
+  const toucheX = useRef(null);
+  const demo = () => onGoToApp("demo");
+
+  const diapos = [
+    {
+      nom: "Renouvellements",
+      scenario: "rappels",
+      legende: "↑ Démo interactive — dans 3 secondes, un patient répond à son rappel de renouvellement",
+      texte: (
+        <HeroTexte Titre="h1" badge="Renouvellements d'ordonnance automatiques"
+          titre1="Chaque renouvellement" titre2="revient chez vous."
+          texte="Avant l'échéance de leur ordonnance, OrdoMail relance vos patients par SMS. Ils répondent en un clic, vous commandez à l'avance : la vente reste chez vous et le traitement est prêt quand ils arrivent."
+          avantages={[
+            ["💶","Du chiffre d'affaires en plus","Les renouvellements qui partaient chez le voisin restent chez vous."],
+            ["😌","La tranquillité pour vos patients","Ils n'ont plus à y penser : la pharmacie s'en occupe."],
+            ["📦","Zéro rupture de stock","Vous savez qui vient et quand : vous commandez à l'avance."],
+          ]}
+          stats={[["30j","Essai gratuit"],["<1min","Installation"],["📱","Sans application patient"],["🔐","Données chiffrées"]]}
+          onEssai={() => onGoToCheckout("pro","monthly")} onDemo={demo} />
+      ),
+    },
+    {
+      nom: "Ordonnances",
+      scenario: "ordos",
+      legende: "↑ Démo interactive — une nouvelle ordonnance arrive dans 3 secondes",
+      texte: (
+        <HeroTexte Titre="h2" badge="Ordonnances reçues en temps réel"
+          titre1="Vos ordonnances," titre2="enfin organisées."
+          texte="OrdoMail remplace la boîte email généraliste par un tableau de bord dédié. Le patient envoie, vous imprimez. En moins d'une minute."
+          stats={[["30j","Essai gratuit"],["<1min","Installation"],["🔔","Renouvellements par SMS"],["🔐","Données chiffrées"]]}
+          onEssai={() => onGoToCheckout("standard","monthly")} onDemo={demo} />
+      ),
+    },
+  ];
+
+  const aller = (i, parVisiteur) => {
+    const n = (i + diapos.length) % diapos.length;
+    if (parVisiteur) setAuto(false);
+    setDiapo(n);
+    setTour(t => t + 1);
+  };
+
+  useEffect(() => {
+    let reduit = false;
+    try { reduit = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* navigateur ancien */ }
+    if (!auto || pause || reduit) return;
+    const t = setTimeout(() => { if (!document.hidden) aller(diapo + 1, false); }, HERO_DELAI_MS);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diapo, auto, pause]);
+
+  const fleche = (sens) => ({
+    width:40, height:40, borderRadius:"50%", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.08)",
+    color:"#fff", fontSize:18, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center",
+    order: sens === "prec" ? 0 : 2,
+  });
+
+  return (
+    <section ref={heroRef} aria-roledescription="carrousel" aria-label="Présentation d'OrdoMail"
+      onMouseEnter={() => setPause(true)} onMouseLeave={() => setPause(false)}
+      onFocus={() => setPause(true)} onBlur={() => setPause(false)}
+      onTouchStart={e => { toucheX.current = e.touches[0].clientX; }}
+      onTouchEnd={e => {
+        if (toucheX.current == null) return;
+        const dx = e.changedTouches[0].clientX - toucheX.current;
+        toucheX.current = null;
+        if (Math.abs(dx) > 50) aller(diapo + (dx < 0 ? 1 : -1), true);
+      }}
+      style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.navyD} 0%, ${C.navy} 55%, #1a5c4a 120%)`, padding:"80px 16px 40px", display:"flex", flexDirection:"column", justifyContent:"center" }}>
+      <div style={{ maxWidth:1100, margin:"0 auto", width:"100%", display:"grid" }}>
+        {diapos.map((d, i) => {
+          const active = i === diapo;
+          return (
+            <div key={d.nom} role="group" aria-roledescription="diapositive" aria-label={`${i + 1} sur ${diapos.length} : ${d.nom}`} aria-hidden={!active}
+              style={{ gridArea:"1 / 1", alignSelf:"center", display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap:36, alignItems:"center",
+                opacity: active && heroVisible ? 1 : 0, visibility: active ? "visible" : "hidden",
+                transform: active ? (heroVisible ? "none" : "translateY(24px)") : "translateX(-24px)",
+                transition: "opacity 0.6s ease, transform 0.6s ease, visibility 0.6s" }}>
+              {d.texte}
+              <div className="hero-dashboard">
+                <MiniDashboard key={active ? `on-${tour}` : "off"} scenario={d.scenario} actif={active} />
+                <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:"rgba(255,255,255,0.35)" }}>{d.legende}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Navigation : flèches + points (une pastille par diapo) */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginTop:28 }}>
+        <button type="button" onClick={() => aller(diapo - 1, true)} aria-label="Diapositive précédente" style={fleche("prec")}>‹</button>
+        <div style={{ display:"flex", gap:8, order:1 }}>
+          {diapos.map((d, i) => (
+            <button key={d.nom} type="button" onClick={() => aller(i, true)} aria-label={`Afficher : ${d.nom}`} aria-current={i === diapo ? "true" : undefined}
+              style={{ height:10, width: i === diapo ? 30 : 10, borderRadius:5, border:"none", padding:0, cursor:"pointer",
+                background: i === diapo ? "#86efac" : "rgba(255,255,255,0.3)", transition:"all 0.3s" }} />
+          ))}
+        </div>
+        <button type="button" onClick={() => aller(diapo + 1, true)} aria-label="Diapositive suivante" style={fleche("suiv")}>›</button>
+      </div>
+    </section>
+  );
+}
+
 function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, onGoToLegal, onGoToContact }) {
   const [scrolled, setScrolled] = useState(false);
   const heroRef = useRef();
@@ -614,66 +792,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
       </nav>
 
       {/* ── HERO ── */}
-      <section ref={heroRef} style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.navyD} 0%, ${C.navy} 55%, #1a5c4a 120%)`, padding:"80px 16px 60px", display:"flex", alignItems:"center" }}>
-        <div style={{ maxWidth:1100, margin:"0 auto", display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap:36, alignItems:"center", width:"100%" }}>
-          {/* Texte hero */}
-          <div style={{ opacity:heroVisible?1:0, transform:heroVisible?"none":"translateY(24px)", transition:"all 0.7s ease" }}>
-            <div style={{ display:"inline-flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:20, padding:"6px 14px", marginBottom:24 }}>
-              <span style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
-              <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.75)", letterSpacing:0.5 }}>Renouvellements d'ordonnance automatiques</span>
-            </div>
-            {/* Positionnement (14/11/2026, titulaire) : ce qui fait vendre OrdoMail,
-                c'est le renouvellement, pas l'organisation des ordonnances. */}
-            <h1 style={{ fontSize:"clamp(28px, 8vw, 52px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.1, letterSpacing:"-0.5px" }}>
-              Chaque renouvellement<br />
-              <span style={{ color:"#86efac" }}>revient chez vous.</span>
-            </h1>
-            <p style={{ fontSize:18, color:"rgba(255,255,255,0.65)", lineHeight:1.75, marginBottom:24, maxWidth:480 }}>
-              Avant l'échéance de leur ordonnance, OrdoMail relance vos patients par SMS. Ils répondent en un clic, vous commandez à l'avance : la vente reste chez vous et le traitement est prêt quand ils arrivent.
-            </p>
-            <div style={{ display:"grid", gap:10, marginBottom:30, maxWidth:480 }}>
-              {[
-                ["💶","Du chiffre d'affaires en plus","Les renouvellements qui partaient chez le voisin restent chez vous."],
-                ["😌","La tranquillité pour vos patients","Ils n'ont plus à y penser : la pharmacie s'en occupe."],
-                ["📦","Zéro rupture de stock","Vous savez qui vient et quand : vous commandez à l'avance."],
-              ].map(([i,t,d])=>(
-                <div key={t} style={{ display:"flex", gap:12, alignItems:"flex-start", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"10px 14px" }}>
-                  <span style={{ fontSize:20, lineHeight:1.2 }}>{i}</span>
-                  <div>
-                    <div style={{ fontWeight:800, fontSize:15, color:"#fff" }}>{t}</div>
-                    <div style={{ fontSize:13.5, color:"rgba(255,255,255,0.6)", lineHeight:1.5 }}>{d}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:28 }}>
-              <button onClick={()=>onGoToCheckout("pro","monthly")} style={{ padding:"14px 28px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
-                Essai gratuit 30 jours
-                <span style={{ fontSize:14, opacity:0.6 }}>→</span>
-              </button>
-              <button onClick={()=>onGoToApp("demo")} style={{ padding:"14px 24px", border:"2px solid rgba(255,255,255,0.25)", borderRadius:12, background:"transparent", color:"#fff", fontWeight:700, fontSize:16, cursor:"pointer", fontFamily:"inherit" }}>
-                Voir la démo live
-              </button>
-            </div>
-            <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
-              {[["30j","Essai gratuit"],["<1min","Installation"],["📱","Sans application patient"],["🔐","Données chiffrées"]].map(([v,l])=>(
-                <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
-                  <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
-                  <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Mini dashboard démo — masqué sur très petits écrans */}
-          <div style={{ opacity:heroVisible?1:0, transform:heroVisible?"none":"translateY(24px) scale(0.97)", transition:"all 0.8s ease 0.15s" }} className="hero-dashboard">
-            <MiniDashboard />
-            <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:"rgba(255,255,255,0.35)" }} className="hero-dashboard">
-              ↑ Démo interactive — dans 3 secondes, un patient répond à son rappel de renouvellement
-            </div>
-          </div>
-        </div>
-      </section>
+      <HeroCarousel heroRef={heroRef} heroVisible={heroVisible} onGoToCheckout={onGoToCheckout} onGoToApp={onGoToApp} />
 
       {/* ── SECTIONS ── */}
       <div id="renouvellements"><RenouvellementsSection onCTA={()=>onGoToCheckout("pro","monthly")} /></div>
