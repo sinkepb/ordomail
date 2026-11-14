@@ -545,7 +545,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
         </div>
         <div style={{ display:"flex", gap:4, alignItems:"center" }}>
           {[["Fonctionnalités","features"],["Renouvellements","renouvellements"],["Tarifs","pricing"],["Sécurité","security"]].map(([l,id])=>(
-            <button key={l} className="nav-sec" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
+            <button key={l} className={id==="renouvellements" ? "nav-sec" : undefined} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
               style={{ padding:"7px 14px", borderRadius:8, color: scrolled?C.slate:"rgba(255,255,255,0.75)", fontSize:14, fontWeight:500, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
           ))}
           <button className="nav-sec" onClick={() => onGoToContact?.()}
