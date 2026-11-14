@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { C, useFadeIn, PLANS } from "../lib/utils.js";
 import { toHT } from "../lib/plans.js";
+import { STATUT_INFO } from "../components/rappels/rappelsConstants.js";
 
 const DEMO_ORDOS = [
   { nom: "MARTIN Pierre",    cv: "1 75 04 75 118 042 18", medecin: "Dr Bernard",  source: "email",  status: "nouveau",  mins: 3  },
@@ -12,40 +13,65 @@ const DEMO_ORDOS = [
 ];
 
 
+// Renouvellements de démo (14/11/2026) — mêmes statuts et libellés que
+// l'onglet Rappels réel (rappelsConstants.js : STATUT_INFO, CHOIX_LABEL,
+// CRENEAU_LABEL). MARTIN passe de "SMS envoyé" à "À traiter" en direct pour
+// montrer la réponse du patient qui arrive sans que personne n'appelle.
+const DEMO_RAPPELS = [
+  { id: "martin",   nom: "MARTIN Pierre",   medecin: "Dr Bernard", statut: "sms_envoye", detail: "📱 SMS envoyé il y a 2 jours" },
+  { id: "roux",     nom: "ROUX Anne",       medecin: "Dr Petit",   statut: "prepare",    detail: "📦 Casier B3 · ☀️ Cet après-midi" },
+  { id: "lefebvre", nom: "LEFEBVRE Jean",   medecin: "Dr Moreau",  statut: "a_appeler",  detail: "📞 Pas de mobile : à appeler" },
+  { id: "thomas",   nom: "THOMAS Isabelle", medecin: "Dr Gautier", statut: "termine",    detail: "✅ Renouvelé · nouveau cycle lancé" },
+];
+const REPONSE_MARTIN = { statut: "a_traiter", detail: "✅ Tout renouveler · 🌤️ Demain matin", isNew: true };
+
 function MiniDashboard() {
-  const [filter, setFilter] = useState("nouveau");
+  const [filter, setFilter] = useState("rappels");
   const [searchQuery, setSearchQuery] = useState("");
   const [highlighted, setHighlighted] = useState(null);
-  const [newArrival, setNewArrival] = useState(false);
+  const [banniere, setBanniere] = useState(null);
   const [ordos, setOrdos] = useState(DEMO_ORDOS);
+  const [rappels, setRappels] = useState(DEMO_RAPPELS);
+  // Scénario (14/11/2026) : la démo s'ouvre sur les renouvellements (ce qui fait
+  // vendre OrdoMail) ; la réponse d'un patient arrive, puis une ordonnance.
 
-  // Simule l'arrivée d'une nouvelle ordonnance
   useEffect(() => {
-    const t = setTimeout(() => {
-      setNewArrival(true);
+    const timers = [];
+    const plus = (ms, fn) => timers.push(setTimeout(fn, ms));
+    plus(3200, () => {
+      setRappels(prev => prev.map(r => r.id === "martin" ? { ...r, ...REPONSE_MARTIN } : r));
+      setBanniere({ couleur: "#7c3aed", texte: "MARTIN Pierre veut renouveler — passe demain matin" });
+    });
+    plus(6400, () => setBanniere(null));
+    plus(8200, () => {
       setOrdos(prev => [
         { nom: "GARCIA Manuel", cv: "1 73 07 92 042 118 85", medecin: "Dr Vidal", source: "qrcode", status: "nouveau", mins: 0, isNew: true },
         ...prev,
       ]);
-      setTimeout(() => setNewArrival(false), 3000);
-    }, 3200);
-    return () => clearTimeout(t);
+      setBanniere({ couleur: C.green, texte: "Nouvelle ordonnance reçue — GARCIA Manuel" });
+    });
+    plus(11400, () => setBanniere(null));
+    return () => timers.forEach(clearTimeout);
   }, []);
 
-  const normalize = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const choisir = (k) => setFilter(k);
+  const normalize = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const vueRappels = filter === "rappels";
   const filtered = ordos.filter(o => {
     const matchStatus = filter === "tous" || o.status === filter;
     const matchSearch = !searchQuery || normalize(o.nom).includes(normalize(searchQuery));
     return matchStatus && matchSearch;
   });
+  const rappelsFiltres = rappels.filter(r => !searchQuery || normalize(r.nom).includes(normalize(searchQuery)));
+  const aTraiter = rappels.filter(r => r.statut === "a_traiter" || r.statut === "a_appeler").length;
 
   return (
     <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 64px rgba(15,35,71,0.18), 0 2px 8px rgba(0,0,0,0.06)", border: `1px solid ${C.border}`, fontFamily: "'Inter', system-ui, sans-serif", position: "relative" }}>
-      {/* Barre arrivée temps réel */}
-      {newArrival && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, background: C.green, color: "#fff", padding: "7px 14px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, animation: "slideDown 0.3s ease" }}>
+      {/* Bandeau temps réel (nouvelle ordonnance, puis réponse d'un patient) */}
+      {banniere && (
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, background: banniere.couleur, color: "#fff", padding: "7px 14px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, animation: "slideDown 0.3s ease" }}>
           <span style={{ animation: "pulse 0.6s ease infinite" }}>🔔</span>
-          Nouvelle ordonnance reçue — GARCIA Manuel
+          {banniere.texte}
         </div>
       )}
 
@@ -61,23 +87,49 @@ function MiniDashboard() {
 
       {/* Toolbar */}
       <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 6, alignItems: "center", background: C.surface }}>
-        {[["nouveau","🔔 À traiter", ordos.filter(o=>o.status==="nouveau").length],["imprime","✓ Imprimées", ordos.filter(o=>o.status==="imprime").length],["tous","Toutes",ordos.length]].map(([k,l,c])=>(
-          <button key={k} onClick={()=>setFilter(k)} style={{ padding:"4px 10px", borderRadius:16, border:`1.5px solid ${filter===k?C.navy:"#e0e0e0"}`, background:filter===k?C.navy:"#fff", color:filter===k?"#fff":"#666", fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
-            {l} <span style={{ background: filter===k?"rgba(255,255,255,0.25)":"#f0f0f0", borderRadius:10, padding:"0 5px", fontSize:10 }}>{c}</span>
-          </button>
-        ))}
-        <div style={{ position:"relative", flex:1 }}>
+        {[["rappels","🔁 Renouvellements", aTraiter],["nouveau","🔔 À traiter", ordos.filter(o=>o.status==="nouveau").length],["imprime","✓ Imprimées", ordos.filter(o=>o.status==="imprime").length],["tous","Toutes",ordos.length]].map(([k,l,c])=>{
+          const actif = filter===k, violet = k==="rappels";
+          const fond = actif ? (violet ? "#7c3aed" : C.navy) : "#fff";
+          return (
+            <button key={k} onClick={()=>choisir(k)} style={{ padding:"4px 8px", whiteSpace:"nowrap", flexShrink:0, borderRadius:16, border:`1.5px solid ${actif?fond:(violet?"#c4b5fd":"#e0e0e0")}`, background:fond, color:actif?"#fff":(violet?"#6d28d9":"#666"), fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5, transition:"all 0.2s" }}>
+              {l} <span style={{ background: actif?"rgba(255,255,255,0.25)":(violet?"#ede9fe":"#f0f0f0"), borderRadius:10, padding:"0 5px", fontSize:10 }}>{c}</span>
+            </button>
+          );
+        })}
+        <div style={{ position:"relative", flex:"1 1 0", minWidth:0 }}>
           <span style={{ position:"absolute", left:8, top:"50%", transform:"translateY(-50%)", fontSize:12 }}>🔍</span>
-          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Nom patient…" style={{ width:"100%", padding:"5px 8px 5px 24px", border:`1px solid ${C.border}`, borderRadius:8, fontSize:12, outline:"none", fontFamily:"inherit", background:"#fff", boxSizing:"border-box" }} />
+          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Patient…" style={{ width:"100%", padding:"5px 6px 5px 22px", border:`1px solid ${C.border}`, borderRadius:8, fontSize:12, outline:"none", fontFamily:"inherit", background:"#fff", boxSizing:"border-box" }} />
         </div>
       </div>
 
-      {/* Grille ordonnances */}
-      <div style={{ padding: "10px 10px", display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, maxHeight: 260, overflowY: "auto" }}>
-        {filtered.map((o, i) => {
+      {/* Grille : ordonnances ou renouvellements */}
+      <div style={{ padding: "10px 10px", display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, height: 260, overflowY: "auto", alignContent: "start" }}>
+        {vueRappels ? rappelsFiltres.map((r, i) => {
+          const s = STATUT_INFO[r.statut];
+          return (
+            <div key={r.id} onMouseEnter={()=>setHighlighted("r"+i)} onMouseLeave={()=>setHighlighted(null)} style={{
+              background: highlighted==="r"+i ? "#faf5ff" : "#fff", borderRadius: 10, padding: "10px 12px",
+              border: `1.5px solid ${r.isNew ? "#a78bfa" : C.border}`,
+              boxShadow: r.isNew ? "0 0 0 2px #7c3aed33, 0 4px 12px #7c3aed22" : "none",
+              transition: "all 0.3s", animation: r.isNew ? "popIn 0.4s ease" : "none", opacity: r.statut === "termine" ? 0.7 : 1,
+            }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:6 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:7, minWidth:0 }}>
+                  <div style={{ width:28, height:28, borderRadius:"50%", background:"#7c3aed", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:900, fontSize:12, flexShrink:0 }}>{r.nom.charAt(0)}</div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontWeight:800, fontSize:12, color:C.ink, lineHeight:1.2 }}>{r.nom}</div>
+                    <div style={{ fontSize:10, color:C.muted }}>{r.medecin}</div>
+                  </div>
+                </div>
+                <span style={{ fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:12, background:s.bg, color:s.fg, whiteSpace:"nowrap" }}>{s.label}</span>
+              </div>
+              <div style={{ fontSize:10.5, color: r.statut==="a_traiter" ? "#15803d" : C.slate, fontWeight: r.statut==="a_traiter" ? 700 : 500, lineHeight:1.4 }}>{r.detail}</div>
+            </div>
+          );
+        }) : filtered.map((o, i) => {
           const isNew = o.status === "nouveau";
           return (
-            <div key={i} onMouseEnter={()=>setHighlighted(i)} onMouseLeave={()=>setHighlighted(null)} style={{
+            <div key={o.nom} onMouseEnter={()=>setHighlighted(i)} onMouseLeave={()=>setHighlighted(null)} style={{
               background: highlighted===i?"#f0f7ff":"#fff",
               borderRadius: 10, padding: "10px 12px",
               border: `1.5px solid ${isNew ? C.navy+"44" : C.border}`,
@@ -104,6 +156,11 @@ function MiniDashboard() {
           );
         })}
       </div>
+      {vueRappels && (
+        <div style={{ borderTop:`1px solid ${C.border}`, background:"#faf5ff", padding:"7px 12px", fontSize:10.5, color:"#6d28d9", fontWeight:600 }}>
+          🔁 Le SMS part tout seul avant l'échéance · le patient répond en un clic
+        </div>
+      )}
     </div>
   );
 }
@@ -454,7 +511,7 @@ function CTASection({ onCTA, onContact }) {
     <section ref={ref} style={{ padding:"52px 16px", background:`linear-gradient(135deg, ${C.navyD} 0%, ${C.navy} 60%, ${C.green} 150%)` }}>
       <div style={{ maxWidth:640, margin:"0 auto", textAlign:"center", opacity:visible?1:0, transition:"opacity 0.7s ease" }}>
         <div style={{ fontSize:40, marginBottom:18 }}>💊</div>
-        <h2 style={{ fontSize:"clamp(24px, 6vw, 38px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.2 }}>Prêt à simplifier la réception de vos ordonnances ?</h2>
+        <h2 style={{ fontSize:"clamp(24px, 6vw, 38px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.2 }}>Prêt à garder chaque renouvellement chez vous ?</h2>
         <p style={{ fontSize:17, color:"rgba(255,255,255,0.65)", marginBottom:32, lineHeight:1.65 }}>30 jours gratuits. Installation en moins de 10 minutes. Aucune carte bancaire requise.</p>
         <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
           <button onClick={()=>onCTA("trial")} style={{ padding:"14px 30px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 16px rgba(0,0,0,0.2)", transition:"transform 0.15s" }}
@@ -544,8 +601,8 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
           <span style={{ fontWeight:900, fontSize:18, color: scrolled?C.navy:"#fff" }}>OrdoMail</span>
         </div>
         <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-          {[["Fonctionnalités","features"],["Renouvellements","renouvellements"],["Tarifs","pricing"],["Sécurité","security"]].map(([l,id])=>(
-            <button key={l} className={id==="renouvellements" ? "nav-sec" : undefined} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
+          {[["Renouvellements","renouvellements"],["Fonctionnalités","features"],["Tarifs","pricing"],["Sécurité","security"]].map(([l,id])=>(
+            <button key={l} className={id==="features"||id==="security" ? "nav-sec" : undefined} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:"smooth" })}
               style={{ padding:"7px 14px", borderRadius:8, color: scrolled?C.slate:"rgba(255,255,255,0.75)", fontSize:14, fontWeight:500, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
           ))}
           <button className="nav-sec" onClick={() => onGoToContact?.()}
@@ -563,17 +620,34 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
           <div style={{ opacity:heroVisible?1:0, transform:heroVisible?"none":"translateY(24px)", transition:"all 0.7s ease" }}>
             <div style={{ display:"inline-flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:20, padding:"6px 14px", marginBottom:24 }}>
               <span style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
-              <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.75)", letterSpacing:0.5 }}>Ordonnances reçues en temps réel</span>
+              <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.75)", letterSpacing:0.5 }}>Renouvellements d'ordonnance automatiques</span>
             </div>
+            {/* Positionnement (14/11/2026, titulaire) : ce qui fait vendre OrdoMail,
+                c'est le renouvellement, pas l'organisation des ordonnances. */}
             <h1 style={{ fontSize:"clamp(28px, 8vw, 52px)", fontWeight:900, color:"#fff", margin:"0 0 14px", lineHeight:1.1, letterSpacing:"-0.5px" }}>
-              Vos ordonnances,<br />
-              <span style={{ color:"#86efac" }}>enfin organisées.</span>
+              Chaque renouvellement<br />
+              <span style={{ color:"#86efac" }}>revient chez vous.</span>
             </h1>
-            <p style={{ fontSize:18, color:"rgba(255,255,255,0.65)", lineHeight:1.75, marginBottom:36, maxWidth:460 }}>
-              OrdoMail remplace la boîte email généraliste par un tableau de bord dédié. Le patient envoie, vous imprimez. En moins d'une minute.
+            <p style={{ fontSize:18, color:"rgba(255,255,255,0.65)", lineHeight:1.75, marginBottom:24, maxWidth:480 }}>
+              Avant l'échéance de leur ordonnance, OrdoMail relance vos patients par SMS. Ils répondent en un clic, vous commandez à l'avance : la vente reste chez vous et le traitement est prêt quand ils arrivent.
             </p>
-            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:32 }}>
-              <button onClick={()=>onGoToCheckout("standard","monthly")} style={{ padding:"14px 28px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ display:"grid", gap:10, marginBottom:30, maxWidth:480 }}>
+              {[
+                ["💶","Du chiffre d'affaires en plus","Les renouvellements qui partaient chez le voisin restent chez vous."],
+                ["😌","La tranquillité pour vos patients","Ils n'ont plus à y penser : la pharmacie s'en occupe."],
+                ["📦","Zéro rupture de stock","Vous savez qui vient et quand : vous commandez à l'avance."],
+              ].map(([i,t,d])=>(
+                <div key={t} style={{ display:"flex", gap:12, alignItems:"flex-start", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"10px 14px" }}>
+                  <span style={{ fontSize:20, lineHeight:1.2 }}>{i}</span>
+                  <div>
+                    <div style={{ fontWeight:800, fontSize:15, color:"#fff" }}>{t}</div>
+                    <div style={{ fontSize:13.5, color:"rgba(255,255,255,0.6)", lineHeight:1.5 }}>{d}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:28 }}>
+              <button onClick={()=>onGoToCheckout("pro","monthly")} style={{ padding:"14px 28px", border:"none", borderRadius:12, background:"#fff", color:C.navy, fontWeight:800, fontSize:16, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8 }}>
                 Essai gratuit 30 jours
                 <span style={{ fontSize:14, opacity:0.6 }}>→</span>
               </button>
@@ -582,7 +656,7 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
               </button>
             </div>
             <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
-              {[["30j","Essai gratuit"],["<1min","Installation"],["🔔","Renouvellements par SMS"],["🔐","Données chiffrées"]].map(([v,l])=>(
+              {[["30j","Essai gratuit"],["<1min","Installation"],["📱","Sans application patient"],["🔐","Données chiffrées"]].map(([v,l])=>(
                 <div key={l} style={{ display:"flex", alignItems:"center", gap:7 }}>
                   <span style={{ fontWeight:900, fontSize:16, color:"#86efac" }}>{v}</span>
                   <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)" }}>{l}</span>
@@ -595,15 +669,15 @@ function LandingPage({ onGoToPricing, onGoToApp, onGoToCheckout, onGoToAdmin, on
           <div style={{ opacity:heroVisible?1:0, transform:heroVisible?"none":"translateY(24px) scale(0.97)", transition:"all 0.8s ease 0.15s" }} className="hero-dashboard">
             <MiniDashboard />
             <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:"rgba(255,255,255,0.35)" }} className="hero-dashboard">
-              ↑ Démo interactive — une nouvelle ordonnance arrive dans 3 secondes
+              ↑ Démo interactive — dans 3 secondes, un patient répond à son rappel de renouvellement
             </div>
           </div>
         </div>
       </section>
 
       {/* ── SECTIONS ── */}
-      <div id="features"><FeaturesSection /></div>
       <div id="renouvellements"><RenouvellementsSection onCTA={()=>onGoToCheckout("pro","monthly")} /></div>
+      <div id="features"><FeaturesSection /></div>
       <WorkflowSection />
       <div id="security"><SecuritySection /></div>
       <div id="pricing"><PricingSection onGoToPricing={onGoToPricing} /></div>
