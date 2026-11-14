@@ -248,7 +248,7 @@ function RenouvellementsSection({ onCTA }) {
             Récupérez les renouvellements<br />qui vous échappent.
           </h2>
           <p style={{ fontSize: 17, color: C.slate, lineHeight: 1.7, margin: "0 0 26px", maxWidth: 500 }}>
-            Un patient qui oublie de renouveler, c'est une vente perdue, et parfois un patient qui part ailleurs. OrdoMail le relance pour vous, au bon moment, et vous dit ce qu'il veut avant qu'il passe la porte.
+            Un renouvellement ne se perd pas parce que le patient oublie : il se perd quand il va le faire ailleurs, faute d'avoir été retenu. OrdoMail le contacte au nom de votre pharmacie avant l'échéance, et vous dit ce qu'il veut avant qu'il passe la porte. Il revient chez vous.
           </p>
           <div style={{ display: "grid", gap: 14, marginBottom: 26 }}>
             {RENOUV_ETAPES.map((s, i) => (
